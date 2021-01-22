@@ -1,0 +1,62 @@
+on:
+  workflow_dispatch:
+
+name: Build and upload gccarm64linux compiler nightly build
+
+jobs:
+  build_gccarm64linux:
+    name: Build gccarm64linux compiler
+    runs-on: ubuntu-latest
+    container: ubuntu:18.04
+    steps:
+      - name: Prepare tools
+        run: |
+          apt-get update
+          apt-get -yq install build-essential\
+                        wget\
+                        git\
+                        python3-pip\
+                        ninja-build\
+                        g++-7-aarch64-linux-gnu\
+                        g++-7-multilib-arm-linux-gnueabihf\
+                        binutils-arm-linux-gnueabihf\
+                        binutils-multiarch-dev\
+                        libgcc1-armhf-cross\
+                        libsfgcc1-armhf-cross\
+                        libstdc++6-armhf-cross\
+                        libstdc++-7-dev-armhf-cross\
+                        flex
+          python3 -m pip install cmake
+          apt-get autoclean
+      - name: Checkout code
+        uses: actions/checkout@v1
+      - name: Build gccarm64linux compiler on ubuntu18
+        run: |
+          builds_ws=`pwd`
+          check_rc () {
+              rc=$?
+              if [ $rc != 0 ]; then exit $rc; fi
+          }
+          ### build x86
+          cd $builds_ws
+          DEPLOY_WS=${builds_ws}/deploy/linux_prod
+          rm -rf objdir ${DEPLOY_WS}
+          mkdir objdir ${DEPLOY_WS}
+          git show --name-only --oneline HEAD^2 >${DEPLOY_WS}/gcc_changes 2>&1 || true
+          ./contrib/download_prerequisites
+          cd objdir
+          CC=aarch64-linux-gnu-gcc-7 CXX=aarch64-linux-gnu-g++-7 AR=aarch64-linux-gnu-gcc-ar-7 GCC_FOR_TARGET=aarch64-linux-gnu-gcc-7 CXX_FOR_TARGET=aarch64-linux-gnu-g++-7 $PWD/../configure --prefix=${DEPLOY_WS} --enable-languages=c,c++,fortran --disable-bootstrap --disable-multilib --host=aarch64-linux-gnu --target=aarch64-linux-gnu
+          check_rc
+          make -j4 all-gcc
+          check_rc
+          make install-gcc
+          check_rc
+          echo "Build finished successfully"
+          cd $DEPLOY_WS && rm -f sum.txt && find . -type f | xargs md5sum --binary > ../sum_Release.txt && mv ../sum_Release.txt ./sum.txt
+          tar cfz ../../gccarm64linux.tar.xz *
+          cd ../../
+      - name: Upload gccarm64linux build artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: gccarm64linux
+          path: gccarm64linux.tar.xz
