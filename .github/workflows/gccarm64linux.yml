@@ -1,5 +1,7 @@
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '10 * * * *'
 
 name: Build and upload gccarm64linux compiler nightly build
 
