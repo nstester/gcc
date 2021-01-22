@@ -43,7 +43,7 @@ jobs:
           cd $builds_ws
           DEPLOY_WS=${builds_ws}/deploy/linux_prod
           rm -rf objdir ${DEPLOY_WS}
-          mkdir objdir ${DEPLOY_WS}
+          mkdir -p objdir ${DEPLOY_WS}
           git show --name-only --oneline HEAD^2 >${DEPLOY_WS}/gcc_changes 2>&1 || true
           ./contrib/download_prerequisites
           cd objdir
