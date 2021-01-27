@@ -1,0 +1,54 @@
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '10 * * * *'
+
+name: Build and upload gccefi2linux compiler nightly build
+
+jobs:
+  build_gccefi2linux:
+    name: Build gccefi2linux compiler
+    runs-on: ubuntu-latest
+    container: ubuntu:18.04
+    steps:
+      - name: Prepare tools
+        run: |
+          apt-get update
+          apt-get -yq install build-essential\
+                        wget\
+                        git\
+                        texinfo\
+                        libz-dev\
+                        flex
+          apt-get autoclean
+      - name: Checkout code
+        uses: actions/checkout@v1
+      - name: Build gccefi2linux compiler on ubuntu18
+        run: |
+          builds_ws=`pwd`
+          check_rc () {
+              rc=$?
+              if [ $rc != 0 ]; then exit $rc; fi
+          }
+          cd $builds_ws
+          DEPLOY_WS=${builds_ws}/deploy/linux_prod
+          rm -rf objdir ${DEPLOY_WS}
+          mkdir -p objdir ${DEPLOY_WS}/linux
+          git show --name-only --oneline HEAD^2 >${DEPLOY_WS}/gcc_changes 2>&1 || true
+          ./contrib/download_prerequisites
+          cd objdir
+          $PWD/../configure --prefix=${DEPLOY_WS}/linux --enable-languages=c,c++,fortran,jit,lto --disable-multilib --enable-shared --enable-host-shared --with-system-zlib --with-demangler-in-ld -enable-clocale=gnu --with-pic --enable-cloog-backend=isl
+          check_rc
+          make -j8
+          check_rc
+          make install
+          check_rc
+          echo "Build finished successfully"
+          cd $DEPLOY_WS && rm -f sum.txt && find . -type f | xargs md5sum --binary > ../sum_Release.txt && mv ../sum_Release.txt ./sum.txt
+          tar cfz ../../gccefi2linux.tar.xz *
+          cd ../../
+      - name: Upload gccefi2linux build artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: gccefi2linux
+          path: gccefi2linux.tar.xz
