@@ -755,6 +755,14 @@
   DONE;
 })
 
+(define_insn "aarch64_ursqrte<mode>"
+[(set (match_operand:VDQ_SI 0 "register_operand" "=w")
+      (unspec:VDQ_SI [(match_operand:VDQ_SI 1 "register_operand" "w")]
+		   UNSPEC_RSQRTE))]
+"TARGET_SIMD"
+"ursqrte\\t%<v>0<Vmtype>, %<v>1<Vmtype>"
+[(set_attr "type" "neon_fp_rsqrte_<stype><q>")])
+
 (define_insn "*aarch64_mul3_elt_to_64v2df"
   [(set (match_operand:DF 0 "register_operand" "=w")
      (mult:DF
@@ -4252,6 +4260,45 @@
     else
       emit_insn (gen_aarch64_<su>qxtn2<mode>_le (operands[0], operands[1],
 						 operands[2]));
+    DONE;
+  }
+)
+
+(define_insn "aarch64_sqxtun2<mode>_le"
+  [(set (match_operand:<VNARROWQ2> 0 "register_operand" "=w")
+	(vec_concat:<VNARROWQ2>
+	  (match_operand:<VNARROWQ> 1 "register_operand" "0")
+	  (unspec:<VNARROWQ>
+	    [(match_operand:VQN 2 "register_operand" "w")] UNSPEC_SQXTUN2)))]
+  "TARGET_SIMD && !BYTES_BIG_ENDIAN"
+  "sqxtun2\\t%0.<V2ntype>, %2.<Vtype>"
+   [(set_attr "type" "neon_sat_shift_imm_narrow_q")]
+)
+
+(define_insn "aarch64_sqxtun2<mode>_be"
+  [(set (match_operand:<VNARROWQ2> 0 "register_operand" "=w")
+	(vec_concat:<VNARROWQ2>
+	  (unspec:<VNARROWQ>
+	    [(match_operand:VQN 2 "register_operand" "w")] UNSPEC_SQXTUN2)
+	  (match_operand:<VNARROWQ> 1 "register_operand" "0")))]
+  "TARGET_SIMD && BYTES_BIG_ENDIAN"
+  "sqxtun2\\t%0.<V2ntype>, %2.<Vtype>"
+   [(set_attr "type" "neon_sat_shift_imm_narrow_q")]
+)
+
+(define_expand "aarch64_sqxtun2<mode>"
+  [(match_operand:<VNARROWQ2> 0 "register_operand")
+   (match_operand:<VNARROWQ> 1 "register_operand")
+   (unspec:<VNARROWQ>
+     [(match_operand:VQN 2 "register_operand")] UNSPEC_SQXTUN2)]
+  "TARGET_SIMD"
+  {
+    if (BYTES_BIG_ENDIAN)
+      emit_insn (gen_aarch64_sqxtun2<mode>_be (operands[0], operands[1],
+					      operands[2]));
+    else
+      emit_insn (gen_aarch64_sqxtun2<mode>_le (operands[0], operands[1],
+					       operands[2]));
     DONE;
   }
 )
