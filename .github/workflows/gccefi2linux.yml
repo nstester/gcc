@@ -1,7 +1,7 @@
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 16 * * *'
+    - cron: '0 0 * * *'
 
 name: Build and upload gccefi2linux compiler nightly build
 
