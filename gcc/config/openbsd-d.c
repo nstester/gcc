@@ -1,5 +1,7 @@
-/* Subroutines for the D front end on the SPARC architecture.
-   Copyright (C) 2017-2021 Free Software Foundation, Inc.
+/* Functions for generic OpenBSD as target machine for GNU D compiler.
+   Copyright (C) 2021 Free Software Foundation, Inc.
+
+This file is part of GCC.
 
 GCC is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -15,36 +17,23 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define IN_TARGET_CODE 1
-
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
+#include "memmodel.h"
 #include "tm.h"
+#include "tm_p.h"
 #include "d/d-target.h"
 #include "d/d-target-def.h"
 
-/* Implement TARGET_D_CPU_VERSIONS for SPARC targets.  */
-
-void
-sparc_d_target_versions (void)
+static void
+openbsd_d_os_builtins (void)
 {
-  if (TARGET_64BIT)
-    d_add_builtin_version ("SPARC64");
-  else
-    d_add_builtin_version ("SPARC");
-
-  if (TARGET_V8PLUS)
-    d_add_builtin_version ("SPARC_V8Plus");
-
-  if (TARGET_FPU)
-    {
-      d_add_builtin_version ("D_HardFloat");
-      d_add_builtin_version ("SPARC_HardFloat");
-    }
-  else
-    {
-      d_add_builtin_version ("D_SoftFloat");
-      d_add_builtin_version ("SPARC_SoftFloat");
-    }
+  d_add_builtin_version ("Posix");
+  d_add_builtin_version ("OpenBSD");
 }
+
+#undef TARGET_D_OS_VERSIONS
+#define TARGET_D_OS_VERSIONS openbsd_d_os_builtins
+
+struct gcc_targetdm targetdm = TARGETDM_INITIALIZER;
