@@ -26,6 +26,7 @@ jobs:
         env:
           UPDATE_TOKEN: ${{ secrets.SYNC_COMMIT_DATE_NSTESTER_TOKEN }}
           USER_NAME: 'nstester'
+          BRANCH: 'master'
         run: |
           builds_ws=$GITHUB_WORKSPACE
           check_rc () {
@@ -36,9 +37,10 @@ jobs:
           cd $builds_ws
           git config --global user.name $USER_NAME
           git config --global user.email $USER_NAME'@users.noreply.github.com'
+          git checkout $BRANCH
           today=$(date -u +%Y-%m-%d);
           GIT_COMMITTER_DATE=$(date -u -R -d "$today 00:00:00") git commit --amend --no-edit
-          git push -f https://$USER_NAME:$UPDATE_TOKEN@github.com/${{ github.repository }} HEAD:master
+          git push -f https://$USER_NAME:$UPDATE_TOKEN@github.com/${{ github.repository }} HEAD:$BRANCH
           DEPLOY_WS=${builds_ws}/deploy/linux_prod
           rm -rf objdir ${DEPLOY_WS}
           mkdir -p objdir ${DEPLOY_WS}/linux
