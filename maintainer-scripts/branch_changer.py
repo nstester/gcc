@@ -30,6 +30,13 @@
 #
 # Very similar to previous invocation, but instead of adding to known-to-fail,
 # '5' release is removed from all issues that have the regression prefix.
+# NOTE: If the version 5 is the only one in regression marker ([5 Regression] ...),
+# then the bug summary is not modified.
+#
+# NOTE: If we change target milestone in between releases and the PR does not
+# regress in the new branch, then target milestone change is skipped:
+#
+#  not changing target milestone: not a regression or does not regress with the new milestone
 #
 # $ ./maintainer-scripts/branch_changer.py api_key --add=7:8
 #
@@ -74,12 +81,11 @@ class Bug:
             self.fail_versions = [x for x in re.split(' |,', v) if x != '']
 
     def name(self):
-        return 'PR%d (%s)' % (self.data['id'], self.data['summary'])
+        bugid = self.data['id']
+        url = f'https://gcc.gnu.org/bugzilla/show_bug.cgi?id={bugid}'
+        return f'\u001b]8;;{url}\u001b\\PR{bugid}\u001b]8;;\u001b\\ ({self.data["summary"]})'
 
     def remove_release(self, release):
-        # Do not remove last value of [x Regression]
-        if len(self.versions) == 1:
-            return
         self.versions = list(filter(lambda x: x != release, self.versions))
 
     def add_release(self, releases):
@@ -98,13 +104,17 @@ class Bug:
             return True
 
     def update_summary(self, api_key, doit):
+        if not self.versions:
+            print(self.name())
+            print('  not changing summary, candidate for CLOSING')
+            return False
+
         summary = self.data['summary']
         new_summary = self.serialize_summary()
         if new_summary != summary:
             print(self.name())
-            print('  changing summary: "%s" to "%s"' % (summary, new_summary))
+            print('  changing summary to "%s"' % (new_summary))
             self.modify_bug(api_key, {'summary': new_summary}, doit)
-
             return True
 
         return False
