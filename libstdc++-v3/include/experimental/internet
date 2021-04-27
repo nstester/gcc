@@ -72,20 +72,20 @@ inline namespace v1
 {
 namespace ip
 {
-
   /** @addtogroup networking-ts
    *  @{
    */
 
-#ifdef _GLIBCXX_HAVE_NETDB_H
   /** Error codes for resolver errors.
    * @{
    */
 
   enum class resolver_errc : int {
+#ifdef _GLIBCXX_HAVE_NETDB_H
     host_not_found = EAI_NONAME,
     host_not_found_try_again = EAI_AGAIN,
     service_not_found = EAI_SERVICE
+#endif
   };
 
   /// Error category for resolver errors.
@@ -94,7 +94,13 @@ namespace ip
     struct __cat : error_category
     {
       const char* name() const noexcept { return "resolver"; }
-      std::string message(int __e) const { return ::gai_strerror(__e); }
+      std::string message(int __e) const {
+#ifdef _GLIBCXX_HAVE_NETDB_H
+	  return ::gai_strerror(__e);
+#else
+	  return "name resolution requires <netdb.h>";
+#endif
+      }
       virtual void __message(int) { } // TODO dual ABI XXX
     };
     static __cat __c;
@@ -108,7 +114,6 @@ namespace ip
   { return error_condition(static_cast<int>(__e), resolver_category()); }
 
   /// @}
-#endif
 
   using port_type = uint_least16_t;	///< Type used for port numbers.
   using scope_id_type = uint_least32_t;	///< Type used for IPv6 scope IDs.
@@ -118,6 +123,16 @@ namespace ip
     using __string_with
       = enable_if_t<std::is_same<typename _Alloc::value_type, char>::value,
 		    std::basic_string<char, std::char_traits<char>, _Alloc>>;
+
+  constexpr errc
+  __unsupported_err() noexcept
+  {
+#if defined EAFNOSUPPORT
+    return std::errc::address_family_not_supported;
+#else
+    return std::errc::operation_not_supported;
+#endif
+  }
 
   /** Tag indicating conversion between IPv4 and IPv4-mapped IPv6 addresses.
    * @{
@@ -197,20 +212,22 @@ namespace ip
     constexpr uint_type
     to_uint() const noexcept { return _S_ntoh_32(_M_addr); }
 
-#ifdef _GLIBCXX_HAVE_ARPA_INET_H
     template<typename _Allocator = allocator<char>>
       __string_with<_Allocator>
       to_string(const _Allocator& __a = _Allocator()) const
       {
+#ifdef _GLIBCXX_HAVE_ARPA_INET_H
 	__string_with<_Allocator> __str(__a);
-	__str.resize(INET6_ADDRSTRLEN);
+	__str.resize(INET_ADDRSTRLEN);
 	if (inet_ntop(AF_INET, &_M_addr, &__str.front(), __str.size()))
 	  __str.erase(__str.find('\0'));
 	else
 	  __str.resize(0);
 	return __str;
-      }
+#else
+	std::__throw_system_error((int)__unsupported_err());
 #endif
+      }
 
     // static members:
     static constexpr address_v4 any() noexcept { return address_v4{}; }
@@ -256,8 +273,11 @@ namespace ip
     // types:
     struct bytes_type : array<unsigned char, 16>
     {
-      template<typename... _Tp> explicit constexpr bytes_type(_Tp... __t)
-	: array<unsigned char, 16>{{static_cast<unsigned char>(__t)...}} { }
+      template<typename... _Tp>
+	explicit constexpr
+	bytes_type(_Tp... __t)
+	: array<unsigned char, 16>{{static_cast<unsigned char>(__t)...}}
+	{ }
     };
 
     // constructors:
@@ -338,11 +358,11 @@ namespace ip
 
     constexpr bytes_type to_bytes() const noexcept { return _M_bytes; }
 
-#ifdef _GLIBCXX_HAVE_ARPA_INET_H
     template<typename _Allocator = allocator<char>>
       __string_with<_Allocator>
       to_string(const _Allocator& __a = _Allocator()) const
       {
+#ifdef _GLIBCXX_HAVE_ARPA_INET_H
 	__string_with<_Allocator> __str(__a);
 	__str.resize(INET6_ADDRSTRLEN + (_M_scope_id ? 11 : 0));
 	char* const __p = &__str.front();
@@ -364,8 +384,10 @@ namespace ip
 	else
 	  __str.resize(0);
 	return __str;
-      }
+#else
+	std::__throw_system_error((int)__unsupported_err());
 #endif
+      }
 
     // static members:
 
@@ -650,6 +672,7 @@ namespace ip
   inline address_v4
   make_address_v4(const char* __str, error_code& __ec) noexcept
   {
+#ifdef _GLIBCXX_HAVE_ARPA_INET_H
     address_v4 __a;
     const int __res = ::inet_pton(AF_INET, __str, &__a._M_addr);
     if (__res == 1)
@@ -661,6 +684,9 @@ namespace ip
       __ec = std::make_error_code(std::errc::invalid_argument);
     else
       __ec.assign(errno, generic_category());
+#else
+    __ec = std::make_error_code(__unsupported_err());
+#endif
     return {};
   }
 
@@ -718,8 +744,9 @@ namespace ip
   inline address_v6
   __make_address_v6(const char* __addr, const char* __scope, error_code& __ec)
   {
+#ifdef _GLIBCXX_HAVE_ARPA_INET_H
     address_v6::bytes_type __b;
-    int __res = ::inet_pton(AF_INET6, __addr, __b.data());
+    const int __res = ::inet_pton(AF_INET6, __addr, __b.data());
     if (__res == 1)
       {
 	__ec.clear();
@@ -741,6 +768,9 @@ namespace ip
       __ec = std::make_error_code(std::errc::invalid_argument);
     else
       __ec.assign(errno, generic_category());
+#else
+    __ec = std::make_error_code(__unsupported_err());
+#endif
     return {};
   }
 
@@ -1449,15 +1479,14 @@ namespace ip
       // members:
       constexpr protocol_type protocol() const noexcept
       {
-	return _M_data._M_v4.sin_family == AF_INET6
-	  ? protocol_type::v6() : protocol_type::v4();
+	return _M_is_v6() ? protocol_type::v6() : protocol_type::v4();
       }
 
       constexpr ip::address
       address() const noexcept
       {
 	ip::address __addr;
-	if (protocol().family() == AF_INET6)
+	if (_M_is_v6())
 	  {
 	    __builtin_memcpy(&__addr._M_v6._M_bytes,
 			     _M_data._M_v6.sin6_addr.s6_addr, 16);
@@ -1498,18 +1527,16 @@ namespace ip
       { _M_data._M_v4.sin_port = address_v4::_S_hton_16(__port_num); }
 
       void* data() noexcept { return &_M_data; }
+
       const void* data() const noexcept { return &_M_data; }
+
       constexpr size_t size() const noexcept
-      {
-	return protocol().family() == AF_INET6
-	  ? sizeof(sockaddr_in6) : sizeof(sockaddr_in);
-      }
+      { return _M_is_v6() ? sizeof(sockaddr_in6) : sizeof(sockaddr_in); }
 
       void
       resize(size_t __s)
       {
-	if ((protocol().family() == AF_INET6 && __s != sizeof(sockaddr_in6))
-	    || (protocol().family() == AF_INET && __s != sizeof(sockaddr_in)))
+	if (__s != size())
 	  __throw_length_error("net::ip::basic_endpoint::resize");
       }
 
@@ -1521,6 +1548,9 @@ namespace ip
 	sockaddr_in	_M_v4;
 	sockaddr_in6	_M_v6;
       } _M_data;
+
+      constexpr bool _M_is_v6() const noexcept
+      { return _M_data._M_v4.sin_family == AF_INET6; }
     };
 
   /** basic_endpoint comparisons
@@ -1660,38 +1690,38 @@ namespace ip
     static constexpr flags all_matching		= (flags)AI_ALL;
     static constexpr flags address_configured	= (flags)AI_ADDRCONFIG;
 
+    friend constexpr flags
+    operator&(flags __f1, flags __f2) noexcept
+    { return flags( int(__f1) & int(__f2) ); }
+
+    friend constexpr flags
+    operator|(flags __f1, flags __f2) noexcept
+    { return flags( int(__f1) | int(__f2) ); }
+
+    friend constexpr flags
+    operator^(flags __f1, flags __f2) noexcept
+    { return flags( int(__f1) ^ int(__f2) ); }
+
+    friend constexpr flags
+    operator~(flags __f) noexcept
+    { return flags( ~int(__f) ); }
+
+    friend constexpr flags&
+    operator&=(flags& __f1, flags __f2) noexcept
+    { return __f1 = (__f1 & __f2); }
+
+    friend constexpr flags&
+    operator|=(flags& __f1, flags __f2) noexcept
+    { return __f1 = (__f1 | __f2); }
+
+    friend constexpr flags&
+    operator^=(flags& __f1, flags __f2) noexcept
+    { return __f1 = (__f1 ^ __f2); }
+
   protected:
     resolver_base() = default;
     ~resolver_base() = default;
   };
-
-  constexpr resolver_base::flags
-  operator&(resolver_base::flags __f1, resolver_base::flags __f2) noexcept
-  { return resolver_base::flags( int(__f1) & int(__f2) ); }
-
-  constexpr resolver_base::flags
-  operator|(resolver_base::flags __f1, resolver_base::flags __f2) noexcept
-  { return resolver_base::flags( int(__f1) | int(__f2) ); }
-
-  constexpr resolver_base::flags
-  operator^(resolver_base::flags __f1, resolver_base::flags __f2) noexcept
-  { return resolver_base::flags( int(__f1) ^ int(__f2) ); }
-
-  constexpr resolver_base::flags
-  operator~(resolver_base::flags __f) noexcept
-  { return resolver_base::flags( ~int(__f) ); }
-
-  constexpr resolver_base::flags&
-  operator&=(resolver_base::flags& __f1, resolver_base::flags __f2) noexcept
-  { return __f1 = (__f1 & __f2); }
-
-  constexpr resolver_base::flags&
-  operator|=(resolver_base::flags& __f1, resolver_base::flags __f2) noexcept
-  { return __f1 = (__f1 | __f2); }
-
-  constexpr resolver_base::flags&
-  operator^=(resolver_base::flags& __f1, resolver_base::flags __f2) noexcept
-  { return __f1 = (__f1 ^ __f2); }
 
   // TODO define resolver_base::flags static constants in .so for C++14 mode
 
@@ -2062,6 +2092,7 @@ namespace ip
 
   /// @}
 
+#ifdef IPPROTO_TCP
   /// The TCP byte-stream protocol.
   class tcp
   {
@@ -2073,7 +2104,7 @@ namespace ip
     using acceptor = basic_socket_acceptor<tcp>; ///< A TCP acceptor.
     using iostream = basic_socket_iostream<tcp>; /// A TCP iostream.
 
-#ifdef _GLIBCXX_HAVE_NETINET_TCP_H
+#ifdef TCP_NODELAY
     /// Disable coalescing of small segments (i.e. the Nagle algorithm).
     struct no_delay : __sockopt_crtp<no_delay, bool>
     {
@@ -2108,16 +2139,18 @@ namespace ip
    * @{
    */
 
-  inline bool
-  operator==(const tcp& __a, const tcp& __b)
+  constexpr bool
+  operator==(const tcp& __a, const tcp& __b) noexcept
   { return __a.family() == __b.family(); }
 
-  inline bool
-  operator!=(const tcp& __a, const tcp& __b)
+  constexpr bool
+  operator!=(const tcp& __a, const tcp& __b) noexcept
   { return !(__a == __b); }
 
   /// @}
+#endif // IPPROTO_TCP
 
+#ifdef IPPROTO_UDP
   /// The UDP datagram protocol.
   class udp
   {
@@ -2147,15 +2180,18 @@ namespace ip
    * @{
    */
 
-  inline bool
-  operator==(const udp& __a, const udp& __b)
+  constexpr bool
+  operator==(const udp& __a, const udp& __b) noexcept
   { return __a.family() == __b.family(); }
 
-  inline bool
-  operator!=(const udp& __a, const udp& __b)
+  constexpr bool
+  operator!=(const udp& __a, const udp& __b) noexcept
   { return !(__a == __b); }
 
   /// @}
+#endif // IPPROTO_UDP
+
+#if defined IPPROTO_IP && defined IPPROTO_IPV6
 
   /// Restrict a socket created for an IPv6 protocol to IPv6 only.
   class v6_only : public __sockopt_crtp<v6_only, bool>
@@ -2370,6 +2406,8 @@ namespace ip
     };
 
   } // namespace multicast
+
+#endif // IPPROTO_IP && IPPROTO_IPV6
 
   /// @}
 
