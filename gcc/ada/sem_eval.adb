@@ -2226,6 +2226,7 @@ package body Sem_Eval is
                if UR_Is_Zero (Right_Real) then
                   Apply_Compile_Time_Constraint_Error
                     (N, "division by zero", CE_Divide_By_Zero);
+                  Set_Raises_Constraint_Error (N);
                   return;
                end if;
 
@@ -4136,7 +4137,7 @@ package body Sem_Eval is
 
          Len := String_Length (Strval (N));
 
-         if UI_From_Int (Len) > String_Type_Len (Bas) then
+         if Len > String_Type_Len (Bas) then
 
             --  Issue message. Note that this message is a warning if the
             --  string literal is not marked as static (happens in some cases
