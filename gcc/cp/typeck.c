@@ -3201,9 +3201,19 @@ finish_class_member_access_expr (cp_expr object, tree name, bool template_p,
 	{
 	  /* Look up the member.  */
 	  access_failure_info afi;
+	  if (processing_template_decl)
+	    /* Even though this class member access expression is at this
+	       point not dependent, the member itself may be dependent, and
+	       we must not potentially push a access check for a dependent
+	       member onto TI_DEFERRED_ACCESS_CHECKS.  So don't check access
+	       ahead of time here; we're going to redo this member lookup at
+	       instantiation time anyway.  */
+	    push_deferring_access_checks (dk_no_check);
 	  member = lookup_member (access_path, name, /*protect=*/1,
 				  /*want_type=*/false, complain,
 				  &afi);
+	  if (processing_template_decl)
+	    pop_deferring_access_checks ();
 	  afi.maybe_suggest_accessor (TYPE_READONLY (object_type));
 	  if (member == NULL_TREE)
 	    {
@@ -5977,6 +5987,42 @@ build_x_vec_perm_expr (location_t loc,
   if (processing_template_decl && exp != error_mark_node)
     return build_min_non_dep (VEC_PERM_EXPR, exp, orig_arg0,
 			      orig_arg1, orig_arg2);
+  return exp;
+}
+
+/* Build a VEC_PERM_EXPR.
+   This is a simple wrapper for c_build_shufflevector.  */
+tree
+build_x_shufflevector (location_t loc, vec<tree, va_gc> *args,
+		       tsubst_flags_t complain)
+{
+  tree arg0 = (*args)[0];
+  tree arg1 = (*args)[1];
+  if (processing_template_decl)
+    {
+      for (unsigned i = 0; i < args->length (); ++i)
+	if (type_dependent_expression_p ((*args)[i]))
+	  {
+	    tree exp = build_min_nt_call_vec (NULL, args);
+	    CALL_EXPR_IFN (exp) = IFN_SHUFFLEVECTOR;
+	    return exp;
+	  }
+      arg0 = build_non_dependent_expr (arg0);
+      arg1 = build_non_dependent_expr (arg1);
+      /* ???  Nothing needed for the index arguments?  */
+    }
+  auto_vec<tree, 16> mask;
+  for (unsigned i = 2; i < args->length (); ++i)
+    {
+      tree idx = maybe_constant_value ((*args)[i]);
+      mask.safe_push (idx);
+    }
+  tree exp = c_build_shufflevector (loc, arg0, arg1, mask, complain & tf_error);
+  if (processing_template_decl && exp != error_mark_node)
+    {
+      exp = build_min_non_dep_call_vec (exp, NULL, args);
+      CALL_EXPR_IFN (exp) = IFN_SHUFFLEVECTOR;
+    }
   return exp;
 }
 

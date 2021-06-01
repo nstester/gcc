@@ -1,3 +1,49 @@
+2021-05-31  Richard Biener  <rguenther@suse.de>
+
+	PR c++/88601
+	* c-decl.c (names_builtin_p): Handle RID_BUILTIN_SHUFFLEVECTOR.
+	* c-parser.c (c_parser_postfix_expression): Likewise.
+
+2021-05-28  Richard Biener   <rguenther@suse.de>
+
+	PR c/100803
+	* gimple-parser.c (c_parser_gimple_paren_condition): Diagnose
+	invalid if conditions.
+
+2021-05-28  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/99928
+	* c-typeck.c (handle_omp_array_sections): Copy OMP_CLAUSE_MAP_IMPLICIT.
+	(c_finish_omp_clauses): Move not just OMP_CLAUSE_FIRSTPRIVATE_IMPLICIT
+	marked clauses last, but also OMP_CLAUSE_MAP_IMPLICIT.  Add
+	map_firstprivate_head bitmap, set it for GOMP_MAP_FIRSTPRIVATE_POINTER
+	maps and silently remove OMP_CLAUSE_FIRSTPRIVATE_IMPLICIT if it is
+	present too.  For OMP_CLAUSE_MAP_IMPLICIT silently remove the clause
+	if present in map_head, map_field_head or map_firstprivate_head
+	bitmaps.
+
+2021-05-28  Tobias Burnus  <tobias@codesourcery.com>
+
+	* c-parser.c (c_parser_omp_clause_affinity): New.
+	(c_parser_omp_clause_name, c_parser_omp_variable_list,
+	c_parser_omp_all_clauses, OMP_TASK_CLAUSE_MASK): Handle affinity clause.
+	* c-typeck.c (handle_omp_array_sections_1, handle_omp_array_sections,
+	c_finish_omp_clauses): Likewise.
+
+2021-05-26  Eric Botcazou  <ebotcazou@adacore.com>
+
+	PR c/100653
+	* c-decl.c (finish_struct): Warn for a union containing an aggregate
+	field with a differing scalar storage order.
+
+2021-05-21  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/99928
+	* c-typeck.c (c_finish_omp_clauses): Move firstprivate clauses with
+	OMP_CLAUSE_FIRSTPRIVATE_IMPLICIT to the end of the chain.  Don't error
+	if a decl is mentioned both in map clause and in such firstprivate
+	clause unless OMP_CLAUSE_FIRSTPRIVATE_IMPLICIT_TARGET is also set.
+
 2021-05-19  Jakub Jelinek  <jakub@redhat.com>
 
 	PR middle-end/99928

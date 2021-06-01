@@ -2100,6 +2100,7 @@ copy_bb (copy_body_data *id, basic_block bb,
 		 GF_CALL_VA_ARG_PACK.  */
 	      gimple_call_copy_flags (new_call, call_stmt);
 	      gimple_call_set_va_arg_pack (new_call, false);
+	      gimple_call_set_fntype (new_call, gimple_call_fntype (call_stmt));
 	      /* location includes block.  */
 	      gimple_set_location (new_call, gimple_location (stmt));
 	      gimple_call_set_lhs (new_call, gimple_call_lhs (call_stmt));
@@ -3446,7 +3447,7 @@ setup_one_parameter (copy_body_data *id, tree p, tree value, tree fn,
 	 sure that it cannot be modified from another path in the callee.  */
       if ((is_gimple_min_invariant (value)
 	   || (DECL_P (value) && TREE_READONLY (value))
-	   || (auto_var_in_fn_p (value, id->src_fn)
+	   || (auto_var_in_fn_p (value, id->dst_fn)
 	       && !TREE_ADDRESSABLE (value)))
 	  && useless_type_conversion_p (TREE_TYPE (p), TREE_TYPE (value))
 	  /* We have to be very careful about ADDR_EXPR.  Make sure

@@ -663,11 +663,17 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
     (with
      {
        bool overflowed = true;
-       wide_int wmin0, wmax0, wmin1, wmax1;
+       value_range vr0, vr1;
        if (INTEGRAL_TYPE_P (type)
-	   && get_range_info (@0, &wmin0, &wmax0) == VR_RANGE
-	   && get_range_info (@1, &wmin1, &wmax1) == VR_RANGE)
+	   && get_global_range_query ()->range_of_expr (vr0, @0)
+	   && get_global_range_query ()->range_of_expr (vr1, @1)
+	   && vr0.kind () == VR_RANGE
+	   && vr1.kind () == VR_RANGE)
 	 {
+	   wide_int wmin0 = vr0.lower_bound ();
+	   wide_int wmax0 = vr0.upper_bound ();
+	   wide_int wmin1 = vr1.lower_bound ();
+	   wide_int wmax1 = vr1.upper_bound ();
 	   /* If the multiplication can't overflow/wrap around, then
 	      it can be optimized too.  */
 	   wi::overflow_type min_ovf, max_ovf;
@@ -2509,9 +2515,12 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 	  = wide_int::from (wi::to_wide (@1), TYPE_PRECISION (inner_type),
 			    TYPE_SIGN (inner_type));
 
-        wide_int wmin0, wmax0;
-        if (get_range_info (@0, &wmin0, &wmax0) == VR_RANGE)
+	value_range vr;
+	if (get_global_range_query ()->range_of_expr (vr, @0)
+	    && vr.kind () == VR_RANGE)
           {
+	    wide_int wmin0 = vr.lower_bound ();
+	    wide_int wmax0 = vr.upper_bound ();
             wi::add (wmin0, w1, TYPE_SIGN (inner_type), &min_ovf);
             wi::add (wmax0, w1, TYPE_SIGN (inner_type), &max_ovf);
           }
@@ -3711,6 +3720,47 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
    (if (integer_all_onesp (@1) && integer_zerop (@2))
     @0))))
 
+/* A few simplifications of "a ? CST1 : CST2". */
+/* NOTE: Only do this on gimple as the if-chain-to-switch
+   optimization depends on the gimple to have if statements in it. */
+#if GIMPLE
+(simplify
+ (cond @0 INTEGER_CST@1 INTEGER_CST@2)
+ (switch
+  (if (integer_zerop (@2))
+   (switch
+    /* a ? 1 : 0 -> a if 0 and 1 are integral types. */
+    (if (integer_onep (@1))
+     (convert (convert:boolean_type_node @0)))
+    /* a ? -1 : 0 -> -a. */
+    (if (integer_all_onesp (@1))
+     (negate (convert (convert:boolean_type_node @0))))
+    /* a ? powerof2cst : 0 -> a << (log2(powerof2cst)) */
+    (if (!POINTER_TYPE_P (type) && integer_pow2p (@1))
+     (with {
+       tree shift = build_int_cst (integer_type_node, tree_log2 (@1));
+      }
+      (lshift (convert (convert:boolean_type_node @0)) { shift; })))))
+  (if (integer_zerop (@1))
+   (with {
+      tree booltrue = constant_boolean_node (true, boolean_type_node);
+    }
+    (switch
+     /* a ? 0 : 1 -> !a. */
+     (if (integer_onep (@2))
+      (convert (bit_xor (convert:boolean_type_node @0) { booltrue; } )))
+     /* a ? -1 : 0 -> -(!a). */
+     (if (integer_all_onesp (@2))
+      (negate (convert (bit_xor (convert:boolean_type_node @0) { booltrue; } ))))
+     /* a ? powerof2cst : 0 -> (!a) << (log2(powerof2cst)) */
+     (if (!POINTER_TYPE_P (type) && integer_pow2p (@2))
+      (with {
+	tree shift = build_int_cst (integer_type_node, tree_log2 (@2));
+       }
+       (lshift (convert (bit_xor (convert:boolean_type_node @0) { booltrue; } ))
+        { shift; }))))))))
+#endif
+
 /* Simplification moved from fold_cond_expr_with_comparison.  It may also
    be extended.  */
 /* This pattern implements two kinds simplification:
@@ -4834,13 +4884,45 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
   (cmp (bit_and@2 @0 integer_pow2p@1) @1)
   (icmp @2 { build_zero_cst (TREE_TYPE (@0)); })))
 
+(for cmp (ge lt)
+/* x < 0 ? ~y : y into (x >> (prec-1)) ^ y. */
+/* x >= 0 ? ~y : y into ~((x >> (prec-1)) ^ y). */
+ (simplify
+  (cond (cmp @0 integer_zerop) (bit_not @1) @1)
+   (if (INTEGRAL_TYPE_P (type)
+	&& INTEGRAL_TYPE_P (TREE_TYPE (@0))
+        && !TYPE_UNSIGNED (TREE_TYPE (@0))
+        && TYPE_PRECISION (TREE_TYPE (@0)) == TYPE_PRECISION (type))
+    (with
+     {
+       tree shifter = build_int_cst (integer_type_node, TYPE_PRECISION (type) - 1);
+     }
+    (if (cmp == LT_EXPR)
+     (bit_xor (convert (rshift @0 {shifter;})) @1)
+     (bit_not (bit_xor (convert (rshift @0 {shifter;})) @1))))))
+/* x < 0 ? y : ~y into ~((x >> (prec-1)) ^ y). */
+/* x >= 0 ? y : ~y into (x >> (prec-1)) ^ y. */
+ (simplify
+  (cond (cmp @0 integer_zerop) @1 (bit_not @1))
+   (if (INTEGRAL_TYPE_P (type)
+	&& INTEGRAL_TYPE_P (TREE_TYPE (@0))
+        && !TYPE_UNSIGNED (TREE_TYPE (@0))
+        && TYPE_PRECISION (TREE_TYPE (@0)) == TYPE_PRECISION (type))
+    (with
+     {
+       tree shifter = build_int_cst (integer_type_node, TYPE_PRECISION (type) - 1);
+     }
+    (if (cmp == GE_EXPR)
+     (bit_xor (convert (rshift @0 {shifter;})) @1)
+     (bit_not (bit_xor (convert (rshift @0 {shifter;})) @1)))))))
+
 /* If we have (A & C) != 0 ? D : 0 where C and D are powers of 2,
    convert this into a shift followed by ANDing with D.  */
 (simplify
  (cond
   (ne (bit_and @0 integer_pow2p@1) integer_zerop)
   INTEGER_CST@2 integer_zerop)
- (if (integer_pow2p (@2))
+ (if (!POINTER_TYPE_P (type) && integer_pow2p (@2))
   (with {
      int shift = (wi::exact_log2 (wi::to_wide (@2))
 		  - wi::exact_log2 (wi::to_wide (@1)));
@@ -6560,10 +6642,31 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 	&& tree_to_uhwi (@3) == c2
 	&& tree_to_uhwi (@9) == c3
 	&& tree_to_uhwi (@7) == c3
-	&& tree_to_uhwi (@11) == c4
-	&& direct_internal_fn_supported_p (IFN_POPCOUNT, type,
-					   OPTIMIZE_FOR_BOTH))
-    (convert (IFN_POPCOUNT:type @0)))))
+	&& tree_to_uhwi (@11) == c4)
+    (if (direct_internal_fn_supported_p (IFN_POPCOUNT, type,
+					 OPTIMIZE_FOR_BOTH))
+     (convert (IFN_POPCOUNT:type @0))
+     /* Try to do popcount in two halves.  PREC must be at least
+	five bits for this to work without extension before adding.  */
+     (with {
+       tree half_type = NULL_TREE;
+       opt_machine_mode m = mode_for_size ((prec + 1) / 2, MODE_INT, 1);
+       int half_prec = 8;
+       if (m.exists ()
+	   && m.require () != TYPE_MODE (type))
+	 {
+	   half_prec = GET_MODE_PRECISION (as_a <scalar_int_mode> (m));
+	   half_type = build_nonstandard_integer_type (half_prec, 1);
+	 }
+       gcc_assert (half_prec > 2);
+      }
+      (if (half_type != NULL_TREE
+	   && direct_internal_fn_supported_p (IFN_POPCOUNT, half_type,
+					      OPTIMIZE_FOR_BOTH))
+       (convert (plus
+	 (IFN_POPCOUNT:half_type (convert @0))
+	 (IFN_POPCOUNT:half_type (convert (rshift @0
+	    { build_int_cst (integer_type_node, half_prec); } )))))))))))
 
 /* __builtin_ffs needs to deal on many targets with the possible zero
    argument.  If we know the argument is always non-zero, __builtin_ctz + 1

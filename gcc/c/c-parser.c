@@ -10000,6 +10000,44 @@ c_parser_postfix_expression (c_parser *parser)
 	    set_c_expr_source_range (&expr, loc, close_paren_loc);
 	    break;
 	  }
+	case RID_BUILTIN_SHUFFLEVECTOR:
+	  {
+	    vec<c_expr_t, va_gc> *cexpr_list;
+	    unsigned int i;
+	    c_expr_t *p;
+	    location_t close_paren_loc;
+
+	    c_parser_consume_token (parser);
+	    if (!c_parser_get_builtin_args (parser,
+					    "__builtin_shufflevector",
+					    &cexpr_list, false,
+					    &close_paren_loc))
+	      {
+		expr.set_error ();
+		break;
+	      }
+
+	    FOR_EACH_VEC_SAFE_ELT (cexpr_list, i, p)
+	      *p = convert_lvalue_to_rvalue (loc, *p, true, true);
+
+	    if (vec_safe_length (cexpr_list) < 3)
+	      {
+		error_at (loc, "wrong number of arguments to "
+			       "%<__builtin_shuffle%>");
+		expr.set_error ();
+	      }
+	    else
+	      {
+		auto_vec<tree, 16> mask;
+		for (i = 2; i < cexpr_list->length (); ++i)
+		  mask.safe_push ((*cexpr_list)[i].value);
+		expr.value = c_build_shufflevector (loc, (*cexpr_list)[0].value,
+						    (*cexpr_list)[1].value,
+						    mask);
+	      }
+	    set_c_expr_source_range (&expr, loc, close_paren_loc);
+	    break;
+	  }
 	case RID_BUILTIN_CONVERTVECTOR:
 	  {
 	    location_t start_loc = loc;
@@ -12601,7 +12639,9 @@ c_parser_omp_clause_name (c_parser *parser)
       switch (p[0])
 	{
 	case 'a':
-	  if (!strcmp ("aligned", p))
+	  if (!strcmp ("affinity", p))
+	    result = PRAGMA_OMP_CLAUSE_AFFINITY;
+	  else if (!strcmp ("aligned", p))
 	    result = PRAGMA_OMP_CLAUSE_ALIGNED;
 	  else if (!strcmp ("allocate", p))
 	    result = PRAGMA_OMP_CLAUSE_ALLOCATE;
@@ -12900,7 +12940,7 @@ c_parser_omp_variable_list (c_parser *parser,
   while (1)
     {
       bool array_section_p = false;
-      if (kind == OMP_CLAUSE_DEPEND)
+      if (kind == OMP_CLAUSE_DEPEND || kind == OMP_CLAUSE_AFFINITY)
 	{
 	  if (c_parser_next_token_is_not (parser, CPP_NAME)
 	      || c_parser_peek_token (parser)->id_kind != C_ID_ID)
@@ -13040,6 +13080,7 @@ c_parser_omp_variable_list (c_parser *parser,
 		  t = build_component_ref (op_loc, t, ident, comp_loc);
 		}
 	      /* FALLTHROUGH  */
+	    case OMP_CLAUSE_AFFINITY:
 	    case OMP_CLAUSE_DEPEND:
 	    case OMP_CLAUSE_REDUCTION:
 	    case OMP_CLAUSE_IN_REDUCTION:
@@ -13090,7 +13131,7 @@ c_parser_omp_variable_list (c_parser *parser,
 
 		  t = tree_cons (low_bound, length, t);
 		}
-	      if (kind == OMP_CLAUSE_DEPEND
+	      if ((kind == OMP_CLAUSE_DEPEND || kind == OMP_CLAUSE_AFFINITY)
 		  && t != error_mark_node
 		  && parser->tokens_avail != 2)
 		{
@@ -13130,7 +13171,7 @@ c_parser_omp_variable_list (c_parser *parser,
       else
 	list = tree_cons (t, NULL_TREE, list);
 
-      if (kind == OMP_CLAUSE_DEPEND)
+      if (kind == OMP_CLAUSE_DEPEND || kind == OMP_CLAUSE_AFFINITY)
 	{
 	  parser->tokens = &parser->tokens_buf[0];
 	  parser->tokens_avail = tokens_avail;
@@ -15508,6 +15549,69 @@ c_parser_omp_iterators (c_parser *parser)
   return ret ? ret : error_mark_node;
 }
 
+/* OpenMP 5.0:
+   affinity ( [aff-modifier :] variable-list )
+   aff-modifier:
+     iterator ( iterators-definition )  */
+
+static tree
+c_parser_omp_clause_affinity (c_parser *parser, tree list)
+{
+  location_t clause_loc = c_parser_peek_token (parser)->location;
+  tree nl, iterators = NULL_TREE;
+
+  matching_parens parens;
+  if (!parens.require_open (parser))
+    return list;
+
+  if (c_parser_next_token_is (parser, CPP_NAME))
+    {
+      const char *p = IDENTIFIER_POINTER (c_parser_peek_token (parser)->value);
+      bool parse_iter = ((strcmp ("iterator", p) == 0)
+			 && (c_parser_peek_2nd_token (parser)->type
+			     == CPP_OPEN_PAREN));
+      if (parse_iter)
+	{
+	  unsigned n = 3;
+	  parse_iter = (c_parser_check_balanced_raw_token_sequence (parser, &n)
+			&& (c_parser_peek_nth_token_raw (parser, n)->type
+			    == CPP_CLOSE_PAREN)
+			&& (c_parser_peek_nth_token_raw (parser, n + 1)->type
+			    == CPP_COLON));
+	}
+      if (parse_iter)
+	{
+	  iterators = c_parser_omp_iterators (parser);
+	  if (!c_parser_require (parser, CPP_COLON, "expected %<:%>"))
+	    {
+	      if (iterators)
+		pop_scope ();
+	      parens.skip_until_found_close (parser);
+	      return list;
+	    }
+	}
+    }
+  nl = c_parser_omp_variable_list (parser, clause_loc, OMP_CLAUSE_AFFINITY,
+				   list);
+  if (iterators)
+    {
+      tree block = pop_scope ();
+      if (iterators == error_mark_node)
+	iterators = NULL_TREE;
+      else
+	{
+	  TREE_VEC_ELT (iterators, 5) = block;
+	  for (tree c = nl; c != list; c = OMP_CLAUSE_CHAIN (c))
+	    OMP_CLAUSE_DECL (c) = build_tree_list (iterators,
+						   OMP_CLAUSE_DECL (c));
+	}
+    }
+
+  parens.skip_until_found_close (parser);
+  return nl;
+}
+
+
 /* OpenMP 4.0:
    depend ( depend-kind: variable-list )
 
@@ -16473,6 +16577,10 @@ c_parser_omp_all_clauses (c_parser *parser, omp_clause_mask mask,
 	case PRAGMA_OMP_CLAUSE_LINEAR: 
 	  clauses = c_parser_omp_clause_linear (parser, clauses); 
 	  c_name = "linear";
+	  break;
+	case PRAGMA_OMP_CLAUSE_AFFINITY:
+	  clauses = c_parser_omp_clause_affinity (parser, clauses);
+	  c_name = "affinity";
 	  break;
 	case PRAGMA_OMP_CLAUSE_DEPEND:
 	  clauses = c_parser_omp_clause_depend (parser, clauses);
@@ -19249,7 +19357,8 @@ c_parser_omp_single (location_t loc, c_parser *parser, bool *if_p)
 	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_PRIORITY)	\
 	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_ALLOCATE)	\
 	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_IN_REDUCTION)	\
-	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_DETACH))
+	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_DETACH)	\
+	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_AFFINITY))
 
 static tree
 c_parser_omp_task (location_t loc, c_parser *parser, bool *if_p)

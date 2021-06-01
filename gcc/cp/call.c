@@ -1731,7 +1731,8 @@ reference_binding (tree rto, tree rfrom, tree expr, bool c_cast_p, int flags,
 	 because A[] and A[2] are reference-related.  But we don't do it
 	 because grok_reference_init has deduced the array size (to 1), and
 	 A[1] and A[2] aren't reference-related.  */
-      if (CONSTRUCTOR_NELTS (expr) == 1)
+      if (CONSTRUCTOR_NELTS (expr) == 1
+	  && !CONSTRUCTOR_IS_DESIGNATED_INIT (expr))
 	{
 	  tree elt = CONSTRUCTOR_ELT (expr, 0)->value;
 	  if (error_operand_p (elt))
@@ -2095,6 +2096,7 @@ implicit_conversion_1 (tree to, tree from, tree expr, bool c_cast_p,
 	{
 	  if (BRACE_ENCLOSED_INITIALIZER_P (expr)
 	      && CONSTRUCTOR_NELTS (expr) == 1
+	      && !CONSTRUCTOR_IS_DESIGNATED_INIT (expr)
 	      && !is_list_ctor (cand->fn))
 	    {
 	      /* "If C is not an initializer-list constructor and the
@@ -7469,8 +7471,9 @@ maybe_warn_array_conv (location_t loc, conversion *c, tree expr)
       || TYPE_DOMAIN (type) == NULL_TREE)
     return;
 
-  if (conv_binds_to_array_of_unknown_bound (c))
-    pedwarn (loc, OPT_Wpedantic, "conversions to arrays of unknown bound "
+  if (pedantic && conv_binds_to_array_of_unknown_bound (c))
+    pedwarn (loc, OPT_Wc__20_extensions,
+	     "conversions to arrays of unknown bound "
 	     "are only available with %<-std=c++20%> or %<-std=gnu++20%>");
 }
 
@@ -8175,7 +8178,10 @@ convert_arg_to_ellipsis (tree arg, tsubst_flags_t complain)
     {
       arg = mark_rvalue_use (arg);
       if (TREE_SIDE_EFFECTS (arg))
-	arg = cp_build_compound_expr (arg, null_pointer_node, complain);
+	{
+	  warning_sentinel w(warn_unused_result);
+	  arg = cp_build_compound_expr (arg, null_pointer_node, complain);
+	}
       else
 	arg = null_pointer_node;
     }
@@ -9146,17 +9152,31 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
 	  if (base_binfo == error_mark_node)
 	    return error_mark_node;
 	}
-      tree converted_arg = build_base_path (PLUS_EXPR, arg,
-					    base_binfo, 1, complain);
 
       /* If we know the dynamic type of the object, look up the final overrider
 	 in the BINFO.  */
       if (DECL_VINDEX (fn) && (flags & LOOKUP_NONVIRTUAL) == 0
 	  && resolves_to_fixed_type_p (arg))
 	{
-	  fn = lookup_vfn_in_binfo (DECL_VINDEX (fn), base_binfo);
-	  flags |= LOOKUP_NONVIRTUAL;
+	  tree ov = lookup_vfn_in_binfo (DECL_VINDEX (fn), base_binfo);
+
+	  /* And unwind base_binfo to match.  If we don't find the type we're
+	     looking for in BINFO_INHERITANCE_CHAIN, we're looking at diamond
+	     inheritance; for now do a normal virtual call in that case.  */
+	  tree octx = DECL_CONTEXT (ov);
+	  tree obinfo = base_binfo;
+	  while (obinfo && !SAME_BINFO_TYPE_P (BINFO_TYPE (obinfo), octx))
+	    obinfo = BINFO_INHERITANCE_CHAIN (obinfo);
+	  if (obinfo)
+	    {
+	      fn = ov;
+	      base_binfo = obinfo;
+	      flags |= LOOKUP_NONVIRTUAL;
+	    }
 	}
+
+      tree converted_arg = build_base_path (PLUS_EXPR, arg,
+					    base_binfo, 1, complain);
 
       argarray[j++] = converted_arg;
       parm = TREE_CHAIN (parm);
@@ -10198,6 +10218,7 @@ build_special_member_call (tree instance, tree name, vec<tree, va_gc> **args,
 
       if (BRACE_ENCLOSED_INITIALIZER_P (arg)
 	  && !TYPE_HAS_LIST_CTOR (class_type)
+	  && !CONSTRUCTOR_IS_DESIGNATED_INIT (arg)
 	  && CONSTRUCTOR_NELTS (arg) == 1)
 	arg = CONSTRUCTOR_ELT (arg, 0)->value;
 

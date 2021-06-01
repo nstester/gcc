@@ -1,3 +1,191 @@
+2021-05-31  Richard Biener  <rguenther@suse.de>
+
+	PR c++/88601
+	* cp-objcp-common.c (names_builtin_p): Handle
+	RID_BUILTIN_SHUFFLEVECTOR.
+	* cp-tree.h (build_x_shufflevector): Declare.
+	* parser.c (cp_parser_postfix_expression): Handle
+	RID_BUILTIN_SHUFFLEVECTOR.
+	* pt.c (tsubst_copy_and_build): Handle IFN_SHUFFLEVECTOR.
+	* typeck.c (build_x_shufflevector): Build either a lowered
+	VEC_PERM_EXPR or an unlowered shufflevector via a temporary
+	internal function IFN_SHUFFLEVECTOR.
+
+2021-05-28  Jason Merrill  <jason@redhat.com>
+
+	* constexpr.c (build_data_member_initialization): Use tsi_range.
+	(build_constexpr_constructor_member_initializers): Likewise.
+	(constexpr_fn_retval, cxx_eval_statement_list): Likewise.
+	(potential_constant_expression_1): Likewise.
+	* coroutines.cc (await_statement_expander): Likewise.
+	(await_statement_walker): Likewise.
+	* module.cc (trees_out::core_vals): Likewise.
+	* pt.c (tsubst_expr): Likewise.
+	* semantics.c (set_cleanup_locs): Likewise.
+
+2021-05-28  Jason Merrill  <jason@redhat.com>
+
+	PR c++/100797
+	PR c++/95719
+	* call.c (build_over_call): Adjust base_binfo in
+	resolves_to_fixed_type_p case.
+
+2021-05-28  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/99928
+	* semantics.c (handle_omp_array_sections): Copy
+	OMP_CLAUSE_MAP_IMPLICIT.
+	(finish_omp_clauses): Move not just OMP_CLAUSE_FIRSTPRIVATE_IMPLICIT
+	marked clauses last, but also OMP_CLAUSE_MAP_IMPLICIT.  Add
+	map_firstprivate_head bitmap, set it for GOMP_MAP_FIRSTPRIVATE_POINTER
+	maps and silently remove OMP_CLAUSE_FIRSTPRIVATE_IMPLICIT if it is
+	present too.  For OMP_CLAUSE_MAP_IMPLICIT silently remove the clause
+	if present in map_head, map_field_head or map_firstprivate_head
+	bitmaps.
+
+2021-05-28  Tobias Burnus  <tobias@codesourcery.com>
+
+	* parser.c (cp_parser_omp_clause_affinity): New.
+	(cp_parser_omp_clause_name, cp_parser_omp_var_list_no_open,
+	cp_parser_omp_all_clauses, OMP_TASK_CLAUSE_MASK): Handle affinity
+	clause.
+	* semantics.c (handle_omp_array_sections_1, handle_omp_array_sections,
+	finish_omp_clauses): Likewise.
+
+2021-05-27  Matthias Kretz  <kretz@kde.org>
+
+	PR c++/100716
+	* error.c (dump_template_bindings): Include code to print
+	"[with" and ']', conditional on whether anything is printed at
+	all. This is tied to whether a semicolon is needed to separate
+	multiple template parameters. If the template argument repeats
+	the template parameter (T = T), then skip the parameter.
+	(dump_substitution): Moved code to print "[with" and ']' to
+	dump_template_bindings.
+	(dump_function_decl): Partial revert of PR50828, which masked
+	TFF_TEMPLATE_NAME for all of dump_function_decl. Now
+	TFF_TEMPLATE_NAME is masked for the scope of the function and
+	only carries through to dump_function_name.
+	(dump_function_name): Avoid calling dump_template_parms if
+	TFF_TEMPLATE_NAME is set.
+
+2021-05-27  Matthias Kretz  <kretz@kde.org>
+
+	PR c++/100763
+	* error.c: Call dump_scope when printing a typedef.
+
+2021-05-27  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/99893
+	* tree.c (cp_walk_subtrees) <case STATIC_ASSERT>: New case.
+
+2021-05-27  Jason Merrill  <jason@redhat.com>
+
+	PR c++/86355
+	* pt.c (use_pack_expansion_extra_args_p): Don't compare
+	args from the same argument pack.
+
+2021-05-27  Patrick Palka  <ppalka@redhat.com>
+
+	DR 1315
+	PR c++/67593
+	PR c++/96555
+	* pt.c (process_partial_specialization): Don't error on a
+	non-simple non-type template argument that involves template
+	parameters.
+	(for_each_template_parm_r): Don't walk TRAIT_EXPR, PLUS_EXPR,
+	MULT_EXPR, or SCOPE_REF when include_nondeduced_p is false.
+
+2021-05-26  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/100502
+	* typeck.c (finish_class_member_access_expr): Disable ahead
+	of time access checking during the member lookup.
+
+2021-05-26  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/100368
+	* tree.c (build_target_expr_with_type): Don't call force_rvalue
+	on CALL_EXPR initializer.  Simplify now that bot_manip is no
+	longer a caller.
+	(bot_manip): Use force_target_expr instead of
+	build_target_expr_with_type.
+
+2021-05-26  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/97420
+	* cvt.c (noexcept_conv_p): Remove redundant checks and simplify.
+	(fnptr_conv_p): Don't call non_reference.  Use INDIRECT_TYPE_P
+	instead of TYPE_PTR_P.
+	* pt.c (convert_nontype_argument_function): Look through
+	implicit INDIRECT_REFs before calling strip_fnptr_conv.
+
+2021-05-25  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/100666
+	* call.c (convert_arg_to_ellipsis): For expressions with NULLPTR_TYPE
+	and side-effects, temporarily disable -Wunused-result warning when
+	building COMPOUND_EXPR.
+
+2021-05-21  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/99928
+	* semantics.c (finish_omp_clauses): Move firstprivate clauses with
+	OMP_CLAUSE_FIRSTPRIVATE_IMPLICIT to the end of the chain.  Don't error
+	if a decl is mentioned both in map clause and in such firstprivate
+	clause unless OMP_CLAUSE_FIRSTPRIVATE_IMPLICIT_TARGET is also set.
+
+2021-05-20  Jason Merrill  <jason@redhat.com>
+
+	* call.c (reference_binding): Check for designator.
+	(implicit_conversion_1, build_special_member_call): Likewise.
+	* decl.c (reshape_init_r): Likewise.
+	* pt.c (do_class_deduction): Likewise.
+	* typeck2.c (digest_init_r): Likewise.
+
+2021-05-20  Jason Merrill  <jason@redhat.com>
+
+	PR c++/100489
+	* decl.c (reshape_init_class): Handle designator for
+	member of anonymous aggregate here.
+	* typeck2.c (process_init_constructor_record): Not here.
+
+2021-05-20  Jonathan Wakely  <jwakely@redhat.com>
+
+	* call.c (maybe_warn_array_conv): Use new warning option.
+	* decl.c (mark_inline_variable, grokdeclarator): Likewise.
+	* error.c (maybe_warn_cpp0x): Likewise.
+	* parser.c (cp_parser_primary_expression)
+	(cp_parser_unqualified_id)
+	(cp_parser_pseudo_destructor_name)
+	(cp_parser_lambda_introducer)
+	(cp_parser_lambda_declarator_opt)
+	(cp_parser_selection_statement)
+	(cp_parser_init_statement)
+	(cp_parser_decomposition_declaration)
+	(cp_parser_function_specifier_opt)
+	(cp_parser_static_assert)
+	(cp_parser_namespace_definition)
+	(cp_parser_using_declaration)
+	(cp_parser_asm_definition)
+	(cp_parser_ctor_initializer_opt_and_function_body)
+	(cp_parser_initializer_list)
+	(cp_parser_type_parameter_key)
+	(cp_parser_member_declaration)
+	(cp_parser_try_block)
+	(cp_parser_std_attribute_spec): Likewise.
+	* pt.c (check_template_variable): Likewise.
+
+2021-05-20  Jason Merrill  <jason@redhat.com>
+
+	PR c++/100634
+	* pt.c (invalid_nontype_parm_type_p): Return true for COMPLEX_TYPE.
+
+2021-05-20  Jason Merrill  <jason@redhat.com>
+
+	PR c++/100659
+	* cp-tree.h (CONST_DECL_USING_P): Check for null TREE_TYPE.
+
 2021-05-19  Jason Merrill  <jason@redhat.com>
 
 	PR c++/100367

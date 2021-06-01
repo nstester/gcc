@@ -1,3 +1,492 @@
+2021-05-31  Tobias Burnus  <tobias@codesourcery.com>
+
+	* gfortran.dg/gomp/depend-iterator-1.f90: Use dg-do compile.
+	* gfortran.dg/gomp/depend-iterator-2.f90: Use dg-do compile.
+
+2021-05-31  Richard Biener  <rguenther@suse.de>
+
+	PR c++/88601
+	* c-c++-common/builtin-shufflevector-2.c: New testcase.
+	* c-c++-common/torture/builtin-shufflevector-1.c: Likewise.
+	* g++.dg/ext/builtin-shufflevector-1.C: Likewise.
+	* g++.dg/ext/builtin-shufflevector-2.C: Likewise.
+
+2021-05-31  Peter Bergner  <bergner@linux.ibm.com>
+
+	PR target/99842
+	* g++.target/powerpc/pr99842.C: New.
+
+2021-05-29  Bernd Edlinger  <bernd.edlinger@hotmail.de>
+
+	* gcc.dg/plugin/diagnostic_plugin_show_trees.c (plugin_init): Fix caret_max_with.
+	* gcc.dg/plugin/diagnostic_plugin_test_inlining.c
+	(plugin_init): Likewise.
+	* gcc.dg/plugin/diagnostic_plugin_test_paths.c (plugin_init): Likewise.
+	* gcc.dg/plugin/diagnostic_plugin_test_string_literals.c
+	(plugin_init): Likewise.
+	* gcc.dg/plugin/diagnostic_plugin_test_tree_expression_range.c
+	(plugin_init): Likewise.
+
+2021-05-29  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/99928
+	* c-c++-common/gomp/pr99928-1.c: Add default(none) to constructs
+	combined with parallel, teams or taskloop and defaultmap(none)
+	to constructs combined with target.
+	* c-c++-common/gomp/pr99928-2.c: Likewise.
+	* c-c++-common/gomp/pr99928-3.c: Likewise.
+	* c-c++-common/gomp/pr99928-4.c: Likewise.
+	* c-c++-common/gomp/pr99928-5.c: Likewise.
+	* c-c++-common/gomp/pr99928-6.c: Likewise.
+	* c-c++-common/gomp/pr99928-7.c: Likewise.
+	* c-c++-common/gomp/pr99928-8.c: Likewise.
+	* c-c++-common/gomp/pr99928-9.c: Likewise.
+	* c-c++-common/gomp/pr99928-10.c: Likewise.
+	* c-c++-common/gomp/pr99928-13.c: Likewise.
+	* c-c++-common/gomp/pr99928-14.c: Likewise.
+
+2021-05-29  Aldy Hernandez  <aldyh@redhat.com>
+
+	* gcc.dg/Wstringop-overflow-55.c:
+	* gcc.dg/pr80776-1.c:
+
+2021-05-28  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/100778
+	* gcc.dg/vect/bb-slp-pr100778-1.c: New testcase.
+
+2021-05-28  Jason Merrill  <jason@redhat.com>
+
+	PR c++/100797
+	PR c++/95719
+	* g++.dg/inherit/virtual15.C: New test.
+	* g++.dg/inherit/virtual15a.C: New file.
+
+2021-05-28  Richard Biener  <rguenther@suse.de>
+
+	PR ipa/100791
+	* gcc.dg/pr100791.c: New testcase.
+
+2021-05-28  Richard Biener   <rguenther@suse.de>
+
+	PR c/100803
+	* gcc.dg/gimplefe-error-11.c: New testcase.
+
+2021-05-28  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/99928
+	* c-c++-common/gomp/pr99928-8.c: Remove all xfails.
+	* c-c++-common/gomp/pr99928-9.c: Likewise.
+	* c-c++-common/gomp/pr99928-10.c: Likewise.
+	* c-c++-common/gomp/pr99928-16.c: New test.
+
+2021-05-28  Tobias Burnus  <tobias@codesourcery.com>
+
+	* c-c++-common/gomp/affinity-1.c: New test.
+	* c-c++-common/gomp/affinity-2.c: New test.
+	* c-c++-common/gomp/affinity-3.c: New test.
+	* c-c++-common/gomp/affinity-4.c: New test.
+	* c-c++-common/gomp/affinity-5.c: New test.
+	* c-c++-common/gomp/affinity-6.c: New test.
+	* c-c++-common/gomp/affinity-7.c: New test.
+	* gfortran.dg/gomp/affinity-clause-1.f90: New test.
+	* gfortran.dg/gomp/affinity-clause-2.f90: New test.
+	* gfortran.dg/gomp/affinity-clause-3.f90: New test.
+	* gfortran.dg/gomp/affinity-clause-4.f90: New test.
+	* gfortran.dg/gomp/affinity-clause-5.f90: New test.
+	* gfortran.dg/gomp/affinity-clause-6.f90: New test.
+	* gfortran.dg/gomp/depend-iterator-1.f90: New test.
+	* gfortran.dg/gomp/depend-iterator-2.f90: New test.
+	* gfortran.dg/gomp/depend-iterator-3.f90: New test.
+	* gfortran.dg/gomp/taskwait.f90: New test.
+
+2021-05-28  Joern Rennecke  <joern.rennecke@riscy-ip.com>
+	    Richard Biener   <rguenther@suse.de>
+
+	* gcc.dg/tree-ssa/popcount4ll.c: Remove lp64 condition.
+	Adjust scanning pattern for !lp64.
+	* gcc.dg/tree-ssa/popcount5ll.c: Likewise.
+	* gcc.dg/tree-ssa/popcount4l.c: Adjust scanning pattern
+	for ! int32plus.
+
+2021-05-28  Kewen Lin  <linkw@linux.ibm.com>
+
+	PR tree-optimization/99398
+	* gcc.target/powerpc/vec-perm-ctor-run.c: New test.
+	* gcc.target/powerpc/vec-perm-ctor.c: New test.
+	* gcc.target/powerpc/vec-perm-ctor.h: New test.
+
+2021-05-27  Matthias Kretz  <kretz@kde.org>
+
+	PR c++/100716
+	* g++.dg/diagnostic/pr100716.C: New test.
+	* g++.dg/diagnostic/pr100716-1.C: Same test with
+	-fno-pretty-templates.
+
+2021-05-27  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/99893
+	* g++.dg/cpp0x/static_assert17.C: New test.
+
+2021-05-27  Jason Merrill  <jason@redhat.com>
+
+	PR c++/86355
+	* g++.dg/cpp0x/alias-decl-variadic2.C: New test.
+
+2021-05-27  Patrick Palka  <ppalka@redhat.com>
+
+	DR 1315
+	PR c++/67593
+	PR c++/96555
+	* g++.dg/template/partial16.C: New test.
+	* g++.dg/template/partial17.C: New test.
+	* g++.dg/template/partial18.C: New test.
+	* g++.dg/template/partial19.C: New test.
+	* g++.dg/cpp0x/pr68724.C: Adjust expected diagnostic for
+	ill-formed partial specialization.
+	* g++.dg/cpp0x/variadic38.C: Likewise.
+	* g++.dg/cpp1z/pr81016.C: Likewise.
+	* g++.dg/template/partial5.C: Likewise.
+	* g++.old-deja/g++.pt/spec21.C: Likewise.
+
+2021-05-27  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/100602
+	* gfortran.dg/pointer_check_14.f90: New test.
+
+2021-05-27  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/100656
+	* gfortran.dg/bounds_check_22.f90: New test.
+
+2021-05-27  Aldy Hernandez  <aldyh@redhat.com>
+
+	* gcc.dg/Wstringop-overflow-55.c: Pass -fno-ipa-icf.
+
+2021-05-27  Uroš Bizjak  <ubizjak@gmail.com>
+
+	PR target/100637
+	* gcc.target/i386/pr100637-3b.c (avgu): New test.
+	* gcc.target/i386/pr100637-3w.c (avgu): Ditto.
+
+2021-05-26  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/100502
+	* g++.dg/template/access37.C: New test.
+	* g++.dg/template/access37a.C: New test.
+
+2021-05-26  Aldy Hernandez  <aldyh@redhat.com>
+
+	* gcc.dg/Wstringop-overflow-55.c: Adapt for range query changes.
+	* gcc.dg/pr80776-1.c: Same.
+
+2021-05-26  Uroš Bizjak  <ubizjak@gmail.com>
+
+	* lib/target-supports.exp (check_effective_target_vect32): New.
+	(available_vector_sizes): Append 32 for x86 targets.
+	* gcc.dg/vect/pr71264.c (dg-final): Xfail scan dump for vect32 targets.
+	* gcc.dg/vect/slp-28.c (dg-final): Adjust dumps for vect32 targets.
+	* gcc.dg/vect/slp-3.c (dg-final): Ditto.
+	* gcc.target/i386/pr100637-3b.c: New test.
+	* gcc.target/i386/pr100637-3w.c: Ditto.
+	* gcc.target/i386/pr100637-4b.c: Ditto.
+	* gcc.target/i386/pr100637-4w.c: Ditto.
+
+2021-05-26  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* gcc.dg/sso-13.c: New test.
+
+2021-05-26  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.target/arm/simd/mve-vaddv-1.c: New test.
+
+2021-05-26  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/100368
+	* g++.dg/cpp1z/elide6.C: New test.
+
+2021-05-26  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/97420
+	* g++.dg/cpp0x/noexcept68.C: New test.
+
+2021-05-26  Geng Qi  <gengqi@linux.alibaba.com>
+
+	* gcc.target/csky/fldrd_fstrd.c: New.
+	* gcc.target/csky/fpuv3/fldr64_fstr64.c: New.
+
+2021-05-26  Geng Qi  <gengqi@linux.alibaba.com>
+
+	* gcc.target/csky/ldbs.c: New.
+
+2021-05-26  Andrew Pinski  <apinski@marvell.com>
+
+	* gcc.dg/tree-ssa/pr96928.c: Update test for slightly different IR.
+	* gcc.dg/tree-ssa/pr96928-1.c: New testcase.
+
+2021-05-25  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/100666
+	* g++.dg/cpp1z/nodiscard8.C: New test.
+	* g++.dg/cpp1z/nodiscard9.C: New test.
+
+2021-05-25  Martin Liska  <mliska@suse.cz>
+
+	* gcc.dg/sancov/attribute.c: New test.
+
+2021-05-25  Cooper Qu  <cooper.qu@linux.alibaba.com>
+
+	* gcc.target/csky/fpuv3/fpuv3.exp : Amend copyright.
+
+2021-05-25  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/99928
+	* c-c++-common/gomp/pr99928-8.c: Remove xfails from omp teams r21 and
+	r28 checks.
+	* c-c++-common/gomp/pr99928-9.c: Likewise.
+	* c-c++-common/gomp/pr99928-10.c: Likewise.
+
+2021-05-25  Geng Qi  <gengqi@linux.alibaba.com>
+
+	* gcc.target/csky/fpuv3/fpuv3.exp: New.
+	* gcc.target/csky/fpuv3/fpv3_div.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fadd.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fdtos.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fftoi_rm.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fftoi_rz.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fhtos.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fitof.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fmov.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fmovi.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fmula.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fmuls.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fneg.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fnmula.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fnmuls.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fstod.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fstoh.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fsub.c: New.
+	* gcc.target/csky/fpuv3/fpv3_fxtof.c: New.
+	* gcc.target/csky/fpuv3/fpv3_h.c: New.
+	* gcc.target/csky/fpuv3/fpv3_hs.c: New.
+	* gcc.target/csky/fpuv3/fpv3_hsz.c: New.
+	* gcc.target/csky/fpuv3/fpv3_hz.c: New.
+	* gcc.target/csky/fpuv3/fpv3_ls.c: New.
+	* gcc.target/csky/fpuv3/fpv3_lsz.c: New.
+	* gcc.target/csky/fpuv3/fpv3_lt.c: New.
+	* gcc.target/csky/fpuv3/fpv3_ltz.c: New.
+	* gcc.target/csky/fpuv3/fpv3_max.c: New.
+	* gcc.target/csky/fpuv3/fpv3_min.c: New.
+	* gcc.target/csky/fpuv3/fpv3_mul.c: New.
+	* gcc.target/csky/fpuv3/fpv3_mula.c: New.
+	* gcc.target/csky/fpuv3/fpv3_muls.c: New.
+	* gcc.target/csky/fpuv3/fpv3_ne.c: New.
+	* gcc.target/csky/fpuv3/fpv3_nez.c: New.
+	* gcc.target/csky/fpuv3/fpv3_recip.c: New.
+	* gcc.target/csky/fpuv3/fpv3_sqrt.c: New.
+	* gcc.target/csky/fpuv3/fpv3_unordered.c: New.
+
+2021-05-24  Aaron Sawdey  <acsawdey@linux.ibm.com>
+
+	* gcc.target/powerpc/fusion-p10-logadd.c: New file.
+
+2021-05-24  Tobias Burnus  <tobias@codesourcery.com>
+
+	PR fortran/86470
+	* gfortran.dg/gomp/class-firstprivate-1.f90: New test.
+	* gfortran.dg/gomp/class-firstprivate-2.f90: New test.
+	* gfortran.dg/gomp/class-firstprivate-3.f90: New test.
+	* gfortran.dg/gomp/class-firstprivate-4.f90: New test.
+
+2021-05-24  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.target/arm/simd/mve-vld4.c: New test, derived from
+	slp-perm-3.c
+
+2021-05-24  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.target/arm/simd/mve-vld2.c: New test, derived from
+	slp-perm-2.c
+
+2021-05-24  liuhongt  <hongtao.liu@intel.com>
+
+	PR target/100660
+	* gcc.target/i386/pr100660.c: New test.
+
+2021-05-24  Andrew Pinski  <apinski@marvell.com>
+
+	* gcc.dg/tree-ssa/phi-opt-10.c: Use "\[0-9\]*" instead of '.'
+	when matching ssa name version.
+	* gcc.dg/tree-ssa/phi-opt-7.c: Likewise.
+
+2021-05-23  Uroš Bizjak  <ubizjak@gmail.com>
+
+	PR target/100722
+	* gcc.target/i386/pr100722.c: New test.
+
+2021-05-23  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/100551
+	* gfortran.dg/pr100551.f90: New test.
+
+2021-05-23  Andrew Pinski  <apinski@marvell.com>
+
+	* gcc.dg/gimplefe-45.c: New test.
+
+2021-05-21  Aaron Sawdey  <acsawdey@linux.ibm.com>
+
+	* gcc.target/powerpc/fusion-p10-addadd.c: New file.
+
+2021-05-21  Aaron Sawdey  <acsawdey@linux.ibm.com>
+
+	* gcc.target/powerpc/fusion-p10-ldcmpi.c: New file.
+	* gcc.target/powerpc/fusion-p10-2logical.c: New file.
+
+2021-05-21  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/99928
+	* c-c++-common/gomp/pr99928-3.c: Remove all xfails.
+	* c-c++-common/gomp/pr99928-15.c: New test.
+
+2021-05-21  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/99928
+	* c-c++-common/gomp/pr99928-6.c: Remove all xfails.
+	* c-c++-common/gomp/pr99928-13.c: New test.
+	* c-c++-common/gomp/pr99928-14.c: New test.
+
+2021-05-21  Thomas Schwinge  <thomas@codesourcery.com>
+
+	PR middle-end/90115
+	* c-c++-common/goacc/privatization-1-compute-loop.c: Update.
+	* c-c++-common/goacc/privatization-1-compute.c: Likewise.
+	* c-c++-common/goacc/privatization-1-routine_gang-loop.c:
+	Likewise.
+	* c-c++-common/goacc/privatization-1-routine_gang.c: Likewise.
+
+2021-05-21  Thomas Schwinge  <thomas@codesourcery.com>
+
+	PR middle-end/90115
+	* c-c++-common/goacc/privatization-1-compute-loop.c: New file.
+	* c-c++-common/goacc/privatization-1-compute.c: Likewise.
+	* c-c++-common/goacc/privatization-1-routine_gang-loop.c:
+	Likewise.
+	* c-c++-common/goacc/privatization-1-routine_gang.c: Likewise.
+	* gfortran.dg/goacc/privatization-1-compute-loop.f90: Likewise.
+	* gfortran.dg/goacc/privatization-1-compute.f90: Likewise.
+	* gfortran.dg/goacc/privatization-1-routine_gang-loop.f90:
+	Likewise.
+	* gfortran.dg/goacc/privatization-1-routine_gang.f90: Likewise.
+	* c-c++-common/goacc-gomp/nesting-1.c: Update.
+	* c-c++-common/goacc/private-reduction-1.c: Likewise.
+	* gfortran.dg/goacc/private-3.f95: Likewise.
+
+2021-05-21  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* lib/target-supports.exp (check_effective_target___OPTIMIZE__):
+	New proc.
+	* gcc.c-torture/compile/ssa-unused-1.c: New file.
+
+2021-05-21  Richard Biener  <rguenther@suse.de>
+	    H.J. Lu  <hjl.tools@gmail.com>
+
+	* gcc.target/i386/pr90773-24.c: New test.
+	* gcc.target/i386/pr90773-25.c: Likewise.
+
+2021-05-21  Uroš Bizjak  <ubizjak@gmail.com>
+
+	PR target/100637
+	* g++.target/i386/pr100637-1b.C: New test.
+	* g++.target/i386/pr100637-1w.C: Ditto.
+	* gcc.target/i386/pr100637-2b.c: Ditto.
+	* gcc.target/i386/pr100637-2w.c: Ditto.
+
+2021-05-21  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* gnat.dg/derived_type7.adb, gnat.dg/derived_type7.ads: New test.
+
+2021-05-20  Jason Merrill  <jason@redhat.com>
+
+	* g++.dg/cpp2a/desig19.C: New test.
+
+2021-05-20  Jason Merrill  <jason@redhat.com>
+
+	PR c++/100489
+	* g++.dg/cpp2a/desig18.C: New test.
+
+2021-05-20  Indu Bhagat  <indu.bhagat@oracle.com>
+
+	* gcc.dg/pch/valid-1.c: Adjust diagnostic message in testcase.
+	* lib/dg-pch.exp: Adjust diagnostic message.
+
+2021-05-20  Martin Sebor  <msebor@redhat.com>
+
+	PR middle-end/100684
+	* g++.dg/warn/Wnonnull13.C: New test.
+	* g++.dg/warn/Wnonnull14.C: New test.
+	* g++.dg/warn/Wnonnull15.C: New test.
+
+2021-05-20  Bernd Edlinger  <bernd.edlinger@hotmail.de>
+
+	* g++.dg/modules/omp-1_c.C: Fix testcase.
+
+2021-05-20  Uroš Bizjak  <ubizjak@gmail.com>
+
+	PR target/100701
+	* gcc.target/i386/pr100701.c: New test.
+
+2021-05-20  Marcel Vollweiler  <marcel@codesourcery.com>
+
+	* gfortran.dg/gomp/map-6.f90: New test.
+	* gfortran.dg/gomp/map-7.f90: New test.
+	* gfortran.dg/gomp/map-8.f90: New test.
+
+2021-05-20  Eric Botcazou  <ebotcazou@adacore.com>
+
+	PR testsuite/96488
+	* gnat.dg/unchecked_convert5.adb: Do not run on PowerPC64 LE.
+	* gnat.dg/unchecked_convert6.adb: Likewise.
+
+2021-05-20  Uroš Bizjak  <ubizjak@gmail.com>
+
+	PR target/100637
+	* gcc.target/i386/pr100637-1w.c (shl, ashr, lshr): New tests.
+
+2021-05-20  Christophe Lyon  <christophe.lyon@linaro.org>
+	    Torbjörn Svensson  <torbjorn.svensson@st.com>
+
+	PR c/42579
+	* c-c++-common/spellcheck-reserved.c: Add tests for __FILE_NAME__.
+	* c-c++-common/cpp/file-name-1.c: New test.
+
+2021-05-20  Tobias Burnus  <tobias@codesourcery.com>
+
+	PR fortran/96983
+	* gfortran.dg/pr96711.f90: Use 2**digit(x) instead of a hard-coded value;
+	add comments regarding what the code does.
+
+2021-05-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/99928
+	* c-c++-common/gomp/pr99928-4.c: Remove all xfails.
+	* c-c++-common/gomp/pr99928-5.c: Likewise.
+
+2021-05-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR preprocessor/100646
+	* gcc.dg/cpp/pr100646-1.c: New test.
+	* gcc.dg/cpp/pr100646-2.c: New test.
+
+2021-05-20  Jason Merrill  <jason@redhat.com>
+
+	PR c++/100634
+	* g++.dg/cpp2a/nontype-complex1.C: New test.
+
+2021-05-20  Jason Merrill  <jason@redhat.com>
+
+	PR c++/100659
+	* g++.dg/parse/access13.C: New test.
+
 2021-05-19  Martin Sebor  <msebor@redhat.com>
 
 	PR c/100619

@@ -8853,6 +8853,13 @@ finish_struct (location_t loc, tree t, tree fieldlist, tree attributes,
 		= c_build_qualified_type (fmain_type, TYPE_QUALS (ftype));
 	    }
 	}
+
+      if (TREE_CODE (t) == UNION_TYPE
+	  && AGGREGATE_TYPE_P (TREE_TYPE (field))
+	  && TYPE_REVERSE_STORAGE_ORDER (t)
+	     != TYPE_REVERSE_STORAGE_ORDER (TREE_TYPE (field)))
+	warning_at (DECL_SOURCE_LOCATION (field), OPT_Wscalar_storage_order,
+		    "type punning toggles scalar storage order");
     }
 
   /* Now we have the truly final field list.
@@ -10540,6 +10547,7 @@ names_builtin_p (const char *name)
     case RID_BUILTIN_CONVERTVECTOR:
     case RID_BUILTIN_HAS_ATTRIBUTE:
     case RID_BUILTIN_SHUFFLE:
+    case RID_BUILTIN_SHUFFLEVECTOR:
     case RID_CHOOSE_EXPR:
     case RID_OFFSETOF:
     case RID_TYPES_COMPATIBLE_P:

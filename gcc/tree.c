@@ -68,6 +68,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-vector-builder.h"
 #include "gimple-fold.h"
 #include "escaped_string.h"
+#include "gimple-range.h"
 
 /* Tree code classes.  */
 
@@ -288,6 +289,7 @@ unsigned const char omp_clause_num_ops[] =
   1, /* OMP_CLAUSE_COPYIN  */
   1, /* OMP_CLAUSE_COPYPRIVATE  */
   3, /* OMP_CLAUSE_LINEAR  */
+  1, /* OMP_CLAUSE_AFFINITY  */
   2, /* OMP_CLAUSE_ALIGNED  */
   2, /* OMP_CLAUSE_ALLOCATE  */
   1, /* OMP_CLAUSE_DEPEND  */
@@ -374,6 +376,7 @@ const char * const omp_clause_code_name[] =
   "copyin",
   "copyprivate",
   "linear",
+  "affinity",
   "aligned",
   "allocate",
   "depend",
@@ -11090,6 +11093,7 @@ walk_tree_1 (tree *tp, walk_tree_fn func, void *data,
 	  WALK_SUBTREE (OMP_CLAUSE_OPERAND (*tp, 1));
 	  /* FALLTHRU */
 
+	case OMP_CLAUSE_AFFINITY:
 	case OMP_CLAUSE_ASYNC:
 	case OMP_CLAUSE_WAIT:
 	case OMP_CLAUSE_WORKER:
@@ -13831,8 +13835,8 @@ get_range_pos_neg (tree arg)
 
   if (TREE_CODE (arg) != SSA_NAME)
     return 3;
-  wide_int arg_min, arg_max;
-  while (get_range_info (arg, &arg_min, &arg_max) != VR_RANGE)
+  value_range r;
+  while (!get_global_range_query ()->range_of_expr (r, arg) || r.kind () != VR_RANGE)
     {
       gimple *g = SSA_NAME_DEF_STMT (arg);
       if (is_gimple_assign (g)
@@ -13858,16 +13862,16 @@ get_range_pos_neg (tree arg)
     {
       /* For unsigned values, the "positive" range comes
 	 below the "negative" range.  */
-      if (!wi::neg_p (wi::sext (arg_max, prec), SIGNED))
+      if (!wi::neg_p (wi::sext (r.upper_bound (), prec), SIGNED))
 	return 1;
-      if (wi::neg_p (wi::sext (arg_min, prec), SIGNED))
+      if (wi::neg_p (wi::sext (r.lower_bound (), prec), SIGNED))
 	return 2;
     }
   else
     {
-      if (!wi::neg_p (wi::sext (arg_min, prec), SIGNED))
+      if (!wi::neg_p (wi::sext (r.lower_bound (), prec), SIGNED))
 	return 1;
-      if (wi::neg_p (wi::sext (arg_max, prec), SIGNED))
+      if (wi::neg_p (wi::sext (r.upper_bound (), prec), SIGNED))
 	return 2;
     }
   return 3;

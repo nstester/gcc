@@ -1,3 +1,85 @@
+2021-05-30  Gerald Pfeifer  <gerald@pfeifer.com>
+
+	* gfortran.texi (BOZ literal constants): Fix typo.
+
+2021-05-28  Tobias Burnus  <tobias@codesourcery.com>
+
+	* dump-parse-tree.c (show_iterator): New.
+	(show_omp_namelist): Handle iterators.
+	(show_omp_clauses): Handle affinity.
+	* gfortran.h (gfc_free_omp_namelist): New union with 'udr' and new 'ns'.
+	* match.c (gfc_free_omp_namelist): Add are to choose union element.
+	* openmp.c (gfc_free_omp_clauses, gfc_match_omp_detach,
+	gfc_match_omp_clause_reduction, gfc_match_omp_flush): Update
+	call to gfc_free_omp_namelist.
+	(gfc_match_omp_variable_list): Likewise; permit preceeding whitespace.
+	(enum omp_mask1): Add OMP_CLAUSE_AFFINITY.
+	(gfc_match_iterator): New.
+	(gfc_match_omp_clauses): Use it; update call to gfc_free_omp_namelist.
+	(OMP_TASK_CLAUSES): Add OMP_CLAUSE_AFFINITY.
+	(gfc_match_omp_taskwait): Match depend clause.
+	(resolve_omp_clauses): Handle affinity; update for udr/union change.
+	(gfc_resolve_omp_directive): Resolve clauses of taskwait.
+	* st.c (gfc_free_statement): Update gfc_free_omp_namelist call.
+	* trans-openmp.c (gfc_trans_omp_array_reduction_or_udr): Likewise
+	(handle_iterator): New.
+	(gfc_trans_omp_clauses): Handle iterators for depend/affinity clause.
+	(gfc_trans_omp_taskwait): Handle depend clause.
+	(gfc_trans_omp_directive): Update call.
+
+2021-05-27  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/100602
+	* trans-intrinsic.c (gfc_conv_intrinsic_size): Use CLASS data
+	attributes for CLASS arrays for generation of runtime error.
+
+2021-05-27  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/100656
+	* trans-array.c (gfc_conv_ss_startstride): Do not call check for
+	presence of a dummy argument when a symbol actually refers to a
+	non-dummy.
+
+2021-05-25  Tobias Burnus  <tobias@codesourcery.com>
+	    Johannes Nendwich  <a08727063@unet.univie.ac.at>
+
+	* intrinsic.texi (GERROR, GETARGS, GETLOG, NORM2, PARITY, RANDOM_INIT,
+	RANDOM_NUMBER): Fix typos and copy'n'paste errors.
+
+2021-05-24  Tobias Burnus  <tobias@codesourcery.com>
+
+	PR fortran/86470
+	* trans-expr.c (gfc_copy_class_to_class): Add unshare_expr.
+	* trans-openmp.c (gfc_is_polymorphic_nonptr,
+	gfc_is_unlimited_polymorphic_nonptr): New.
+	(gfc_omp_clause_copy_ctor, gfc_omp_clause_dtor): Handle
+	polymorphic scalars.
+
+2021-05-23  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/100551
+	* trans-expr.c (gfc_conv_procedure_call): Adjust check for
+	implicit conversion of actual argument to an unlimited polymorphic
+	procedure argument.
+
+2021-05-23  Tobias Burnus  <tobias@codesourcery.com>
+
+	* intrinsic.texi (ATOMIC_ADD, ATOMIC_FETCH_ADD): Use the
+	proper variable name in the description.
+
+2021-05-22  Andre Vehreschild  <vehre@gcc.gnu.org>
+	    Steve Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/98301
+	* trans-decl.c (gfc_build_builtin_function_decls): Move decl.
+	* trans-intrinsic.c (conv_intrinsic_random_init): Use bool for
+	lib-call of caf_random_init instead of logical (4-byte).
+	* trans.h: Add tree var for random_init.
+
+2021-05-20  Marcel Vollweiler  <marcel@codesourcery.com>
+
+	* openmp.c (gfc_match_omp_clauses): Support map-type-modifier 'close'.
+
 2021-05-18  Tobias Burnus  <tobias@codesourcery.com>
 
 	PR fortran/100642

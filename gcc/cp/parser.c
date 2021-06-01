@@ -5577,8 +5577,9 @@ cp_parser_primary_expression (cp_parser *parser,
 	    expr = cp_parser_fold_expression (parser, expr);
 	    if (expr != error_mark_node
 		&& cxx_dialect < cxx17)
-	      pedwarn (input_location, 0, "fold-expressions only available "
-		       "with %<-std=c++17%> or %<-std=gnu++17%>");
+	      pedwarn (input_location, OPT_Wc__17_extensions,
+		       "fold-expressions only available with %<-std=c++17%> "
+		       "or %<-std=gnu++17%>");
 	  }
 	else
 	  /* Let the front end know that this expression was
@@ -6325,7 +6326,7 @@ cp_parser_unqualified_id (cp_parser* parser,
 	if (cp_parser_is_keyword (token, RID_AUTO))
 	  {
 	    if (cxx_dialect < cxx14)
-	      pedwarn (loc, 0,
+	      pedwarn (loc, OPT_Wc__14_extensions,
 		       "%<~auto%> only available with "
 		       "%<-std=c++14%> or %<-std=gnu++14%>");
 	    cp_lexer_consume_token (parser->lexer);
@@ -7294,6 +7295,7 @@ cp_parser_postfix_expression (cp_parser *parser, bool address_p, bool cast_p,
 
     case RID_ADDRESSOF:
     case RID_BUILTIN_SHUFFLE:
+    case RID_BUILTIN_SHUFFLEVECTOR:
     case RID_BUILTIN_LAUNDER:
       {
 	vec<tree, va_gc> *vec;
@@ -7353,6 +7355,20 @@ cp_parser_postfix_expression (cp_parser *parser, bool address_p, bool cast_p,
 		error_at (loc, "wrong number of arguments to "
 			       "%<__builtin_shuffle%>");
 		postfix_expression = error_mark_node;
+	      }
+	    break;
+
+	  case RID_BUILTIN_SHUFFLEVECTOR:
+	    if (vec->length () < 3)
+	      {
+		error_at (loc, "wrong number of arguments to "
+			       "%<__builtin_shufflevector%>");
+		postfix_expression = error_mark_node;
+	      }
+	    else
+	      {
+		postfix_expression
+		  = build_x_shufflevector (loc, vec, tf_warning_or_error);
 	      }
 	    break;
 
@@ -8353,7 +8369,7 @@ cp_parser_pseudo_destructor_name (cp_parser* parser,
       && !type_dependent_expression_p (object))
     {
       if (cxx_dialect < cxx14)
-	pedwarn (input_location, 0,
+	pedwarn (input_location, OPT_Wc__14_extensions,
 		 "%<~auto%> only available with "
 		 "%<-std=c++14%> or %<-std=gnu++14%>");
       cp_lexer_consume_token (parser->lexer);
@@ -11042,8 +11058,9 @@ cp_parser_lambda_introducer (cp_parser* parser, tree lambda_expr)
 	{
 	  location_t loc = cp_lexer_peek_token (parser->lexer)->location;
 	  if (cxx_dialect < cxx17)
-	    pedwarn (loc, 0, "%<*this%> capture only available with "
-			     "%<-std=c++17%> or %<-std=gnu++17%>");
+	    pedwarn (loc, OPT_Wc__17_extensions,
+		     "%<*this%> capture only available with "
+		     "%<-std=c++17%> or %<-std=gnu++17%>");
 	  cp_lexer_consume_token (parser->lexer);
 	  cp_lexer_consume_token (parser->lexer);
 	  if (LAMBDA_EXPR_THIS_CAPTURE (lambda_expr))
@@ -11081,7 +11098,8 @@ cp_parser_lambda_introducer (cp_parser* parser, tree lambda_expr)
 	{
 	  ellipsis_loc = cp_lexer_peek_token (parser->lexer)->location;
 	  if (cxx_dialect < cxx20)
-	    pedwarn (ellipsis_loc, 0, "pack init-capture only available with "
+	    pedwarn (ellipsis_loc, OPT_Wc__20_extensions,
+		     "pack init-capture only available with "
 		     "%<-std=c++20%> or %<-std=gnu++20%>");
 	  cp_lexer_consume_token (parser->lexer);
 	  init_pack_expansion = true;
@@ -11122,7 +11140,7 @@ cp_parser_lambda_introducer (cp_parser* parser, tree lambda_expr)
 	  bool direct, non_constant;
 	  /* An explicit initializer exists.  */
 	  if (cxx_dialect < cxx14)
-	    pedwarn (input_location, 0,
+	    pedwarn (input_location, OPT_Wc__14_extensions,
 		     "lambda capture initializers "
 		     "only available with %<-std=c++14%> or %<-std=gnu++14%>");
 	  capture_init_expr = cp_parser_initializer (parser, &direct,
@@ -11296,11 +11314,11 @@ cp_parser_lambda_declarator_opt (cp_parser* parser, tree lambda_expr)
   if (cp_lexer_next_token_is (parser->lexer, CPP_LESS))
     {
       if (cxx_dialect < cxx14)
-	pedwarn (parser->lexer->next_token->location, 0,
+	pedwarn (parser->lexer->next_token->location, OPT_Wc__14_extensions,
 		 "lambda templates are only available with "
 		 "%<-std=c++14%> or %<-std=gnu++14%>");
-      else if (cxx_dialect < cxx20)
-	pedwarn (parser->lexer->next_token->location, OPT_Wpedantic,
+      else if (pedantic && cxx_dialect < cxx20)
+	pedwarn (parser->lexer->next_token->location, OPT_Wc__20_extensions,
 		 "lambda templates are only available with "
 		 "%<-std=c++20%> or %<-std=gnu++20%>");
 
@@ -11365,10 +11383,11 @@ cp_parser_lambda_declarator_opt (cp_parser* parser, tree lambda_expr)
 
       /* Default arguments shall not be specified in the
 	 parameter-declaration-clause of a lambda-declarator.  */
-      if (cxx_dialect < cxx14)
+      if (pedantic && cxx_dialect < cxx14)
 	for (tree t = param_list; t; t = TREE_CHAIN (t))
 	  if (TREE_PURPOSE (t) && DECL_P (TREE_VALUE (t)))
-	    pedwarn (DECL_SOURCE_LOCATION (TREE_VALUE (t)), OPT_Wpedantic,
+	    pedwarn (DECL_SOURCE_LOCATION (TREE_VALUE (t)),
+		     OPT_Wc__14_extensions,
 		     "default argument specified for lambda parameter");
 
       parens.require_close (parser);
@@ -11388,7 +11407,7 @@ cp_parser_lambda_declarator_opt (cp_parser* parser, tree lambda_expr)
 
   if (omitted_parms_loc && lambda_specs.any_specifiers_p)
     {
-      pedwarn (omitted_parms_loc, 0,
+      pedwarn (omitted_parms_loc, OPT_Wc__23_extensions,
 	       "parameter declaration before lambda declaration "
 	       "specifiers only optional with %<-std=c++2b%> or "
 	       "%<-std=gnu++2b%>");
@@ -11407,7 +11426,7 @@ cp_parser_lambda_declarator_opt (cp_parser* parser, tree lambda_expr)
   tx_qual = cp_parser_tx_qualifier_opt (parser);
   if (omitted_parms_loc && tx_qual)
     {
-      pedwarn (omitted_parms_loc, 0,
+      pedwarn (omitted_parms_loc, OPT_Wc__23_extensions,
 	       "parameter declaration before lambda transaction "
 	       "qualifier only optional with %<-std=c++2b%> or "
 	       "%<-std=gnu++2b%>");
@@ -11420,7 +11439,7 @@ cp_parser_lambda_declarator_opt (cp_parser* parser, tree lambda_expr)
 
   if (omitted_parms_loc && exception_spec)
     {
-      pedwarn (omitted_parms_loc, 0,
+      pedwarn (omitted_parms_loc, OPT_Wc__23_extensions,
 	       "parameter declaration before lambda exception "
 	       "specification only optional with %<-std=c++2b%> or "
 	       "%<-std=gnu++2b%>");
@@ -11438,7 +11457,7 @@ cp_parser_lambda_declarator_opt (cp_parser* parser, tree lambda_expr)
   if (cp_lexer_next_token_is (parser->lexer, CPP_DEREF))
     {
       if (omitted_parms_loc)
-	pedwarn (omitted_parms_loc, 0,
+	pedwarn (omitted_parms_loc, OPT_Wc__23_extensions,
 		 "parameter declaration before lambda trailing "
 		 "return type only optional with %<-std=c++2b%> or "
 		 "%<-std=gnu++2b%>");
@@ -12301,8 +12320,9 @@ cp_parser_selection_statement (cp_parser* parser, bool *if_p,
 	    cx = true;
 	    cp_token *tok = cp_lexer_consume_token (parser->lexer);
 	    if (cxx_dialect < cxx17)
-	      pedwarn (tok->location, 0, "%<if constexpr%> only available "
-		       "with %<-std=c++17%> or %<-std=gnu++17%>");
+	      pedwarn (tok->location, OPT_Wc__17_extensions,
+		       "%<if constexpr%> only available with "
+		       "%<-std=c++17%> or %<-std=gnu++17%>");
 	  }
 
 	/* Look for the `('.  */
@@ -12327,7 +12347,8 @@ cp_parser_selection_statement (cp_parser* parser, bool *if_p,
 	  {
 	    tree decl;
 	    if (cxx_dialect < cxx17)
-	      pedwarn (cp_lexer_peek_token (parser->lexer)->location, 0,
+	      pedwarn (cp_lexer_peek_token (parser->lexer)->location,
+		       OPT_Wc__17_extensions,
 		       "init-statement in selection statements only available "
 		       "with %<-std=c++17%> or %<-std=gnu++17%>");
 	    if (cp_lexer_next_token_is_not (parser->lexer, CPP_SEMICOLON))
@@ -13398,7 +13419,8 @@ cp_parser_init_statement (cp_parser *parser, tree *decl)
 
 	  if (cxx_dialect < cxx20)
 	    {
-	      pedwarn (cp_lexer_peek_token (parser->lexer)->location, 0,
+	      pedwarn (cp_lexer_peek_token (parser->lexer)->location,
+		       OPT_Wc__20_extensions,
 		       "range-based %<for%> loops with initializer only "
 		       "available with %<-std=c++20%> or %<-std=gnu++20%>");
 	      *decl = error_mark_node;
@@ -13422,7 +13444,8 @@ cp_parser_init_statement (cp_parser *parser, tree *decl)
 	  cp_lexer_consume_token (parser->lexer);
 	  is_range_for = true;
 	  if (cxx_dialect < cxx11)
-	    pedwarn (cp_lexer_peek_token (parser->lexer)->location, 0,
+	    pedwarn (cp_lexer_peek_token (parser->lexer)->location,
+		     OPT_Wc__11_extensions,
 		     "range-based %<for%> loops only available with "
 		     "%<-std=c++11%> or %<-std=gnu++11%>");
 	}
@@ -14665,8 +14688,9 @@ cp_parser_decomposition_declaration (cp_parser *parser,
     }
 
   if (cxx_dialect < cxx17)
-    pedwarn (loc, 0, "structured bindings only available with "
-		     "%<-std=c++17%> or %<-std=gnu++17%>");
+    pedwarn (loc, OPT_Wc__17_extensions,
+	     "structured bindings only available with "
+	     "%<-std=c++17%> or %<-std=gnu++17%>");
 
   tree pushed_scope;
   cp_declarator *declarator = make_declarator (cdk_decomp);
@@ -15261,7 +15285,7 @@ cp_parser_function_specifier_opt (cp_parser* parser,
 	      = G_("types may not be defined in explicit-specifier");
 
 	    if (cxx_dialect < cxx20)
-	      pedwarn (token->location, 0,
+	      pedwarn (token->location, OPT_Wc__20_extensions,
 		       "%<explicit(bool)%> only available with %<-std=c++20%> "
 		       "or %<-std=gnu++20%>");
 
@@ -15428,8 +15452,8 @@ cp_parser_static_assert(cp_parser *parser, bool member_p)
 
   if (cp_lexer_peek_token (parser->lexer)->type == CPP_CLOSE_PAREN)
     {
-      if (cxx_dialect < cxx17)
-	pedwarn (input_location, OPT_Wpedantic,
+      if (pedantic && cxx_dialect < cxx17)
+	pedwarn (input_location, OPT_Wc__17_extensions,
 		 "%<static_assert%> without a message "
 		 "only available with %<-std=c++17%> or %<-std=gnu++17%>");
       /* Eat the ')'  */
@@ -20418,10 +20442,11 @@ cp_parser_namespace_definition (cp_parser* parser)
 							     RID_INLINE);
       if (nested_inline_p && nested_definition_count != 0)
 	{
-	  if (cxx_dialect < cxx20)
+	  if (pedantic && cxx_dialect < cxx20)
 	    pedwarn (cp_lexer_peek_token (parser->lexer)->location,
-		     OPT_Wpedantic, "nested inline namespace definitions only "
-		     "available with %<-std=c++20%> or %<-std=gnu++20%>");
+		     OPT_Wc__20_extensions, "nested inline namespace "
+		     "definitions only available with %<-std=c++20%> or "
+		     "%<-std=gnu++20%>");
 	  cp_lexer_consume_token (parser->lexer);
 	}
 
@@ -20448,8 +20473,8 @@ cp_parser_namespace_definition (cp_parser* parser)
 	  break;
 	}
 
-      if (!nested_definition_count && cxx_dialect < cxx17)
-        pedwarn (input_location, OPT_Wpedantic,
+      if (!nested_definition_count && pedantic && cxx_dialect < cxx17)
+        pedwarn (input_location, OPT_Wc__17_extensions,
 		 "nested namespace definitions only available with "
 		 "%<-std=c++17%> or %<-std=gnu++17%>");
 
@@ -20708,7 +20733,7 @@ cp_parser_using_declaration (cp_parser* parser,
     {
       cp_token *ell = cp_lexer_consume_token (parser->lexer);
       if (cxx_dialect < cxx17)
-	pedwarn (ell->location, 0,
+	pedwarn (ell->location, OPT_Wc__17_extensions,
 		 "pack expansion in using-declaration only available "
 		 "with %<-std=c++17%> or %<-std=gnu++17%>");
       qscope = make_pack_expansion (qscope);
@@ -20741,7 +20766,7 @@ cp_parser_using_declaration (cp_parser* parser,
     {
       cp_token *comma = cp_lexer_consume_token (parser->lexer);
       if (cxx_dialect < cxx17)
-	pedwarn (comma->location, 0,
+	pedwarn (comma->location, OPT_Wc__17_extensions,
 		 "comma-separated list in using-declaration only available "
 		 "with %<-std=c++17%> or %<-std=gnu++17%>");
       goto again;
@@ -21057,9 +21082,10 @@ cp_parser_asm_definition (cp_parser* parser)
      functions.  */
   if (parser->in_function_body
       && DECL_DECLARED_CONSTEXPR_P (current_function_decl)
-      && (cxx_dialect < cxx20))
-    pedwarn (asm_loc, 0, "%<asm%> in %<constexpr%> function only available "
-	     "with %<-std=c++20%> or %<-std=gnu++20%>");
+      && cxx_dialect < cxx20)
+    pedwarn (asm_loc, OPT_Wc__20_extensions, "%<asm%> in %<constexpr%> "
+	     "function only available with %<-std=c++20%> or "
+	     "%<-std=gnu++20%>");
 
   /* Handle the asm-qualifier-list.  */
   location_t volatile_loc = UNKNOWN_LOCATION;
@@ -24131,11 +24157,11 @@ cp_parser_ctor_initializer_opt_and_function_body (cp_parser *parser,
       && cxx_dialect < cxx20)
     {
       if (DECL_CONSTRUCTOR_P (current_function_decl))
-	pedwarn (input_location, 0,
+	pedwarn (input_location, OPT_Wc__20_extensions,
 		 "function-try-block body of %<constexpr%> constructor only "
 		 "available with %<-std=c++20%> or %<-std=gnu++20%>");
       else
-	pedwarn (input_location, 0,
+	pedwarn (input_location, OPT_Wc__20_extensions,
 		 "function-try-block body of %<constexpr%> function only "
 		 "available with %<-std=c++20%> or %<-std=gnu++20%>");
     }
@@ -24458,8 +24484,8 @@ cp_parser_initializer_list (cp_parser* parser, bool* non_constant_p,
 	      || (cp_lexer_peek_nth_token (parser->lexer, 3)->type
 		  == CPP_OPEN_BRACE)))
 	{
-	  if (cxx_dialect < cxx20)
-	    pedwarn (loc, OPT_Wpedantic,
+	  if (pedantic && cxx_dialect < cxx20)
+	    pedwarn (loc, OPT_Wc__20_extensions,
 		     "C++ designated initializers only available with "
 		     "%<-std=c++20%> or %<-std=gnu++20%>");
 	  /* Consume the `.'.  */
@@ -25800,10 +25826,11 @@ cp_parser_type_parameter_key (cp_parser* parser)
   if ((tag_type = cp_parser_token_is_type_parameter_key (token)) != none_type)
     {
       cp_lexer_consume_token (parser->lexer);
-      if (pedantic && tag_type == typename_type && cxx_dialect < cxx17)
+      if (pedantic && tag_type == typename_type
+	  && cxx_dialect < cxx17)
 	/* typename is not allowed in a template template parameter
 	   by the standard until C++17.  */
-	pedwarn (token->location, OPT_Wpedantic,
+	pedwarn (token->location, OPT_Wc__17_extensions,
 		 "ISO C++ forbids typename key in template template parameter;"
 		 " use %<-std=c++17%> or %<-std=gnu++17%>");
     }
@@ -26197,7 +26224,7 @@ cp_parser_member_declaration (cp_parser* parser)
 		    = cp_lexer_peek_token (parser->lexer)->location;
 		  if (cxx_dialect < cxx20
 		      && identifier != NULL_TREE)
-		    pedwarn (loc, 0,
+		    pedwarn (loc, OPT_Wc__20_extensions,
 			     "default member initializers for bit-fields "
 			     "only available with %<-std=c++20%> or "
 			     "%<-std=gnu++20%>");
@@ -27158,7 +27185,7 @@ cp_parser_try_block (cp_parser* parser)
   if (parser->in_function_body
       && DECL_DECLARED_CONSTEXPR_P (current_function_decl)
       && cxx_dialect < cxx20)
-    pedwarn (input_location, 0,
+    pedwarn (input_location, OPT_Wc__20_extensions,
 	     "%<try%> in %<constexpr%> function only "
 	     "available with %<-std=c++20%> or %<-std=gnu++20%>");
 
@@ -28117,7 +28144,7 @@ cp_parser_std_attribute_spec (cp_parser *parser)
 	      && cp_lexer_nth_token_is (parser->lexer, 3, CPP_COLON))
 	    {
 	      if (cxx_dialect < cxx17)
-		pedwarn (input_location, 0,
+		pedwarn (input_location, OPT_Wc__17_extensions,
 			 "attribute using prefix only available "
 			 "with %<-std=c++17%> or %<-std=gnu++17%>");
 
@@ -35105,7 +35132,9 @@ cp_parser_omp_clause_name (cp_parser *parser)
       switch (p[0])
 	{
 	case 'a':
-	  if (!strcmp ("aligned", p))
+	  if (!strcmp ("affinity", p))
+	    result = PRAGMA_OMP_CLAUSE_AFFINITY;
+	  else if (!strcmp ("aligned", p))
 	    result = PRAGMA_OMP_CLAUSE_ALIGNED;
 	  else if (!strcmp ("allocate", p))
 	    result = PRAGMA_OMP_CLAUSE_ALLOCATE;
@@ -35364,7 +35393,7 @@ cp_parser_omp_var_list_no_open (cp_parser *parser, enum omp_clause_code kind,
     {
       tree name, decl;
 
-      if (kind == OMP_CLAUSE_DEPEND)
+      if (kind == OMP_CLAUSE_DEPEND || kind == OMP_CLAUSE_AFFINITY)
 	cp_parser_parse_tentatively (parser);
       token = cp_lexer_peek_token (parser->lexer);
       if (kind != 0
@@ -35393,7 +35422,7 @@ cp_parser_omp_var_list_no_open (cp_parser *parser, enum omp_clause_code kind,
 					  /*optional_p=*/false);
 	  if (name == error_mark_node)
 	    {
-	      if (kind == OMP_CLAUSE_DEPEND
+	      if ((kind == OMP_CLAUSE_DEPEND || kind == OMP_CLAUSE_AFFINITY)
 		  && cp_parser_simulate_error (parser))
 		goto depend_lvalue;
 	      goto skip_comma;
@@ -35405,7 +35434,7 @@ cp_parser_omp_var_list_no_open (cp_parser *parser, enum omp_clause_code kind,
 	    decl = name;
 	  if (decl == error_mark_node)
 	    {
-	      if (kind == OMP_CLAUSE_DEPEND
+	      if ((kind == OMP_CLAUSE_DEPEND || kind == OMP_CLAUSE_AFFINITY)
 		  && cp_parser_simulate_error (parser))
 		goto depend_lvalue;
 	      cp_parser_name_lookup_error (parser, name, decl, NLE_NULL,
@@ -35451,6 +35480,7 @@ cp_parser_omp_var_list_no_open (cp_parser *parser, enum omp_clause_code kind,
 							      &idk, loc);
 		}
 	      /* FALLTHROUGH.  */
+	    case OMP_CLAUSE_AFFINITY:
 	    case OMP_CLAUSE_DEPEND:
 	    case OMP_CLAUSE_REDUCTION:
 	    case OMP_CLAUSE_IN_REDUCTION:
@@ -35477,12 +35507,12 @@ cp_parser_omp_var_list_no_open (cp_parser *parser, enum omp_clause_code kind,
 		      /* Look for `:'.  */
 		      if (!cp_parser_require (parser, CPP_COLON, RT_COLON))
 			{
-			  if (kind == OMP_CLAUSE_DEPEND
+			  if ((kind == OMP_CLAUSE_DEPEND || kind == OMP_CLAUSE_AFFINITY)
 			      && cp_parser_simulate_error (parser))
 			    goto depend_lvalue;
 			  goto skip_comma;
 			}
-		      if (kind == OMP_CLAUSE_DEPEND)
+		      if (kind == OMP_CLAUSE_DEPEND || kind == OMP_CLAUSE_AFFINITY)
 			cp_parser_commit_to_tentative_parse (parser);
 		      if (!cp_lexer_next_token_is (parser->lexer,
 						   CPP_CLOSE_SQUARE))
@@ -35496,7 +35526,7 @@ cp_parser_omp_var_list_no_open (cp_parser *parser, enum omp_clause_code kind,
 		  if (!cp_parser_require (parser, CPP_CLOSE_SQUARE,
 					  RT_CLOSE_SQUARE))
 		    {
-		      if (kind == OMP_CLAUSE_DEPEND
+		      if ((kind == OMP_CLAUSE_DEPEND || kind == OMP_CLAUSE_AFFINITY)
 			  && cp_parser_simulate_error (parser))
 			goto depend_lvalue;
 		      goto skip_comma;
@@ -35509,7 +35539,7 @@ cp_parser_omp_var_list_no_open (cp_parser *parser, enum omp_clause_code kind,
 	      break;
 	    }
 
-	  if (kind == OMP_CLAUSE_DEPEND)
+	  if (kind == OMP_CLAUSE_DEPEND || kind == OMP_CLAUSE_AFFINITY)
 	    {
 	      if (cp_lexer_next_token_is_not (parser->lexer, CPP_COMMA)
 		  && cp_lexer_next_token_is_not (parser->lexer, CPP_CLOSE_PAREN)
@@ -37749,6 +37779,66 @@ cp_parser_omp_iterators (cp_parser *parser)
   return ret ? ret : error_mark_node;
 }
 
+/* OpenMP 5.0:
+   affinity ( [aff-modifier :] variable-list )
+   aff-modifier:
+     iterator ( iterators-definition )  */
+
+static tree
+cp_parser_omp_clause_affinity (cp_parser *parser, tree list)
+{
+  tree nlist, c, iterators = NULL_TREE;
+
+  matching_parens parens;
+  if (!parens.require_open (parser))
+    return list;
+
+  if (cp_lexer_next_token_is (parser->lexer, CPP_NAME))
+    {
+      tree id = cp_lexer_peek_token (parser->lexer)->u.value;
+      const char *p = IDENTIFIER_POINTER (id);
+      bool parse_iter = ((strcmp ("iterator", p) == 0)
+			 && (cp_lexer_nth_token_is (parser->lexer, 2,
+						    CPP_OPEN_PAREN)));
+      if (parse_iter)
+	{
+	  size_t n = cp_parser_skip_balanced_tokens (parser, 2);
+	  parse_iter = cp_lexer_nth_token_is (parser->lexer, n, CPP_COLON);
+	}
+      if (parse_iter)
+	{
+	  begin_scope (sk_omp, NULL);
+	  iterators = cp_parser_omp_iterators (parser);
+	  if (!cp_parser_require (parser, CPP_COLON, RT_COLON))
+	    {
+	      if (iterators)
+		poplevel (0, 1, 0);
+	      cp_parser_skip_to_closing_parenthesis (parser,
+						     /*recovering=*/true,
+						     /*or_comma=*/false,
+						     /*consume_paren=*/true);
+	      return list;
+	    }
+	}
+    }
+  nlist = cp_parser_omp_var_list_no_open (parser, OMP_CLAUSE_AFFINITY,
+					  list, NULL);
+  if (iterators)
+    {
+      tree block = poplevel (1, 1, 0);
+      if (iterators == error_mark_node)
+	iterators = NULL_TREE;
+      else
+	{
+	  TREE_VEC_ELT (iterators, 5) = block;
+	  for (c = nlist; c != list; c = OMP_CLAUSE_CHAIN (c))
+	    OMP_CLAUSE_DECL (c) = build_tree_list (iterators,
+						   OMP_CLAUSE_DECL (c));
+	}
+    }
+  return nlist;
+}
+
 /* OpenMP 4.0:
    depend ( depend-kind : variable-list )
 
@@ -38740,6 +38830,10 @@ cp_parser_omp_all_clauses (cp_parser *parser, omp_clause_mask mask,
 	    clauses = cp_parser_omp_clause_linear (parser, clauses, declare_simd);
 	  }
 	  c_name = "linear";
+	  break;
+	case PRAGMA_OMP_CLAUSE_AFFINITY:
+	  clauses = cp_parser_omp_clause_affinity (parser, clauses);
+	  c_name = "affinity";
 	  break;
 	case PRAGMA_OMP_CLAUSE_DEPEND:
 	  clauses = cp_parser_omp_clause_depend (parser, clauses,
@@ -41337,7 +41431,8 @@ cp_parser_omp_single (cp_parser *parser, cp_token *pragma_tok, bool *if_p)
 	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_PRIORITY)	\
 	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_ALLOCATE)	\
 	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_IN_REDUCTION)	\
-	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_DETACH))
+	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_DETACH)	\
+	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_AFFINITY))
 
 static tree
 cp_parser_omp_task (cp_parser *parser, cp_token *pragma_tok, bool *if_p)

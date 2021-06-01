@@ -1,3 +1,166 @@
+2021-05-30  Gerald Pfeifer  <gerald@pfeifer.com>
+
+	* doc/xml/manual/abi.xml: Remove dead reference to "Intel
+	Compilers for Linux: Compatibility with GNU Compilers" article.
+	* doc/html/manual/abi.html: Regenerate.
+
+2021-05-26  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/debug/formatter.h
+	(_Error_formatter::_Parameter::_Named): New.
+	(_Error_formatter::_Parameter::_Type): Inherit latter.
+	(_Error_formatter::_Parameter::_M_integer): Likewise.
+	(_Error_formatter::_Parameter::_M_string): Likewise.
+	* src/c++11/debug.cc: Include <cstring>.
+	(_Print_func_t): New.
+	(print_raw(PrintContext&, const char*, ptrdiff_t)): New.
+	(print_word): Use '%.*s' format in fprintf to render only expected number of chars.
+	(pretty_print(PrintContext&, const char*, _Print_func_t)): New.
+	(print_type): Rename in...
+	(print_type_info): ...this. Use pretty_print.
+	(print_address, print_integer): New.
+	(print_named_name, print_iterator_constness, print_iterator_state): New.
+	(print_iterator_seq_type): New.
+	(print_named_field, print_type_field, print_instance_field, print_iterator_field): New.
+	(print_field): Use latters.
+	(print_quoted_named_name, print_type_type, print_type, print_instance): New.
+	(print_string(PrintContext&, const char*, const _Parameter*, size_t)):
+	Change signature to...
+	(print_string(PrintContext&, const char*, ptrdiff_t, const _Parameter*, size_t)):
+	...this and adapt. Remove intermediate buffer to render input string.
+	(print_string(PrintContext&, const char*, ptrdiff_t)): New.
+
+2021-05-26  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/100768
+	* include/bits/ranges_base.h (advance, distance, next, prev):
+	Replace function templates with function objects.
+	* testsuite/24_iterators/headers/iterator/synopsis_c++20.cc:
+	Adjust for changes to function objects.
+	* testsuite/std/ranges/adaptors/elements.cc: Add using
+	declarations for names from namespace ranges.
+	* testsuite/std/ranges/adaptors/transform.cc: Likewise.
+	* testsuite/24_iterators/range_operations/100768.cc: New test.
+
+2021-05-24  François Dumont  <fdumont@gcc.gnu.org>
+
+	PR libstdc++/96088
+	* include/bits/hashtable_policy.h (_Select2nd): New.
+	(_NodeBuilder<>): New.
+	(_ReuseOrAllocNode<>::operator()): Use variadic template args.
+	(_AllocNode<>::operator()): Likewise.
+	* include/bits/hashtable.h
+	(_Hashtable<>::__node_builder_t): New.
+	(_Hashtable<>::_M_insert_unique<>(_Kt&&, _Arg&&, const _NodeGenerator&)):
+	 New.
+	(_Hashtable<>::_S_forward_key): New.
+	(_Hashtable<>::_M_insert): Use latter.
+	(_Hashtable<>::_M_insert(const_iterator, _Arg&&, const _NodeGenerator&, false_type)):
+	Instantiate node first, compute hash code second.
+	* testsuite/23_containers/unordered_map/96088.cc: New test.
+	* testsuite/23_containers/unordered_multimap/96088.cc: New test.
+	* testsuite/23_containers/unordered_multiset/96088.cc: New test.
+	* testsuite/23_containers/unordered_set/96088.cc: New test.
+	* testsuite/util/replacement_memory_operators.h
+	(counter::_M_increment): New.
+	(counter::_M_decrement): New.
+	(counter::reset()): New.
+
+2021-05-24  Patrick Palka  <ppalka@redhat.com>
+
+	PR libstdc++/100479
+	* include/std/ranges (__detail::__non_propagating_cache): Move
+	definition up to before that of _CachedPosition.  Make base
+	class _Optional_base protected instead of private.  Add const
+	overload for operator*.
+	(__detail::_CachedPosition): Rewrite the partial specialization
+	for forward ranges as a derived class of __non_propagating_cache.
+	Remove the size constraint on the partial specialization for
+	random access ranges.  Add copy/move/copy-assignment/move-assignment
+	members to the offset partial specialization for random
+	access ranges that propagate the cached value but additionally
+	invalidate it in the source object on move.
+	* testsuite/std/ranges/adaptors/100479.cc: New test.
+
+2021-05-24  Jonathan Wakely  <jwakely@redhat.com>
+
+	* testsuite/25_algorithms/inplace_merge/constrained.cc: Qualify
+	call to ranges::next.
+	* testsuite/25_algorithms/is_sorted/constrained.cc: Likewise.
+	* testsuite/25_algorithms/is_sorted_until/constrained.cc:
+	Likewise.
+	* testsuite/25_algorithms/swap_ranges/1.cc: Qualify call to
+	swap_ranges.
+
+2021-05-21  Patrick Palka  <ppalka@redhat.com>
+
+	PR libstdc++/100606
+	* include/std/ranges (drop_while_view::begin): Assert the
+	precondition added by LWG 3490.
+
+2021-05-21  Patrick Palka  <ppalka@redhat.com>
+
+	PR libstdc++/100690
+	* include/std/ranges (iota_view::_Sentinel::_M_distance_from):
+	Split out this member function from ...
+	(iota_view::_Sentinel::operator-): ... here, for sake of access
+	control.
+	* testsuite/std/ranges/iota/iota_view.cc (test05): New test.
+
+2021-05-20  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/random.tcc (__representable_as_double)
+	(__p1_representable_as_double): Add "" to static asserts.
+
+2021-05-20  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/100676
+	* include/bits/c++config (__glibcxx_assert_1): Rename to ...
+	(__glibcxx_constexpr_assert): ... this.
+	(__glibcxx_assert_impl): Use __glibcxx_constexpr_assert.
+	(__glibcxx_assert): Define as either __glibcxx_constexpr_assert
+	or __glibcxx_assert_impl.
+	(__glibcxx_assert_2): Remove
+	* include/debug/macros.h (_GLIBCXX_DEBUG_VERIFY_AT_F): Use
+	__glibcxx_constexpr_assert instead of __glibcxx_assert_1.
+	* testsuite/21_strings/basic_string_view/element_access/char/back_constexpr_neg.cc:
+	Adjust expected error.
+	* testsuite/21_strings/basic_string_view/element_access/char/constexpr_neg.cc:
+	Likewise.
+	* testsuite/21_strings/basic_string_view/element_access/char/front_constexpr_neg.cc:
+	Likewise.
+	Likewise.
+	* testsuite/21_strings/basic_string_view/element_access/wchar_t/back_constexpr_neg.cc:
+	Likewise.
+	* testsuite/21_strings/basic_string_view/element_access/wchar_t/constexpr_neg.cc:
+	Likewise.
+	* testsuite/21_strings/basic_string_view/element_access/wchar_t/front_constexpr_neg.cc:
+	Likewise.
+	* testsuite/23_containers/span/back_neg.cc: Likewise.
+	* testsuite/23_containers/span/front_neg.cc: Likewise.
+	* testsuite/23_containers/span/index_op_neg.cc: Likewise.
+
+2021-05-20  Patrick Palka  <ppalka@redhat.com>
+
+	PR libstdc++/100639
+	* include/bits/stl_iterator.h (reverse_iterator::difference_type):
+	In C++20 mode, define in terms of iter_difference_t as per P0896R4.
+	(reverse_iterator::reference): Likewise, but with iter_reference_t.
+	(reverse_iterator::value_type): Likewise, but with iter_value_t.
+	* testsuite/std/ranges/adaptors/reverse.cc (test08): New test.
+	* testsuite/24_iterators/reverse_iterator/100639.cc: New test.
+
+2021-05-20  Joern Rennecke  <joern.rennecke@riscy-ip.com>
+
+	PR libstdc++/100361
+	* include/std/charconv (to_chars): Hide the overloads for
+	floating-point types for 16 bit targets.
+	* src/c++17/floating_to_chars.cc: Don't compile for 16 bit targets.
+	* testsuite/20_util/to_chars/double.cc: Run this test only on
+	size32plus targets.
+	* testsuite/20_util/to_chars/float.cc: Likewise.
+	* testsuite/20_util/to_chars/long_double.cc: Likewise.
+
 2021-05-18  Patrick Palka  <ppalka@redhat.com>
 
 	PR libstdc++/100631
