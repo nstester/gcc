@@ -1613,11 +1613,11 @@ namespace views::__adaptor
 	  static auto
 	  _S_iter_concept()
 	  {
-	    if constexpr (random_access_range<_Vp>)
+	    if constexpr (random_access_range<_Base>)
 	      return random_access_iterator_tag{};
-	    else if constexpr (bidirectional_range<_Vp>)
+	    else if constexpr (bidirectional_range<_Base>)
 	      return bidirectional_iterator_tag{};
-	    else if constexpr (forward_range<_Vp>)
+	    else if constexpr (forward_range<_Base>)
 	      return forward_iterator_tag{};
 	    else
 	      return input_iterator_tag{};
@@ -2932,13 +2932,7 @@ namespace views::__adaptor
 
 	    constexpr _InnerIter<_Const>
 	    begin() const
-	      requires copyable<_OuterIter>
 	    { return _InnerIter<_Const>{_M_i}; }
-
-	    constexpr _InnerIter<_Const>
-	    begin()
-	      requires (!copyable<_OuterIter>)
-	    { return _InnerIter<_Const>{std::move(_M_i)}; }
 
 	    constexpr default_sentinel_t
 	    end() const
@@ -3659,11 +3653,11 @@ namespace views::__adaptor
 	  static auto
 	  _S_iter_concept()
 	  {
-	    if constexpr (random_access_range<_Vp>)
+	    if constexpr (random_access_range<_Base>)
 	      return random_access_iterator_tag{};
-	    else if constexpr (bidirectional_range<_Vp>)
+	    else if constexpr (bidirectional_range<_Base>)
 	      return bidirectional_iterator_tag{};
-	    else if constexpr (forward_range<_Vp>)
+	    else if constexpr (forward_range<_Base>)
 	      return forward_iterator_tag{};
 	    else
 	      return input_iterator_tag{};
