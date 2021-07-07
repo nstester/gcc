@@ -481,7 +481,13 @@ package body Einfo.Utils is
 
    procedure Init_Size (Id : E; V : Int) is
    begin
-      pragma Assert (not Is_Object (Id));
+      pragma Assert (Is_Type (Id));
+      pragma Assert
+        (not Known_Esize (Id) or else Esize (Id) = V);
+      pragma Assert
+        (RM_Size (Id) = No_Uint
+           or else RM_Size (Id) = Uint_0
+           or else RM_Size (Id) = V);
       Set_Esize (Id, UI_From_Int (V));
       Set_RM_Size (Id, UI_From_Int (V));
    end Init_Size;
@@ -492,7 +498,7 @@ package body Einfo.Utils is
 
    procedure Init_Size_Align (Id : E) is
    begin
-      pragma Assert (not Is_Object (Id));
+      pragma Assert (Ekind (Id) in Type_Kind | E_Void);
       Set_Esize (Id, Uint_0);
       Set_RM_Size (Id, Uint_0);
       Set_Alignment (Id, Uint_0);
@@ -2487,15 +2493,15 @@ package body Einfo.Utils is
             return Direct_Primitive_Operations
               (Corresponding_Record_Type (Id));
 
-         --  If expansion is disabled the corresponding record type is absent,
-         --  but if the type has ancestors it may have primitive operations.
-
-         elsif Is_Tagged_Type (Id) then
-            return Direct_Primitive_Operations (Id);
+         --  When expansion is disabled, the corresponding record type is
+         --  absent, but if this is a tagged type with ancestors, or if the
+         --  extension of prefixed calls for untagged types is enabled, then
+         --  it may have associated primitive operations.
 
          else
-            return No_Elist;
+            return Direct_Primitive_Operations (Id);
          end if;
+
       else
          return Direct_Primitive_Operations (Id);
       end if;
@@ -2927,8 +2933,13 @@ package body Einfo.Utils is
    -----------------
 
    function Size_Clause (Id : E) return N is
+      Result : N := Get_Attribute_Definition_Clause (Id, Attribute_Size);
    begin
-      return Get_Attribute_Definition_Clause (Id, Attribute_Size);
+      if No (Result) then
+         Result := Get_Attribute_Definition_Clause (Id, Attribute_Value_Size);
+      end if;
+
+      return Result;
    end Size_Clause;
 
    ------------------------
