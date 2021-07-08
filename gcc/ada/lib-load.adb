@@ -451,8 +451,8 @@ package body Lib.Load is
               With_Node  => With_Node);
 
          if Unump = No_Unit then
-            Parsing_Main_Extended_Source := Save_PMES;
-            return No_Unit;
+            Unum := No_Unit;
+            goto Done;
          end if;
 
          --  If parent is a renaming, then we use the renamed package as
@@ -823,7 +823,7 @@ package body Lib.Load is
                      Units.Table (Calling_Unit).Fatal_Error := Error_Detected;
 
                   --  If with'ed unit had an ignored error, then propagate it
-                  --  but do not overide an existring setting.
+                  --  but do not overide an existing setting.
 
                   when Error_Ignored =>
                      if Units.Table (Calling_Unit).Fatal_Error = None then
@@ -900,7 +900,7 @@ package body Lib.Load is
                Remove_Unit (Unum);
 
             --  If unit not required, remove load stack entry and the junk
-            --  file table entry, and return No_Unit to indicate not found,
+            --  file table entry, and return No_Unit to indicate not found.
 
             else
                Load_Stack.Decrement_Last;
