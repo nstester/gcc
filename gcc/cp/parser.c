@@ -11628,6 +11628,9 @@ cp_parser_lambda_body (cp_parser* parser, tree lambda_expr)
        middle of an expression.  */
     ++function_depth;
 
+  auto odsd = make_temp_override (parser->omp_declare_simd, NULL);
+  auto ord = make_temp_override (parser->oacc_routine, NULL);
+  auto oafp = make_temp_override (parser->omp_attrs_forbidden_p, false);
   vec<tree> omp_privatization_save;
   save_omp_privatization_clauses (omp_privatization_save);
   /* Clear this in case we're in the middle of a default argument.  */
@@ -12271,9 +12274,11 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
 	       so let's un-parse them.  */
 	    saved_tokens.rollback();
 
+	  parser->omp_attrs_forbidden_p = omp_attrs_forbidden_p;
 	  cp_parser_parse_tentatively (parser);
 	  /* Try to parse the declaration-statement.  */
 	  cp_parser_declaration_statement (parser);
+	  parser->omp_attrs_forbidden_p = false;
 	  /* If that worked, we're done.  */
 	  if (cp_parser_parse_definitely (parser))
 	    return;
@@ -14853,6 +14858,7 @@ cp_parser_block_declaration (cp_parser *parser,
   /* Peek at the next token to figure out which kind of declaration is
      present.  */
   cp_token *token1 = cp_lexer_peek_token (parser->lexer);
+  size_t attr_idx;
 
   /* If the next keyword is `asm', we have an asm-definition.  */
   if (token1->keyword == RID_ASM)
@@ -14906,6 +14912,18 @@ cp_parser_block_declaration (cp_parser *parser,
   /* If the next token is `static_assert' we have a static assertion.  */
   else if (token1->keyword == RID_STATIC_ASSERT)
     cp_parser_static_assert (parser, /*member_p=*/false);
+  /* If the next tokens after attributes is `using namespace', then we have
+     a using-directive.  */
+  else if ((attr_idx = cp_parser_skip_std_attribute_spec_seq (parser, 1)) != 1
+	   && cp_lexer_nth_token_is_keyword (parser->lexer, attr_idx,
+					     RID_USING)
+	   && cp_lexer_nth_token_is_keyword (parser->lexer, attr_idx + 1,
+					     RID_NAMESPACE))
+    {
+      if (statement_p)
+	cp_parser_commit_to_tentative_parse (parser);
+      cp_parser_using_directive (parser);
+    }
   /* Anything else must be a simple-declaration.  */
   else
     cp_parser_simple_declaration (parser, !statement_p,
@@ -21609,14 +21627,21 @@ cp_parser_alias_declaration (cp_parser* parser)
 /* Parse a using-directive.
 
    using-directive:
-     using namespace :: [opt] nested-name-specifier [opt]
-       namespace-name ;  */
+     attribute-specifier-seq [opt] using namespace :: [opt]
+       nested-name-specifier [opt] namespace-name ;  */
 
 static void
 cp_parser_using_directive (cp_parser* parser)
 {
   tree namespace_decl;
-  tree attribs;
+  tree attribs = cp_parser_std_attribute_spec_seq (parser);
+  if (cp_lexer_next_token_is (parser->lexer, CPP_SEMICOLON))
+    {
+      /* Error during attribute parsing that resulted in skipping
+	 to next semicolon.  */
+      cp_parser_require (parser, CPP_SEMICOLON, RT_SEMICOLON);
+      return;
+    }
 
   /* Look for the `using' keyword.  */
   cp_parser_require_keyword (parser, RID_USING, RT_USING);
@@ -21633,8 +21658,9 @@ cp_parser_using_directive (cp_parser* parser)
   /* Get the namespace being used.  */
   namespace_decl = cp_parser_namespace_name (parser);
   cp_warn_deprecated_use_scopes (namespace_decl);
-  /* And any specified attributes.  */
-  attribs = cp_parser_attributes_opt (parser);
+  /* And any specified GNU attributes.  */
+  if (cp_next_tokens_can_be_gnu_attribute_p (parser))
+    attribs = chainon (attribs, cp_parser_gnu_attributes_opt (parser));
 
   /* Update the symbol table.  */
   finish_using_directive (namespace_decl, attribs);
@@ -24747,6 +24773,8 @@ cp_parser_default_argument (cp_parser *parser, bool template_parm_p)
   parser->greater_than_is_operator_p = !template_parm_p;
   auto odsd = make_temp_override (parser->omp_declare_simd, NULL);
   auto ord = make_temp_override (parser->oacc_routine, NULL);
+  auto oafp = make_temp_override (parser->omp_attrs_forbidden_p, false);
+
   /* Local variable names (and the `this' keyword) may not
      appear in a default argument.  */
   saved_local_variables_forbidden_p = parser->local_variables_forbidden_p;
@@ -44482,6 +44510,14 @@ cp_parser_late_parsing_omp_declare_simd (cp_parser *parser, tree attrs)
 		    continue;
 		  }
 
+		if (parser->omp_attrs_forbidden_p)
+		  {
+		    error_at (first->location,
+			      "mixing OpenMP directives with attribute and "
+			      "pragma syntax on the same statement");
+		    parser->omp_attrs_forbidden_p = false;
+		  }
+
 		if (!flag_openmp && strcmp (directive[1], "simd") != 0)
 		  continue;
 		if (lexer == NULL)
@@ -44605,8 +44641,10 @@ cp_parser_omp_declare_target (cp_parser *parser, cp_token *pragma_tok)
     }
   else
     {
+      struct omp_declare_target_attr a
+	= { parser->lexer->in_omp_attribute_pragma };
+      vec_safe_push (scope_chain->omp_declare_target_attribute, a);
       cp_parser_require_pragma_eol (parser, pragma_tok);
-      scope_chain->omp_declare_target_attribute++;
       return;
     }
   for (tree c = clauses; c; c = OMP_CLAUSE_CHAIN (c))
@@ -44687,6 +44725,7 @@ static void
 cp_parser_omp_end_declare_target (cp_parser *parser, cp_token *pragma_tok)
 {
   const char *p = "";
+  bool in_omp_attribute_pragma = parser->lexer->in_omp_attribute_pragma;
   if (cp_lexer_next_token_is (parser->lexer, CPP_NAME))
     {
       tree id = cp_lexer_peek_token (parser->lexer)->u.value;
@@ -44717,12 +44756,26 @@ cp_parser_omp_end_declare_target (cp_parser *parser, cp_token *pragma_tok)
       return;
     }
   cp_parser_require_pragma_eol (parser, pragma_tok);
-  if (!scope_chain->omp_declare_target_attribute)
+  if (!vec_safe_length (scope_chain->omp_declare_target_attribute))
     error_at (pragma_tok->location,
 	      "%<#pragma omp end declare target%> without corresponding "
 	      "%<#pragma omp declare target%>");
   else
-    scope_chain->omp_declare_target_attribute--;
+    {
+      omp_declare_target_attr
+	a = scope_chain->omp_declare_target_attribute->pop ();
+      if (a.attr_syntax != in_omp_attribute_pragma)
+	{
+	  if (a.attr_syntax)
+	    error_at (pragma_tok->location,
+		      "%<declare target%> in attribute syntax terminated "
+		      "with %<end declare target%> in pragma syntax");
+	  else
+	    error_at (pragma_tok->location,
+		      "%<declare target%> in pragma syntax terminated "
+		      "with %<end declare target%> in attribute syntax");
+	}
+    }
 }
 
 /* Helper function of cp_parser_omp_declare_reduction.  Parse the combiner
