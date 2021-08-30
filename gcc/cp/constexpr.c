@@ -7445,6 +7445,11 @@ cxx_eval_outermost_constant_expr (tree t, bool allow_non_constant,
 	}
     }
 
+  /* Remember the original location if that wouldn't need a wrapper.  */
+  if (location_t loc = EXPR_LOCATION (t))
+    if (CAN_HAVE_LOCATION_P (r))
+      SET_EXPR_LOCATION (r, loc);
+
   return r;
 }
 
@@ -7456,6 +7461,18 @@ tree
 cxx_constant_value (tree t, tree decl)
 {
   return cxx_eval_outermost_constant_expr (t, false, true, true, false, decl);
+}
+
+/* As above, but respect SFINAE.  */
+
+tree
+cxx_constant_value_sfinae (tree t, tsubst_flags_t complain)
+{
+  bool sfinae = !(complain & tf_error);
+  tree r = cxx_eval_outermost_constant_expr (t, sfinae, true, true);
+  if (sfinae && !TREE_CONSTANT (r))
+    r = error_mark_node;
+  return r;
 }
 
 /* Like cxx_constant_value, but used for evaluation of constexpr destructors
