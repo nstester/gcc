@@ -233,6 +233,12 @@
    V16SF (V8SF "TARGET_AVX512VL") (V4SF "TARGET_AVX512VL")
    V8DF  (V4DF "TARGET_AVX512VL") (V2DF "TARGET_AVX512VL")])
 
+(define_mode_iterator V48_256_512_AVX512VL
+  [V16SI (V8SI "TARGET_AVX512VL")
+   V8DI  (V4DI "TARGET_AVX512VL")
+   V16SF (V8SF "TARGET_AVX512VL")
+   V8DF  (V4DF "TARGET_AVX512VL")])
+
 ;; 1,2 byte AVX-512{BW,VL} vector modes. Supposed TARGET_AVX512BW baseline.
 (define_mode_iterator VI12_AVX512VL
   [V64QI (V16QI "TARGET_AVX512VL") (V32QI "TARGET_AVX512VL")
@@ -826,6 +832,15 @@
    (V8SF "V8SF") (V4DF "V4DF")
    (V4SF "V4SF") (V2DF "V2DF")
    (V8HF "TI") (V16HF "OI") (V32HF "XI")
+   (TI "TI")])
+
+(define_mode_attr sseintvecinsnmode
+  [(V64QI "XI") (V32HI "XI") (V16SI "XI") (V8DI "XI") (V4TI "XI")
+   (V32QI "OI") (V16HI "OI") (V8SI "OI") (V4DI "OI") (V2TI "OI")
+   (V16QI "TI") (V8HI "TI") (V4SI "TI") (V2DI "TI") (V1TI "TI")
+   (V16SF "XI") (V8DF "XI")
+   (V8SF "OI") (V4DF "OI")
+   (V4SF "TI") (V2DF "TI")
    (TI "TI")])
 
 ;; SSE constant -1 constraint
@@ -2980,19 +2995,36 @@
    (set_attr "prefix_rep" "1,*")
    (set_attr "mode" "V4SF")])
 
-(define_mode_iterator REDUC_SSE_PLUS_MODE
- [(V2DF "TARGET_SSE") (V4SF "TARGET_SSE")])
-
-(define_expand "reduc_plus_scal_<mode>"
- [(plus:REDUC_SSE_PLUS_MODE
-   (match_operand:<ssescalarmode> 0 "register_operand")
-   (match_operand:REDUC_SSE_PLUS_MODE 1 "register_operand"))]
- ""
+(define_expand "reduc_plus_scal_v4sf"
+ [(plus:V4SF
+   (match_operand:SF 0 "register_operand")
+   (match_operand:V4SF 1 "register_operand"))]
+ "TARGET_SSE"
 {
-  rtx tmp = gen_reg_rtx (<MODE>mode);
-  ix86_expand_reduc (gen_add<mode>3, tmp, operands[1]);
-  emit_insn (gen_vec_extract<mode><ssescalarmodelower> (operands[0], tmp,
-                                                        const0_rtx));
+  rtx vtmp = gen_reg_rtx (V4SFmode);
+  rtx stmp = gen_reg_rtx (SFmode);
+  if (TARGET_SSE3)
+    emit_insn (gen_sse3_movshdup (vtmp, operands[1]));
+  else
+    emit_insn (gen_sse_shufps (vtmp, operands[1], operands[1], GEN_INT(177)));
+
+  emit_insn (gen_addv4sf3 (operands[1], operands[1], vtmp));
+  emit_insn (gen_sse_movhlps (vtmp, vtmp, operands[1]));
+  emit_insn (gen_vec_extractv4sfsf (stmp, vtmp, const0_rtx));
+  emit_insn (gen_vec_extractv4sfsf (operands[0], operands[1], const0_rtx));
+  emit_insn (gen_addsf3 (operands[0], operands[0], stmp));
+  DONE;
+})
+
+(define_expand "reduc_plus_scal_v2df"
+ [(plus:V2DF
+   (match_operand:DF 0 "register_operand")
+   (match_operand:V2DF 1 "register_operand"))]
+ "TARGET_SSE"
+{
+  rtx tmp = gen_reg_rtx (V2DFmode);
+  ix86_expand_reduc (gen_addv2df3, tmp, operands[1]);
+  emit_insn (gen_vec_extractv2dfdf (operands[0], tmp, const0_rtx));
   DONE;
 })
 
@@ -10516,6 +10548,23 @@
   "valign<ssemodesuffix>\t{%3, %2, %1, %0<mask_operand4>|%0<mask_operand4>, %1, %2, %3}";
   [(set_attr "prefix" "evex")
    (set_attr "mode" "<sseinsnmode>")])
+
+(define_mode_attr vec_extract_imm_predicate
+  [(V16SF "const_0_to_15_operand") (V8SF "const_0_to_7_operand")
+   (V16SI "const_0_to_15_operand") (V8SI "const_0_to_7_operand")
+   (V8DF "const_0_to_7_operand") (V4DF "const_0_to_3_operand")
+   (V8DI "const_0_to_7_operand") (V4DI "const_0_to_3_operand")])
+
+(define_insn "*vec_extract<mode><ssescalarmodelower>_valign"
+  [(set (match_operand:<ssescalarmode> 0 "register_operand" "=v")
+	(vec_select:<ssescalarmode>
+	  (match_operand:V48_256_512_AVX512VL 1 "register_operand" "v")
+	  (parallel [(match_operand 2 "<vec_extract_imm_predicate>")])))]
+  "TARGET_AVX512F
+   && INTVAL(operands[2]) >= 16 / GET_MODE_SIZE (<ssescalarmode>mode)"
+  "valign<ternlogsuffix>\t{%2, %1, %1, %<xtg_mode>0|%<xtg_mode>0, %1, %1, %2}";
+  [(set_attr "prefix" "evex")
+   (set_attr "mode" "<sseintvecinsnmode>")])
 
 (define_expand "avx512f_shufps512_mask"
   [(match_operand:V16SF 0 "register_operand")
