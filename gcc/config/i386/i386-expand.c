@@ -678,6 +678,10 @@ ix86_avx256_split_vector_move_misalign (rtx op0, rtx op1)
       extract = gen_avx_vextractf128v32qi;
       mode = V16QImode;
       break;
+    case E_V16HFmode:
+      extract = gen_avx_vextractf128v16hf;
+      mode = V8HFmode;
+      break;
     case E_V8SFmode:
       extract = gen_avx_vextractf128v8sf;
       mode = V4SFmode;
@@ -9523,12 +9527,14 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case FLOAT128_FTYPE_FLOAT128_FLOAT128:
     case V16QI_FTYPE_V16QI_V16QI:
     case V16QI_FTYPE_V8HI_V8HI:
+    case V16HF_FTYPE_V16HF_V16HF:
     case V16SF_FTYPE_V16SF_V16SF:
     case V8QI_FTYPE_V8QI_V8QI:
     case V8QI_FTYPE_V4HI_V4HI:
     case V8HI_FTYPE_V8HI_V8HI:
     case V8HI_FTYPE_V16QI_V16QI:
     case V8HI_FTYPE_V4SI_V4SI:
+    case V8HF_FTYPE_V8HF_V8HF:
     case V8SF_FTYPE_V8SF_V8SF:
     case V8SF_FTYPE_V8SF_V8SI:
     case V8DF_FTYPE_V8DF_V8DF:
@@ -9993,14 +9999,17 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case UQI_FTYPE_V8SI_V8SI_INT_UQI:
     case QI_FTYPE_V4DF_V4DF_INT_UQI:
     case QI_FTYPE_V8SF_V8SF_INT_UQI:
+    case UHI_FTYPE_V16HF_V16HF_INT_UHI:
     case UQI_FTYPE_V2DI_V2DI_INT_UQI:
     case UQI_FTYPE_V4SI_V4SI_INT_UQI:
     case UQI_FTYPE_V2DF_V2DF_INT_UQI:
     case UQI_FTYPE_V4SF_V4SF_INT_UQI:
+    case UQI_FTYPE_V8HF_V8HF_INT_UQI:
     case UDI_FTYPE_V64QI_V64QI_INT_UDI:
     case USI_FTYPE_V32QI_V32QI_INT_USI:
     case UHI_FTYPE_V16QI_V16QI_INT_UHI:
     case USI_FTYPE_V32HI_V32HI_INT_USI:
+    case USI_FTYPE_V32HF_V32HF_INT_USI:
     case UHI_FTYPE_V16HI_V16HI_INT_UHI:
     case UQI_FTYPE_V8HI_V8HI_INT_UQI:
       nargs = 4;
@@ -10284,6 +10293,9 @@ ix86_expand_args_builtin (const struct builtin_description *d,
 	      case CODE_FOR_avx512f_cmpv16sf3_mask:
 	      case CODE_FOR_avx512f_vmcmpv2df3_mask:
 	      case CODE_FOR_avx512f_vmcmpv4sf3_mask:
+	      case CODE_FOR_avx512bw_cmpv32hf3_mask:
+	      case CODE_FOR_avx512vl_cmpv16hf3_mask:
+	      case CODE_FOR_avx512fp16_cmpv8hf3_mask:
 		error ("the last argument must be a 5-bit immediate");
 		return const0_rtx;
 
@@ -10642,6 +10654,7 @@ ix86_expand_round_builtin (const struct builtin_description *d,
       nargs = 2;
       break;
     case V32HF_FTYPE_V32HF_V32HF_INT:
+    case V8HF_FTYPE_V8HF_V8HF_INT:
     case V4SF_FTYPE_V4SF_UINT_INT:
     case V4SF_FTYPE_V4SF_UINT64_INT:
     case V2DF_FTYPE_V2DF_UINT64_INT:
@@ -10689,6 +10702,7 @@ ix86_expand_round_builtin (const struct builtin_description *d,
     case V4SF_FTYPE_V4SF_V4SF_V4SF_QI_INT:
     case V4SF_FTYPE_V4SF_V2DF_V4SF_QI_INT:
     case V4SF_FTYPE_V4SF_V2DF_V4SF_UQI_INT:
+    case V8HF_FTYPE_V8HF_V8HF_V8HF_UQI_INT:
       nargs = 5;
       break;
     case V16SF_FTYPE_V16SF_INT_V16SF_HI_INT:
@@ -10702,6 +10716,8 @@ ix86_expand_round_builtin (const struct builtin_description *d,
     case UQI_FTYPE_V2DF_V2DF_INT_UQI_INT:
     case UHI_FTYPE_V16SF_V16SF_INT_UHI_INT:
     case UQI_FTYPE_V4SF_V4SF_INT_UQI_INT:
+    case USI_FTYPE_V32HF_V32HF_INT_USI_INT:
+    case UQI_FTYPE_V8HF_V8HF_INT_UQI_INT:
       nargs_constant = 3;
       nargs = 5;
       break;
@@ -10757,6 +10773,8 @@ ix86_expand_round_builtin (const struct builtin_description *d,
 		case CODE_FOR_avx512f_cmpv16sf3_mask_round:
 		case CODE_FOR_avx512f_vmcmpv2df3_mask_round:
 		case CODE_FOR_avx512f_vmcmpv4sf3_mask_round:
+		case CODE_FOR_avx512f_vmcmpv8hf3_mask_round:
+		case CODE_FOR_avx512bw_cmpv32hf3_mask_round:
 		  error ("the immediate argument must be a 5-bit immediate");
 		  return const0_rtx;
 		default:
