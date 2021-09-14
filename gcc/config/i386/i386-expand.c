@@ -9710,6 +9710,7 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V16HI_FTYPE_V16SI_V16HI_UHI:
     case V16QI_FTYPE_V16SI_V16QI_UHI:
     case V16QI_FTYPE_V8DI_V16QI_UQI:
+    case V32HF_FTYPE_V32HF_V32HF_USI:
     case V16SF_FTYPE_V16SF_V16SF_UHI:
     case V16SF_FTYPE_V4SF_V16SF_UHI:
     case V16SI_FTYPE_SI_V16SI_UHI:
@@ -9739,12 +9740,14 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V16HI_FTYPE_HI_V16HI_UHI:
     case V8HI_FTYPE_V8HI_V8HI_UQI:
     case V8HI_FTYPE_HI_V8HI_UQI:
+    case V16HF_FTYPE_V16HF_V16HF_UHI:
     case V8SF_FTYPE_V8HI_V8SF_UQI:
     case V4SF_FTYPE_V8HI_V4SF_UQI:
     case V8SI_FTYPE_V8SF_V8SI_UQI:
     case V4SI_FTYPE_V4SF_V4SI_UQI:
     case V4DI_FTYPE_V4SF_V4DI_UQI:
     case V2DI_FTYPE_V4SF_V2DI_UQI:
+    case V8HF_FTYPE_V8HF_V8HF_UQI:
     case V4SF_FTYPE_V4DI_V4SF_UQI:
     case V4SF_FTYPE_V2DI_V4SF_UQI:
     case V4DF_FTYPE_V4DI_V4DF_UQI:
@@ -9910,6 +9913,9 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case HI_FTYPE_V16SF_INT_UHI:
     case QI_FTYPE_V8SF_INT_UQI:
     case QI_FTYPE_V4SF_INT_UQI:
+    case QI_FTYPE_V8HF_INT_UQI:
+    case HI_FTYPE_V16HF_INT_UHI:
+    case SI_FTYPE_V32HF_INT_USI:
     case V4SI_FTYPE_V4SI_V4SI_UHI:
     case V8SI_FTYPE_V8SI_V8SI_UHI:
       nargs = 3;
@@ -10058,6 +10064,8 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V16SF_FTYPE_V16SF_INT_V16SF_UHI:
     case V16HI_FTYPE_V16SF_INT_V16HI_UHI:
     case V16SI_FTYPE_V16SI_INT_V16SI_UHI:
+    case V16HF_FTYPE_V16HF_INT_V16HF_UHI:
+    case V8HF_FTYPE_V8HF_INT_V8HF_UQI:
     case V4SI_FTYPE_V16SI_INT_V4SI_UQI:
     case V4DI_FTYPE_V8DI_INT_V4DI_UQI:
     case V4DF_FTYPE_V8DF_INT_V4DF_UQI:
@@ -10229,8 +10237,10 @@ ix86_expand_args_builtin (const struct builtin_description *d,
 	      case CODE_FOR_avx_vpermilv4df_mask:
 	      case CODE_FOR_avx512f_getmantv8df_mask:
 	      case CODE_FOR_avx512f_getmantv16sf_mask:
+	      case CODE_FOR_avx512vl_getmantv16hf_mask:
 	      case CODE_FOR_avx512vl_getmantv8sf_mask:
 	      case CODE_FOR_avx512vl_getmantv4df_mask:
+	      case CODE_FOR_avx512fp16_getmantv8hf_mask:
 	      case CODE_FOR_avx512vl_getmantv4sf_mask:
 	      case CODE_FOR_avx512vl_getmantv2df_mask:
 	      case CODE_FOR_avx512dq_rangepv8df_mask_round:
@@ -10673,6 +10683,7 @@ ix86_expand_round_builtin (const struct builtin_description *d,
     case V8DI_FTYPE_V8DF_V8DI_QI_INT:
     case V8SF_FTYPE_V8DI_V8SF_QI_INT:
     case V8DF_FTYPE_V8DI_V8DF_QI_INT:
+    case V32HF_FTYPE_V32HF_V32HF_USI_INT:
     case V16SF_FTYPE_V16SF_V16SF_HI_INT:
     case V8DI_FTYPE_V8SF_V8DI_QI_INT:
     case V16SF_FTYPE_V16SI_V16SF_HI_INT:
@@ -10705,6 +10716,7 @@ ix86_expand_round_builtin (const struct builtin_description *d,
     case V8HF_FTYPE_V8HF_V8HF_V8HF_UQI_INT:
       nargs = 5;
       break;
+    case V32HF_FTYPE_V32HF_INT_V32HF_USI_INT:
     case V16SF_FTYPE_V16SF_INT_V16SF_HI_INT:
     case V8DF_FTYPE_V8DF_INT_V8DF_QI_INT:
     case V8DF_FTYPE_V8DF_INT_V8DF_UQI_INT:
@@ -10727,6 +10739,7 @@ ix86_expand_round_builtin (const struct builtin_description *d,
     case V2DF_FTYPE_V2DF_V2DF_INT_V2DF_QI_INT:
     case V2DF_FTYPE_V2DF_V2DF_INT_V2DF_UQI_INT:
     case V4SF_FTYPE_V4SF_V4SF_INT_V4SF_UQI_INT:
+    case V8HF_FTYPE_V8HF_V8HF_INT_V8HF_UQI_INT:
       nargs = 6;
       nargs_constant = 4;
       break;
@@ -10763,10 +10776,12 @@ ix86_expand_round_builtin (const struct builtin_description *d,
 		{
 		case CODE_FOR_avx512f_getmantv8df_mask_round:
 		case CODE_FOR_avx512f_getmantv16sf_mask_round:
+		case CODE_FOR_avx512bw_getmantv32hf_mask_round:
 		case CODE_FOR_avx512f_vgetmantv2df_round:
 		case CODE_FOR_avx512f_vgetmantv2df_mask_round:
 		case CODE_FOR_avx512f_vgetmantv4sf_round:
 		case CODE_FOR_avx512f_vgetmantv4sf_mask_round:
+		case CODE_FOR_avx512f_vgetmantv8hf_mask_round:
 		  error ("the immediate argument must be a 4-bit immediate");
 		  return const0_rtx;
 		case CODE_FOR_avx512f_cmpv8df3_mask_round:

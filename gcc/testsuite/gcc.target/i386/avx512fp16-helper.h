@@ -17,6 +17,7 @@
 /* Useful macros.  */
 #define NOINLINE __attribute__((noinline,noclone))
 #define _ROUND_NINT (_MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC)
+#define _ROUND_CUR 8 
 #define AVX512F_MAX_ELEM 512 / 32
 
 /* Structure for _Float16 emulation  */
@@ -28,6 +29,7 @@ typedef union
   __m256h         ymmh[2];
   __m256i         ymmi[2];
   __m128h         xmmh[4];
+  __m128	  xmm[4];
   unsigned short  u16[32];
   unsigned int    u32[16];
   float           f32[16];
