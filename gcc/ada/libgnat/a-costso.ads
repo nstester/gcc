@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                         GNAT RUN-TIME COMPONENTS                         --
+--                         GNAT LIBRARY COMPONENTS                         --
 --                                                                          --
---                      ADA.STRINGS.TEXT_BUFFERS.FILES                      --
+--         A D A . C O N T A I N E R S . S T A B L E _ S O R T I N G        --
 --                                                                          --
---                                 B o d y                                  --
+--                                 S p e c                                  --
 --                                                                          --
---            Copyright (C) 2020-2021, Free Software Foundation, Inc.       --
+--                     Copyright (C) 1995-2021, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,54 +29,43 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-package body Ada.Strings.Text_Buffers.Files is
+--  Stable_Sorting package
 
-   procedure Put_UTF_8_Implementation
-     (Buffer : in out Root_Buffer_Type'Class;
-      Item : UTF_Encoding.UTF_8_String) is
-      Result : Integer;
-   begin
-      Result := OS.Write (File_Buffer (Buffer).FD,
-                          Item (Item'First)'Address,
-                          Item'Length);
-      if Result /= Item'Length then
-         raise Program_Error with OS.Errno_Message;
-      end if;
-   end Put_UTF_8_Implementation;
+--  This package provides a generic stable sorting procedure that is
+--  intended for use by the various doubly linked list container generics.
+--  If a stable array sorting algorithm with better-than-quadratic worst
+--  case execution time is ever needed, then it could also reside here.
 
-   function Create_From_FD
-     (FD                      : System.OS_Lib.File_Descriptor;
-      Close_Upon_Finalization : Boolean := True) return File_Buffer
-   is
-      use OS;
-   begin
-      if FD = Invalid_FD then
-         raise Program_Error with OS.Errno_Message;
-      end if;
-      return Result : File_Buffer do
-         Result.FD := FD;
-         Result.Close_Upon_Finalization := Close_Upon_Finalization;
-      end return;
-   end Create_From_FD;
+private package Ada.Containers.Stable_Sorting is
+   pragma Annotate (CodePeer, Skip_Analysis);
+   pragma Pure;
+   pragma Remote_Types;
 
-   function Create_File (Name : String) return File_Buffer is
-   begin
-      return Create_From_FD (OS.Create_File (Name, Fmode => OS.Binary));
-   end Create_File;
+   --  Stable sorting algorithms with N-log-N worst case execution time.
 
-   procedure Finalize (Ref : in out Self_Ref) is
-      Success : Boolean;
-      use OS;
-   begin
-      if Ref.Self.FD /= OS.Invalid_FD
-        and then Ref.Self.Close_Upon_Finalization
-      then
-         Close (Ref.Self.FD, Success);
-         if not Success then
-            raise Program_Error with OS.Errno_Message;
-         end if;
-      end if;
-      Ref.Self.FD := OS.Invalid_FD;
-   end Finalize;
+   generic
+      type Node_Ref is private; -- access value or array index
+      Nil : Node_Ref;
+   package List_Descriptors is
 
-end Ada.Strings.Text_Buffers.Files;
+      type List_Descriptor is
+         record
+            First, Last : Node_Ref := Nil;
+            Length      : Count_Type := 0;
+         end record;
+
+      --  We use a nested generic here so that the inner generic can
+      --  refer to the List_Descriptor type.
+
+      generic
+         with function Next (N : Node_Ref) return Node_Ref is <>;
+         with procedure Set_Next (N : Node_Ref; Next : Node_Ref) is <>;
+         with procedure Set_Prev (N : Node_Ref; Prev : Node_Ref) is <>;
+         with function "<" (L, R : Node_Ref) return Boolean is <>;
+
+         with procedure Update_Container (List : List_Descriptor) is <>;
+      procedure Doubly_Linked_List_Sort (List : List_Descriptor);
+
+   end List_Descriptors;
+
+end Ada.Containers.Stable_Sorting;
