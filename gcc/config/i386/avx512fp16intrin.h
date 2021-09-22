@@ -45,6 +45,14 @@ typedef _Float16 __m128h __attribute__ ((__vector_size__ (16), __may_alias__));
 typedef _Float16 __m256h __attribute__ ((__vector_size__ (32), __may_alias__));
 typedef _Float16 __m512h __attribute__ ((__vector_size__ (64), __may_alias__));
 
+/* Unaligned version of the same type.  */
+typedef _Float16 __m128h_u __attribute__ ((__vector_size__ (16),	\
+					   __may_alias__, __aligned__ (1)));
+typedef _Float16 __m256h_u __attribute__ ((__vector_size__ (32),	\
+					   __may_alias__, __aligned__ (1)));
+typedef _Float16 __m512h_u __attribute__ ((__vector_size__ (64),	\
+					   __may_alias__, __aligned__ (1)));
+
 extern __inline __m128h
 __attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
 _mm_set_ph (_Float16 __A7, _Float16 __A6, _Float16 __A5,
@@ -362,12 +370,104 @@ _mm_load_sh (void const *__P)
 		     *(_Float16 const *) __P);
 }
 
+extern __inline __m512h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_load_ph (void const *__P)
+{
+  return *(const __m512h *) __P;
+}
+
+extern __inline __m256h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_load_ph (void const *__P)
+{
+  return *(const __m256h *) __P;
+}
+
+extern __inline __m128h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_load_ph (void const *__P)
+{
+  return *(const __m128h *) __P;
+}
+
+extern __inline __m512h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_loadu_ph (void const *__P)
+{
+  return *(const __m512h_u *) __P;
+}
+
+extern __inline __m256h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_loadu_ph (void const *__P)
+{
+  return *(const __m256h_u *) __P;
+}
+
+extern __inline __m128h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_loadu_ph (void const *__P)
+{
+  return *(const __m128h_u *) __P;
+}
+
 /* Stores the lower _Float16 value.  */
 extern __inline void
 __attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
 _mm_store_sh (void *__P, __m128h __A)
 {
   *(_Float16 *) __P = ((__v8hf)__A)[0];
+}
+
+extern __inline void
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_store_ph (void *__P, __m512h __A)
+{
+   *(__m512h *) __P = __A;
+}
+
+extern __inline void
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_store_ph (void *__P, __m256h __A)
+{
+   *(__m256h *) __P = __A;
+}
+
+extern __inline void
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_store_ph (void *__P, __m128h __A)
+{
+   *(__m128h *) __P = __A;
+}
+
+extern __inline void
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_storeu_ph (void *__P, __m512h __A)
+{
+   *(__m512h_u *) __P = __A;
+}
+
+extern __inline void
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm256_storeu_ph (void *__P, __m256h __A)
+{
+   *(__m256h_u *) __P = __A;
+}
+
+extern __inline void
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm_storeu_ph (void *__P, __m128h __A)
+{
+   *(__m128h_u *) __P = __A;
+}
+
+extern __inline __m512h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_abs_ph (__m512h __A)
+{
+  return (__m512h) _mm512_and_epi32 ( _mm512_set1_epi32 (0x7FFF7FFF),
+				      (__m512i) __A);
 }
 
 /* Intrinsics v[add,sub,mul,div]ph.  */
@@ -620,6 +720,33 @@ _mm512_maskz_div_round_ph (__mmask32 __A, __m512h __B, __m512h __C,
 					       _mm512_setzero_ph (),	\
 					       (A), (D)))
 #endif  /* __OPTIMIZE__  */
+
+extern __inline __m512h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_conj_pch (__m512h __A)
+{
+  return (__m512h) _mm512_xor_epi32 ((__m512i) __A, _mm512_set1_epi32 (1<<31));
+}
+
+extern __inline __m512h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_mask_conj_pch (__m512h __W, __mmask16 __U, __m512h __A)
+{
+  return (__m512h)
+    __builtin_ia32_movaps512_mask ((__v16sf) _mm512_conj_pch (__A),
+				   (__v16sf) __W,
+				   (__mmask16) __U);
+}
+
+extern __inline __m512h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_maskz_conj_pch (__mmask16 __U, __m512h __A)
+{
+  return (__m512h)
+    __builtin_ia32_movaps512_mask ((__v16sf) _mm512_conj_pch (__A),
+				   (__v16sf) _mm512_setzero_ps (),
+				   (__mmask16) __U);
+}
 
 /* Intrinsics of v[add,sub,mul,div]sh.  */
 extern __inline __m128h
@@ -6985,6 +7112,135 @@ _mm_maskz_fmul_round_sch (__mmask8 __A, __m128h __B, __m128h __C, const int __E)
 						__A, __E)
 
 #endif /* __OPTIMIZE__ */
+
+#define _MM512_REDUCE_OP(op)						\
+  __m256h __T1 = (__m256h) _mm512_extractf64x4_pd ((__m512d) __A, 0);	\
+  __m256h __T2 = (__m256h) _mm512_extractf64x4_pd ((__m512d) __A, 1);	\
+  __m256h __T3 = (__T1 op __T2);					\
+  __m128h __T4 = (__m128h) _mm256_extractf128_pd ((__m256d) __T3, 0);	\
+  __m128h __T5 = (__m128h) _mm256_extractf128_pd ((__m256d) __T3, 1);	\
+  __m128h __T6 = (__T4 op __T5);					\
+  __m128h __T7 = (__m128h) __builtin_shuffle ((__m128h)__T6,		\
+		 (__v8hi) { 4, 5, 6, 7, 0, 1, 2, 3 });			\
+  __m128h __T8 = (__T6 op __T7);					\
+  __m128h __T9 = (__m128h) __builtin_shuffle ((__m128h)__T8,		\
+		 (__v8hi) { 2, 3, 0, 1, 4, 5, 6, 7 });			\
+  __m128h __T10 = __T8 op __T9;					\
+  return __T10[0] op __T10[1]
+
+// TODO reduce
+extern __inline _Float16
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_reduce_add_ph (__m512h __A)
+{
+   _MM512_REDUCE_OP (+);
+}
+
+extern __inline _Float16
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_reduce_mul_ph (__m512h __A)
+{
+   _MM512_REDUCE_OP (*);
+}
+
+#undef _MM512_REDUCE_OP
+
+#ifdef __AVX512VL__
+
+#define _MM512_REDUCE_OP(op)						\
+  __m256h __T1 = (__m256h) _mm512_extractf64x4_pd ((__m512d) __A, 0);	\
+  __m256h __T2 = (__m256h) _mm512_extractf64x4_pd ((__m512d) __A, 1);	\
+  __m256h __T3 = __builtin_ia32_##op##ph256_mask (__T1, __T2,		\
+		 _mm256_setzero_ph (), (__mmask16) -1);		\
+  __m128h __T4 = (__m128h) _mm256_extractf128_pd ((__m256d) __T3, 0);	\
+  __m128h __T5 = (__m128h) _mm256_extractf128_pd ((__m256d) __T3, 1);	\
+  __m128h __T6 = __builtin_ia32_##op##ph128_mask			\
+		 (__T4, __T5, _mm_setzero_ph (),(__mmask8) -1);	\
+  __m128h __T7 = (__m128h) __builtin_shuffle ((__m128h)__T6,		\
+		 (__v8hi) { 2, 3, 0, 1, 6, 7, 4, 5 });			\
+  __m128h __T8 = (__m128h)  __builtin_ia32_##op##ph128_mask		\
+		 (__T6, __T7, _mm_setzero_ph (),(__mmask8) -1);	\
+  __m128h __T9 = (__m128h) __builtin_shuffle ((__m128h)__T8,		\
+		 (__v8hi) { 4, 5 });					\
+  __m128h __T10 = __builtin_ia32_##op##ph128_mask			\
+		  (__T8, __T9, _mm_setzero_ph (),(__mmask8) -1);	\
+  __m128h __T11 = (__m128h) __builtin_shuffle (__T10,			\
+		  (__v8hi) { 1, 0 });					\
+  __m128h __T12 = __builtin_ia32_##op##ph128_mask			\
+		  (__T10, __T11, _mm_setzero_ph (),(__mmask8) -1);	\
+  return __T12[0]
+
+#else
+
+#define _MM512_REDUCE_OP(op)						\
+  __m512h __T1 = (__m512h) __builtin_shuffle ((__m512d) __A,		\
+		 (__v8di) { 4, 5, 6, 7, 0, 0, 0, 0 });			\
+  __m512h __T2 = _mm512_##op##_ph (__A, __T1);				\
+  __m512h __T3 = (__m512h) __builtin_shuffle ((__m512d) __T2,		\
+		 (__v8di) { 2, 3, 0, 0, 0, 0, 0, 0 });			\
+  __m512h __T4 = _mm512_##op##_ph (__T2, __T3);			\
+  __m512h __T5 = (__m512h) __builtin_shuffle ((__m512d) __T4,		\
+		 (__v8di) { 1, 0, 0, 0, 0, 0, 0, 0 });			\
+  __m512h __T6 = _mm512_##op##_ph (__T4, __T5);			\
+  __m512h __T7 = (__m512h) __builtin_shuffle ((__m512) __T6,		\
+		 (__v16si) { 1, 0, 0, 0, 0, 0, 0, 0,			\
+			     0, 0, 0, 0, 0, 0, 0, 0 });		\
+  __m512h __T8 = _mm512_##op##_ph (__T6, __T7);			\
+  __m512h __T9 = (__m512h) __builtin_shuffle (__T8,			\
+		 (__v32hi) { 1, 0, 0, 0, 0, 0, 0, 0,			\
+			     0, 0, 0, 0, 0, 0, 0, 0,			\
+			     0, 0, 0, 0, 0, 0, 0, 0,			\
+			     0, 0, 0, 0, 0, 0, 0, 0 });		\
+  __m512h __T10 = _mm512_##op##_ph (__T8, __T9);			\
+  return __T10[0]
+#endif
+
+extern __inline _Float16
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_reduce_min_ph (__m512h __A)
+{
+  _MM512_REDUCE_OP (min);
+}
+
+extern __inline _Float16
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_reduce_max_ph (__m512h __A)
+{
+  _MM512_REDUCE_OP (max);
+}
+
+#undef _MM512_REDUCE_OP
+
+extern __inline __m512h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_mask_blend_ph (__mmask32 __U, __m512h __A, __m512h __W)
+{
+  return (__m512h) __builtin_ia32_movdquhi512_mask ((__v32hi) __W,
+						    (__v32hi) __A,
+						    (__mmask32) __U);
+
+}
+
+extern __inline __m512h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_permutex2var_ph (__m512h __A, __m512i __I, __m512h __B)
+{
+  return (__m512h) __builtin_ia32_vpermi2varhi512_mask ((__v32hi) __A,
+						       (__v32hi) __I,
+						       (__v32hi) __B,
+						       (__mmask32)-1);
+}
+
+extern __inline __m512h
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_mm512_permutexvar_ph (__m512i __A, __m512h __B)
+{
+  return (__m512h) __builtin_ia32_permvarhi512_mask ((__v32hi) __B,
+						     (__v32hi) __A,
+						     (__v32hi)
+						     (_mm512_setzero_ph ()),
+						     (__mmask32)-1);
+}
 
 #ifdef __DISABLE_AVX512FP16__
 #undef __DISABLE_AVX512FP16__
