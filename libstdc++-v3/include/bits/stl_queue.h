@@ -194,6 +194,21 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       template<typename _Alloc, typename _Requires = _Uses<_Alloc>>
 	queue(queue&& __q, const _Alloc& __a)
 	: c(std::move(__q.c), __a) { }
+
+#if __cplusplus > 202002L
+#define __cpp_lib_adaptor_iterator_pair_constructor 202100L
+
+      template<typename _InputIterator,
+	       typename = _RequireInputIter<_InputIterator>>
+	queue(_InputIterator __first, _InputIterator __last)
+	: c(__first, __last) { }
+
+      template<typename _InputIterator, typename _Alloc,
+	       typename = _RequireInputIter<_InputIterator>,
+	       typename = _Uses<_Alloc>>
+	queue(_InputIterator __first, _InputIterator __last, const _Alloc& __a)
+	: c(__first, __last, __a) { }
+#endif
 #endif
 
       /**
@@ -331,6 +346,22 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	   typename = _RequireAllocator<_Allocator>>
     queue(_Container, _Allocator)
     -> queue<typename _Container::value_type, _Container>;
+
+#ifdef __cpp_lib_adaptor_iterator_pair_constructor
+  template<typename _InputIterator,
+	   typename _ValT
+	     = typename iterator_traits<_InputIterator>::value_type,
+	   typename = _RequireInputIter<_InputIterator>>
+    queue(_InputIterator, _InputIterator) -> queue<_ValT>;
+
+  template<typename _InputIterator, typename _Allocator,
+	   typename _ValT
+	     = typename iterator_traits<_InputIterator>::value_type,
+	   typename = _RequireInputIter<_InputIterator>,
+	   typename = _RequireAllocator<_Allocator>>
+    queue(_InputIterator, _InputIterator, _Allocator)
+    -> queue<_ValT, deque<_ValT, _Allocator>>;
+#endif
 #endif
 
   /**
@@ -594,10 +625,21 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  std::make_heap(c.begin(), c.end(), comp);
 	}
 #else
-      template<typename _InputIterator>
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 3529. priority_queue(first, last) should construct c with (first, last)
+      template<typename _InputIterator,
+	       typename = std::_RequireInputIter<_InputIterator>>
 	priority_queue(_InputIterator __first, _InputIterator __last,
-		       const _Compare& __x,
-		       const _Sequence& __s)
+		       const _Compare& __x = _Compare())
+	: c(__first, __last), comp(__x)
+	{ std::make_heap(c.begin(), c.end(), comp); }
+
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 3522. Missing requirement on InputIterator template parameter
+      template<typename _InputIterator,
+	       typename = std::_RequireInputIter<_InputIterator>>
+	priority_queue(_InputIterator __first, _InputIterator __last,
+		       const _Compare& __x, const _Sequence& __s)
 	: c(__s), comp(__x)
 	{
 	  __glibcxx_requires_valid_range(__first, __last);
@@ -605,11 +647,54 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  std::make_heap(c.begin(), c.end(), comp);
 	}
 
-      template<typename _InputIterator>
+      template<typename _InputIterator,
+	       typename = std::_RequireInputIter<_InputIterator>>
 	priority_queue(_InputIterator __first, _InputIterator __last,
-		       const _Compare& __x = _Compare(),
-		       _Sequence&& __s = _Sequence())
+		       const _Compare& __x, _Sequence&& __s)
 	: c(std::move(__s)), comp(__x)
+	{
+	  __glibcxx_requires_valid_range(__first, __last);
+	  c.insert(c.end(), __first, __last);
+	  std::make_heap(c.begin(), c.end(), comp);
+	}
+
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 3506. Missing allocator-extended constructors for priority_queue
+      template<typename _InputIterator, typename _Alloc,
+	       typename = std::_RequireInputIter<_InputIterator>,
+	       typename _Requires = _Uses<_Alloc>>
+	priority_queue(_InputIterator __first, _InputIterator __last,
+		       const _Alloc& __alloc)
+	: c(__first, __last, __alloc), comp()
+	{ std::make_heap(c.begin(), c.end(), comp); }
+
+      template<typename _InputIterator, typename _Alloc,
+	       typename = std::_RequireInputIter<_InputIterator>,
+	       typename _Requires = _Uses<_Alloc>>
+	priority_queue(_InputIterator __first, _InputIterator __last,
+		       const _Compare& __x, const _Alloc& __alloc)
+	: c(__first, __last, __alloc), comp(__x)
+	{ std::make_heap(c.begin(), c.end(), comp); }
+
+      template<typename _InputIterator, typename _Alloc,
+	       typename = std::_RequireInputIter<_InputIterator>,
+	       typename _Requires = _Uses<_Alloc>>
+	priority_queue(_InputIterator __first, _InputIterator __last,
+		       const _Compare& __x, const _Sequence& __s,
+		       const _Alloc& __alloc)
+	: c(__s, __alloc), comp(__x)
+	{
+	  __glibcxx_requires_valid_range(__first, __last);
+	  c.insert(c.end(), __first, __last);
+	  std::make_heap(c.begin(), c.end(), comp);
+	}
+
+      template<typename _InputIterator, typename _Alloc,
+	       typename _Requires = _Uses<_Alloc>>
+	priority_queue(_InputIterator __first, _InputIterator __last,
+		       const _Compare& __x, _Sequence&& __s,
+		       const _Alloc& __alloc)
+	: c(std::move(__s), __alloc), comp(__x)
 	{
 	  __glibcxx_requires_valid_range(__first, __last);
 	  c.insert(c.end(), __first, __last);
