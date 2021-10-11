@@ -29,36 +29,14 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This is the SuSV3 threads version of this package
+--  This is the RTEMS version of this package
 
---  Make a careful study of all signals available under the OS, to see which
---  need to be reserved, kept always unmasked, or kept always unmasked. Be on
---  the lookout for special signals that may be used by the thread library.
-
---  Since this is a multi target file, the signal <-> exception mapping
---  is simple minded. If you need a more precise and target specific
---  signal handling, create a new s-intman.adb that will fit your needs.
-
---  This file assumes that:
-
---    SIGINT exists and will be kept unmasked unless the pragma
---     Unreserve_All_Interrupts is specified anywhere in the application.
-
---    System.OS_Interface contains the following:
---      SIGADAABORT: the signal that will be used to abort tasks.
---      Unmasked: the OS specific set of signals that should be unmasked in
---                all the threads. SIGADAABORT is unmasked by
---                default
---      Reserved: the OS specific set of signals that are reserved.
+--  It is simpler than other versions because the Ada interrupt handling
+--  mechanisms are used for hardware interrupts rather than signals.
 
 package body System.Interrupt_Management is
 
-   use Interfaces.C;
    use System.OS_Interface;
-
-   Unreserve_All_Interrupts : constant Interfaces.C.int;
-   pragma Import
-     (C, Unreserve_All_Interrupts, "__gl_unreserve_all_interrupts");
 
    -----------------------
    -- Local Subprograms --
@@ -67,9 +45,8 @@ package body System.Interrupt_Management is
    function State (Int : Interrupt_ID) return Character;
    pragma Import (C, State, "__gnat_get_interrupt_state");
    --  Get interrupt state. Defined in init.c The input argument is the
-   --  interrupt number, and the result is one of the following:
+   --  hardware interrupt number, and the result is one of the following:
 
-   User    : constant Character := 'u';
    Runtime : constant Character := 'r';
    Default : constant Character := 's';
    --    'n'   this interrupt not set by any Interrupt_State pragma
@@ -83,8 +60,10 @@ package body System.Interrupt_Management is
    ----------------
 
    Initialized : Boolean := False;
+   --  Set to True once Initialize is called, further calls have no effect
 
    procedure Initialize is
+
    begin
       if Initialized then
          return;
@@ -92,79 +71,23 @@ package body System.Interrupt_Management is
 
       Initialized := True;
 
-      --  Need to call pthread_init very early because it is doing signal
-      --  initializations.
-
-      pthread_init;
+      --  Set the signal used to signal an abort to another task as defined in
+      --  System.OS_Interface.
 
       Abort_Task_Interrupt := SIGADAABORT;
 
-      pragma Assert (Keep_Unmasked = (Interrupt_ID'Range => False));
+      --  Initialize hardware interrupt handling
+
       pragma Assert (Reserve = (Interrupt_ID'Range => False));
 
-      --  Process state of exception signals
-
-      for J in Exception_Signals'Range loop
-         declare
-            Sig : constant Signal := Exception_Signals (J);
-            Id : constant Interrupt_ID := Interrupt_ID (Sig);
-         begin
-            if State (Id) /= User then
-               Keep_Unmasked (Id) := True;
-               Reserve (Id) := True;
-            end if;
-         end;
-      end loop;
-
-      if State (Abort_Task_Interrupt) /= User then
-         Keep_Unmasked (Abort_Task_Interrupt) := True;
-         Reserve (Abort_Task_Interrupt) := True;
-      end if;
-
-      --  Set SIGINT to unmasked state as long as it is not in "User" state.
-      --  Check for Unreserve_All_Interrupts last.
-
-      if State (SIGINT) /= User then
-         Keep_Unmasked (SIGINT) := True;
-         Reserve (SIGINT) := True;
-      end if;
-
-      --  Check all signals for state that requires keeping them unmasked and
-      --  reserved.
+      --  Check all interrupts for state that requires keeping them reserved
 
       for J in Interrupt_ID'Range loop
          if State (J) = Default or else State (J) = Runtime then
-            Keep_Unmasked (J) := True;
             Reserve (J) := True;
          end if;
       end loop;
 
-      --  Add the set of signals that must always be unmasked for this target
-
-      for J in Unmasked'Range loop
-         Keep_Unmasked (Interrupt_ID (Unmasked (J))) := True;
-         Reserve (Interrupt_ID (Unmasked (J))) := True;
-      end loop;
-
-      --  Add target-specific reserved signals
-
-      for J in Reserved'Range loop
-         Reserve (Interrupt_ID (Reserved (J))) := True;
-      end loop;
-
-      --  Process pragma Unreserve_All_Interrupts. This overrides any settings
-      --  due to pragma Interrupt_State:
-
-      if Unreserve_All_Interrupts /= 0 then
-         Keep_Unmasked (SIGINT) := False;
-         Reserve (SIGINT) := False;
-      end if;
-
-      --  We do not really have Signal 0. We just use this value to identify
-      --  non-existent signals (see s-intnam.ads). Therefore, Signal should not
-      --  be used in all signal related operations hence mark it as reserved.
-
-      Reserve (0) := True;
    end Initialize;
 
 end System.Interrupt_Management;
