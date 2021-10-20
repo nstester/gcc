@@ -2,11 +2,11 @@
 --                                                                          --
 --                         GNAT RUN-TIME COMPONENTS                         --
 --                                                                          --
---                              G N A T . I O                               --
+--                  ADA.NUMERICS.BIG_NUMBERS.BIG_INTEGERS                   --
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---                     Copyright (C) 1995-2021, AdaCore                     --
+--            Copyright (C) 2021, Free Software Foundation, Inc.            --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,25 +29,48 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  vxworks zfp version of Put (C : Character)
+--  This body is provided as a work-around for a GNAT compiler bug, as GNAT
+--  currently does not compile instantiations of the spec with imported ghost
+--  generics for packages Signed_Conversions and Unsigned_Conversions.
 
-with Interfaces.C; use Interfaces.C;
+package body Ada.Numerics.Big_Numbers.Big_Integers with
+   SPARK_Mode => Off
+is
 
-separate (GNAT.IO)
-procedure Put (C : Character) is
+   package body Signed_Conversions with
+     SPARK_Mode => Off
+   is
 
-   function ioGlobalStdGet
-     (File : int) return int;
-   pragma Import (C, ioGlobalStdGet, "ioGlobalStdGet");
+      function To_Big_Integer (Arg : Int) return Valid_Big_Integer is
+      begin
+         raise Program_Error;
+         return (null record);
+      end To_Big_Integer;
 
-   procedure fdprintf
-     (File   : int;
-      Format : String;
-      Value  : Character);
-   pragma Import (C, fdprintf, "fdprintf");
+      function From_Big_Integer (Arg : Valid_Big_Integer) return Int is
+      begin
+         raise Program_Error;
+         return 0;
+      end From_Big_Integer;
 
-   Stdout_ID : constant int := 1;
+   end Signed_Conversions;
 
-begin
-   fdprintf (ioGlobalStdGet (Stdout_ID), "%c" & ASCII.NUL, C);
-end Put;
+   package body Unsigned_Conversions with
+     SPARK_Mode => Off
+   is
+
+      function To_Big_Integer (Arg : Int) return Valid_Big_Integer is
+      begin
+         raise Program_Error;
+         return (null record);
+      end To_Big_Integer;
+
+      function From_Big_Integer (Arg : Valid_Big_Integer) return Int is
+      begin
+         raise Program_Error;
+         return 0;
+      end From_Big_Integer;
+
+   end Unsigned_Conversions;
+
+end Ada.Numerics.Big_Numbers.Big_Integers;
