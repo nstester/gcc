@@ -4082,8 +4082,16 @@ handle_call_arg (gcall *stmt, tree arg, vec<ce_s> *results, int flags,
     {
       struct constraint_expr cexpr;
       cexpr.var = tem->id;
-      cexpr.type = SCALAR;
-      cexpr.offset = 0;
+      if (flags & EAF_NOT_RETURNED_DIRECTLY)
+	{
+	  cexpr.type = DEREF;
+	  cexpr.offset = UNKNOWN_OFFSET;
+	}
+      else
+	{
+	  cexpr.type = SCALAR;
+	  cexpr.offset = 0;
+	}
       results->safe_push (cexpr);
     }
 
@@ -4246,7 +4254,8 @@ handle_rhs_call (gcall *stmt, vec<ce_s> *results,
   /* The static chain escapes as well.  */
   if (gimple_call_chain (stmt))
     handle_call_arg (stmt, gimple_call_chain (stmt), results,
-		     implicit_eaf_flags,
+		     implicit_eaf_flags
+		     | gimple_call_static_chain_flags (stmt),
 		     callescape->id, writes_global_memory);
 
   /* And if we applied NRV the address of the return slot escapes as well.  */
