@@ -135,10 +135,24 @@ void
 path_range_query::range_on_path_entry (irange &r, tree name)
 {
   gcc_checking_assert (defined_outside_path (name));
-  int_range_max tmp;
   basic_block entry = entry_bb ();
-  bool changed = false;
 
+  // Prefer to use range_of_expr if we have a statement to look at,
+  // since it has better caching than range_on_edge.
+  gimple *last = last_stmt (entry);
+  if (last)
+    {
+      if (m_ranger.range_of_expr (r, name, last))
+	return;
+      gcc_unreachable ();
+    }
+
+  // If we have no statement, look at all the incoming ranges to the
+  // block.  This can happen when we're querying a block with only an
+  // outgoing edge (no statement but the fall through edge), but for
+  // which we can determine a range on entry to the block.
+  int_range_max tmp;
+  bool changed = false;
   r.set_undefined ();
   for (unsigned i = 0; i < EDGE_COUNT (entry->preds); ++i)
     {
@@ -678,7 +692,11 @@ path_range_query::compute_phi_relations (basic_block bb, basic_block prev)
        gsi_next (&iter))
     {
       gphi *phi = iter.phi ();
+      tree result = gimple_phi_result (phi);
       unsigned nargs = gimple_phi_num_args (phi);
+
+      if (!import_p (result))
+	continue;
 
       for (size_t i = 0; i < nargs; ++i)
 	if (e_in == gimple_phi_arg_edge (phi, i))
@@ -701,7 +719,8 @@ path_range_query::compute_outgoing_relations (basic_block bb, basic_block next)
 
   if (stmt
       && gimple_code (stmt) == GIMPLE_COND
-      && irange::supports_type_p (TREE_TYPE (gimple_cond_lhs (stmt))))
+      && (import_p (gimple_cond_lhs (stmt))
+	  || import_p (gimple_cond_rhs (stmt))))
     {
       int_range<2> r;
       gcond *cond = as_a<gcond *> (stmt);
