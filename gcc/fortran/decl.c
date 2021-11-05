@@ -3713,7 +3713,7 @@ insert_parameter_exprs (gfc_expr* e, gfc_symbol* sym ATTRIBUTE_UNUSED,
 }
 
 
-bool
+static bool
 gfc_insert_kind_parameter_exprs (gfc_expr *e)
 {
   return gfc_traverse_expr (e, NULL, &insert_parameter_exprs, 0);
@@ -4715,7 +4715,7 @@ gfc_match_implicit_none (void)
   if (c == '(')
     {
       (void) gfc_next_ascii_char ();
-      if (!gfc_notify_std (GFC_STD_F2018, "IMPORT NONE with spec list at %C"))
+      if (!gfc_notify_std (GFC_STD_F2018, "IMPLICIT NONE with spec list at %C"))
 	return MATCH_ERROR;
 
       gfc_gobble_whitespace ();
