@@ -89,6 +89,7 @@ private:
   void find_paths (basic_block bb, tree name);
   bool debug_counter ();
   edge maybe_register_path ();
+  void maybe_register_path_dump (edge taken_edge);
   void find_paths_to_names (basic_block bb, bitmap imports);
   bool resolve_def (tree name, bitmap interesting, vec<tree> &worklist);
   void resolve_phi (gphi *phi, bitmap imports);
@@ -186,11 +187,39 @@ back_threader::debug_counter ()
   return true;
 }
 
-// Register the current path for jump threading if it's profitable to
-// do so.
+// Dump details of an attempt to register a path.
+
+void
+back_threader::maybe_register_path_dump (edge taken)
+{
+  if (m_path.is_empty ())
+    return;
+
+  fprintf (dump_file, "path: ");
+
+  for (unsigned i = m_path.length (); i > 0; --i)
+    {
+      basic_block bb = m_path[i - 1];
+      fprintf (dump_file, "%d", bb->index);
+      if (i > 1)
+	fprintf (dump_file, "->");
+    }
+  fprintf (dump_file, "->");
+
+  if (taken == UNREACHABLE_EDGE)
+    fprintf (dump_file, "xx REJECTED (unreachable)\n");
+  else if (taken)
+    fprintf (dump_file, "%d SUCCESS\n", taken->dest->index);
+  else
+    fprintf (dump_file, "xx REJECTED\n");
+}
+
+// If an outgoing edge can be determined out of the current path,
+// register it for jump threading and return the taken edge.
 //
-// Return the known taken edge out of the path, even if the path was
-// not registered, or NULL if the taken edge could not be determined.
+// Return NULL if it is unprofitable to thread this path, or the
+// outgoing edge is unknown.  Return UNREACHABLE_EDGE if the path is
+// unreachable.
 
 edge
 back_threader::maybe_register_path ()
@@ -199,25 +228,32 @@ back_threader::maybe_register_path ()
 
   if (taken_edge && taken_edge != UNREACHABLE_EDGE)
     {
-      // Avoid circular paths.
       if (m_visited_bbs.contains (taken_edge->dest))
-	return UNREACHABLE_EDGE;
-
-      bool irreducible = false;
-      bool profitable
-	= m_profit.profitable_path_p (m_path, m_name, taken_edge, &irreducible);
-
-      if (profitable)
 	{
-	  if (!debug_counter ())
-	    return NULL;
+	  // Avoid circular paths by indicating there is nothing to
+	  // see in this direction.
+	  taken_edge = UNREACHABLE_EDGE;
+	}
+      else
+	{
+	  bool irreducible = false;
+	  if (m_profit.profitable_path_p (m_path, m_name, taken_edge,
+					  &irreducible)
+	      && debug_counter ())
+	    {
+	      m_registry.register_path (m_path, taken_edge);
 
-	  m_registry.register_path (m_path, taken_edge);
-
-	  if (irreducible)
-	    vect_free_loop_info_assumptions (m_path[0]->loop_father);
+	      if (irreducible)
+		vect_free_loop_info_assumptions (m_path[0]->loop_father);
+	    }
+	  else
+	    taken_edge = NULL;
 	}
     }
+
+  if (dump_file && (dump_flags & TDF_DETAILS))
+    maybe_register_path_dump (taken_edge);
+
   return taken_edge;
 }
 
