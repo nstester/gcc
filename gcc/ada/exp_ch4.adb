@@ -1625,8 +1625,8 @@ package body Exp_Ch4 is
       function Arr_Attr
         (Arr : Entity_Id;
          Nam : Name_Id;
-         Num : Int) return Node_Id;
-      --  This builds the attribute reference Arr'Nam (Expr)
+         Dim : Pos) return Node_Id;
+      --  This builds the attribute reference Arr'Nam (Dim)
 
       function Component_Equality (Typ : Entity_Id) return Node_Id;
       --  Create one statement to compare corresponding components, designated
@@ -1637,7 +1637,7 @@ package body Exp_Ch4 is
       --  for that argument in the corresponding function formal
 
       function Handle_One_Dimension
-        (N     : Int;
+        (N     : Pos;
          Index : Node_Id) return Node_Id;
       --  This procedure returns the following code
       --
@@ -1691,14 +1691,14 @@ package body Exp_Ch4 is
       function Arr_Attr
         (Arr : Entity_Id;
          Nam : Name_Id;
-         Num : Int) return Node_Id
+         Dim : Pos) return Node_Id
       is
       begin
          return
            Make_Attribute_Reference (Loc,
              Attribute_Name => Nam,
              Prefix         => New_Occurrence_Of (Arr, Loc),
-             Expressions    => New_List (Make_Integer_Literal (Loc, Num)));
+             Expressions    => New_List (Make_Integer_Literal (Loc, Dim)));
       end Arr_Attr;
 
       ------------------------
@@ -1786,7 +1786,7 @@ package body Exp_Ch4 is
       ---------------------------
 
       function Handle_One_Dimension
-        (N     : Int;
+        (N     : Pos;
          Index : Node_Id) return Node_Id
       is
          Need_Separate_Indexes : constant Boolean :=
@@ -1902,41 +1902,20 @@ package body Exp_Ch4 is
       -----------------------
 
       function Test_Empty_Arrays return Node_Id is
-         Alist : Node_Id;
-         Blist : Node_Id;
-
-         Atest : Node_Id;
-         Btest : Node_Id;
+         Alist : Node_Id := Empty;
+         Blist : Node_Id := Empty;
 
       begin
-         Alist := Empty;
-         Blist := Empty;
          for J in 1 .. Number_Dimensions (Ltyp) loop
-            Atest :=
+            Evolve_Or_Else (Alist,
               Make_Op_Eq (Loc,
                 Left_Opnd  => Arr_Attr (A, Name_Length, J),
-                Right_Opnd => Make_Integer_Literal (Loc, 0));
+                Right_Opnd => Make_Integer_Literal (Loc, Uint_0)));
 
-            Btest :=
+            Evolve_Or_Else (Blist,
               Make_Op_Eq (Loc,
                 Left_Opnd  => Arr_Attr (B, Name_Length, J),
-                Right_Opnd => Make_Integer_Literal (Loc, 0));
-
-            if No (Alist) then
-               Alist := Atest;
-               Blist := Btest;
-
-            else
-               Alist :=
-                 Make_Or_Else (Loc,
-                   Left_Opnd  => Relocate_Node (Alist),
-                   Right_Opnd => Atest);
-
-               Blist :=
-                 Make_Or_Else (Loc,
-                   Left_Opnd  => Relocate_Node (Blist),
-                   Right_Opnd => Btest);
-            end if;
+                Right_Opnd => Make_Integer_Literal (Loc, Uint_0)));
          end loop;
 
          return
@@ -1950,25 +1929,14 @@ package body Exp_Ch4 is
       -----------------------------
 
       function Test_Lengths_Correspond return Node_Id is
-         Result : Node_Id;
-         Rtest  : Node_Id;
+         Result : Node_Id := Empty;
 
       begin
-         Result := Empty;
          for J in 1 .. Number_Dimensions (Ltyp) loop
-            Rtest :=
+            Evolve_Or_Else (Result,
               Make_Op_Ne (Loc,
                 Left_Opnd  => Arr_Attr (A, Name_Length, J),
-                Right_Opnd => Arr_Attr (B, Name_Length, J));
-
-            if No (Result) then
-               Result := Rtest;
-            else
-               Result :=
-                 Make_Or_Else (Loc,
-                   Left_Opnd  => Relocate_Node (Result),
-                   Right_Opnd => Rtest);
-            end if;
+                Right_Opnd => Arr_Attr (B, Name_Length, J)));
          end loop;
 
          return Result;
@@ -15377,6 +15345,17 @@ package body Exp_Ch4 is
 
    begin
       SCIL_Node := Empty;
+
+      --  We have to examine the corresponding record type when dealing with
+      --  protected types instead of the original, unexpanded, type.
+
+      if Ekind (Right_Type) = E_Protected_Type then
+         Right_Type := Corresponding_Record_Type (Right_Type);
+      end if;
+
+      if Ekind (Left_Type) = E_Protected_Type then
+         Left_Type := Corresponding_Record_Type (Left_Type);
+      end if;
 
       --  In the case where the type is an access type, the test is applied
       --  using the designated types (needed in Ada 2012 for implicit anonymous

@@ -79,6 +79,7 @@ with Sinfo.Nodes;    use Sinfo.Nodes;
 with Sinfo.Utils;    use Sinfo.Utils;
 with Sinput;         use Sinput;
 with Snames;         use Snames;
+with Strub;          use Strub;
 with Targparm;       use Targparm;
 with Tbuild;         use Tbuild;
 with Ttypes;         use Ttypes;
@@ -3506,6 +3507,15 @@ package body Sem_Ch3 is
          Set_Is_Tagged_Type (T, True);
          Set_No_Tagged_Streams_Pragma (T, No_Tagged_Streams);
          Make_Class_Wide_Type (T);
+      end if;
+
+      --  For tagged types, or when prefixed-call syntax is allowed for
+      --  untagged types, initialize the list of primitive operations to
+      --  an empty list.
+
+      if Tagged_Present (N)
+        or else Extensions_Allowed
+      then
          Set_Direct_Primitive_Operations (T, New_Elmt_List);
       end if;
 
@@ -5746,6 +5756,15 @@ package body Sem_Ch3 is
                   if Is_Tagged_Type (Id) then
                      Set_No_Tagged_Streams_Pragma
                        (Id, No_Tagged_Streams_Pragma (T));
+                  end if;
+
+                  --  For tagged types, or when prefixed-call syntax is allowed
+                  --  for untagged types, initialize the list of primitive
+                  --  operations to an empty list.
+
+                  if Is_Tagged_Type (Id)
+                    or else Extensions_Allowed
+                  then
                      Set_Direct_Primitive_Operations (Id, New_Elmt_List);
                   end if;
 
@@ -16047,6 +16066,8 @@ package body Sem_Ch3 is
          Set_Alias (New_Subp, Actual_Subp);
       end if;
 
+      Copy_Strub_Mode (New_Subp, Alias (New_Subp));
+
       --  Derived subprograms of a tagged type must inherit the convention
       --  of the parent subprogram (a requirement of AI-117). Derived
       --  subprograms of untagged types simply get convention Ada by default.
@@ -17190,8 +17211,12 @@ package body Sem_Ch3 is
          Set_Etype        (T, Any_Type);
          Set_Scalar_Range (T, Scalar_Range (Any_Type));
 
-         if Is_Tagged_Type (T)
-           and then Is_Record_Type (T)
+         --  For tagged types, or when prefixed-call syntax is allowed for
+         --  untagged types, initialize the list of primitive operations to
+         --  an empty list.
+
+         if (Is_Tagged_Type (T) and then Is_Record_Type (T))
+           or else Extensions_Allowed
          then
             Set_Direct_Primitive_Operations (T, New_Elmt_List);
          end if;
