@@ -6249,7 +6249,7 @@ package body Sem_Ch13 is
 
       Check_Restriction_No_Use_Of_Attribute (N);
 
-      if Get_Aspect_Id (Chars (N)) /= No_Aspect then
+      if Is_Aspect_Id (Chars (N)) then
          --  6.1/3 No_Specification_of_Aspect: Identifies an aspect for which
          --    no aspect_specification, attribute_definition_clause, or pragma
          --    is given.
@@ -12618,9 +12618,11 @@ package body Sem_Ch13 is
       end if;
 
       --  Skip the following warnings if overlap was detected; programmer
-      --  should fix the errors first.
+      --  should fix the errors first. Also skip the warnings for types in
+      --  generics, because their representation information is not fully
+      --  computed.
 
-      if not Overlap_Detected then
+      if not Overlap_Detected and then not In_Generic_Scope (Rectype) then
          --  Check for record holes (gaps)
 
          if Warn_On_Record_Holes then
