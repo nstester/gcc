@@ -119,6 +119,9 @@
 ;; VQMOV without 2-element modes.
 (define_mode_iterator VQMOV_NO2E [V16QI V8HI V4SI V8HF V8BF V4SF])
 
+;; Double integer vector modes.
+(define_mode_iterator VD_I [V8QI V4HI V2SI DI])
+
 ;; Quad integer vector modes.
 (define_mode_iterator VQ_I [V16QI V8HI V4SI V2DI])
 
@@ -207,6 +210,9 @@
 ;; All Advanced SIMD polynomial modes and DI.
 (define_mode_iterator VALLP [V8QI V16QI V4HI V8HI V2DI DI])
 
+;; All Advanced SIMD polynomial modes.
+(define_mode_iterator VALLP_NO_DI [V8QI V16QI V4HI V8HI V2DI])
+
 ;; Advanced SIMD modes for Integer reduction across lanes.
 (define_mode_iterator VDQV [V8QI V16QI V4HI V8HI V4SI V2DI])
 
@@ -234,6 +240,9 @@
 
 ;; Double vector modes for combines.
 (define_mode_iterator VDC [V8QI V4HI V4BF V4HF V2SI V2SF DI DF])
+
+;; Polynomial modes for vector combines.
+(define_mode_iterator VDC_P [V8QI V4HI DI])
 
 ;; Advanced SIMD modes except double int.
 (define_mode_iterator VDQIF [V8QI V16QI V4HI V8HI V2SI V4SI V2SF V4SF V2DF])
