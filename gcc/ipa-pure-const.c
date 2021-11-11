@@ -1513,6 +1513,9 @@ propagate_pure_const (void)
 	      enum pure_const_state_e edge_state = IPA_CONST;
 	      bool edge_looping = false;
 
+	      if (e->recursive_p ())
+		looping = true;
+
 	      if (dump_file && (dump_flags & TDF_DETAILS))
 		{
 		  fprintf (dump_file, "    Call to %s",
@@ -2132,11 +2135,10 @@ pass_local_pure_const::execute (function *fun)
 		 current_function_name ());
 
       /* Update declaration and reduce profile to executed once.  */
-      TREE_THIS_VOLATILE (current_function_decl) = 1;
+      if (cgraph_node::get (current_function_decl)->set_noreturn_flag (true))
+	changed = true;
       if (node->frequency > NODE_FREQUENCY_EXECUTED_ONCE)
 	node->frequency = NODE_FREQUENCY_EXECUTED_ONCE;
-
-      changed = true;
     }
 
   switch (l->pure_const_state)
