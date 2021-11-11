@@ -100,7 +100,6 @@ private:
 
   back_threader_registry m_registry;
   back_threader_profitability m_profit;
-  gimple_ranger *m_ranger;
   path_range_query *m_solver;
 
   // Current path being analyzed.
@@ -143,15 +142,13 @@ back_threader::back_threader (function *fun, unsigned flags, bool first)
 
   m_fun = fun;
   m_flags = flags;
-  m_ranger = new gimple_ranger;
-  m_solver = new path_range_query (*m_ranger, flags & BT_RESOLVE);
+  m_solver = new path_range_query (flags & BT_RESOLVE);
   m_last_stmt = NULL;
 }
 
 back_threader::~back_threader ()
 {
   delete m_solver;
-  delete m_ranger;
 
   loop_optimizer_finalize ();
 }
@@ -615,7 +612,6 @@ back_threader_profitability::profitable_path_p (const vec<basic_block> &m_path,
   int n_insns = 0;
   gimple_stmt_iterator gsi;
   loop_p loop = m_path[0]->loop_father;
-  bool path_crosses_loops = false;
   bool threaded_through_latch = false;
   bool multiway_branch_in_path = false;
   bool threaded_multiway_branch = false;
@@ -634,30 +630,15 @@ back_threader_profitability::profitable_path_p (const vec<basic_block> &m_path,
 
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file, " bb:%i", bb->index);
-      /* Remember, blocks in the path are stored in opposite order
-	 in the PATH array.  The last entry in the array represents
-	 the block with an outgoing edge that we will redirect to the
-	 jump threading path.  Thus we don't care about that block's
-	 loop father, nor how many statements are in that block because
-	 it will not be copied or whether or not it ends in a multiway
-	 branch.  */
+      /* Remember, blocks in the path are stored in opposite order in
+	 the PATH array.  The last entry in the array represents the
+	 block with an outgoing edge that we will redirect to the jump
+	 threading path.  Thus we don't care how many statements are
+	 in that block because it will not be copied or whether or not
+	 it ends in a multiway branch.  */
       if (j < m_path.length () - 1)
 	{
 	  int orig_n_insns = n_insns;
-	  if (bb->loop_father != loop)
-	    {
-	      path_crosses_loops = true;
-
-	      // Dump rest of blocks.
-	      if (dump_file && (dump_flags & TDF_DETAILS))
-		for (j++; j < m_path.length (); j++)
-		  {
-		    bb = m_path[j];
-		    fprintf (dump_file, " bb:%i", bb->index);
-		  }
-	      break;
-	    }
-
 	  /* PHIs in the path will create degenerate PHIS in the
 	     copied path which will then get propagated away, so
 	     looking at just the duplicate path the PHIs would
@@ -774,14 +755,6 @@ back_threader_profitability::profitable_path_p (const vec<basic_block> &m_path,
 	  && (determine_bb_domination_status (loop, taken_edge->dest)
 	      == DOMST_NONDOMINATING))
 	*creates_irreducible_loop = true;
-    }
-
-  if (path_crosses_loops)
-    {
-      if (dump_file && (dump_flags & TDF_DETAILS))
-	fprintf (dump_file, "  FAIL: Jump-thread path not considered: "
-		 "the path crosses loops.\n");
-      return false;
     }
 
   /* Threading is profitable if the path duplicated is hot but also
