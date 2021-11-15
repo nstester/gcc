@@ -2246,15 +2246,20 @@ cxx_eval_thunk_call (const constexpr_ctx *ctx, tree t, tree thunk_fndecl,
 {
   tree function = THUNK_TARGET (thunk_fndecl);
 
-  /* virtual_offset is only set in the presence of virtual bases, which make
-     the class non-literal, so we don't need to handle it here.  */
   if (THUNK_VIRTUAL_OFFSET (thunk_fndecl))
     {
-      gcc_assert (!DECL_DECLARED_CONSTEXPR_P (function));
       if (!ctx->quiet)
 	{
-	  error ("call to non-%<constexpr%> function %qD", function);
-	  explain_invalid_constexpr_fn (function);
+	  if (!DECL_DECLARED_CONSTEXPR_P (function))
+	    {
+	      error ("call to non-%<constexpr%> function %qD", function);
+	      explain_invalid_constexpr_fn (function);
+	    }
+	  else
+	    /* virtual_offset is only set for virtual bases, which make the
+	       class non-literal, so we don't need to handle it here.  */
+	    error ("calling constexpr member function %qD through virtual "
+		   "base subobject", function);
 	}
       *non_constant_p = true;
       return t;
@@ -7691,6 +7696,10 @@ maybe_constant_value (tree t, tree decl, bool manifestly_const_eval)
       return r;
     }
 
+  /* Don't evaluate an unevaluated operand.  */
+  if (cp_unevaluated_operand)
+    return t;
+
   uid_sensitive_constexpr_evaluation_checker c;
   r = cxx_eval_outermost_constant_expr (t, true, true, false, false, decl);
   gcc_checking_assert (r == t
@@ -7753,6 +7762,9 @@ fold_non_dependent_expr_template (tree t, tsubst_flags_t complain,
 	    }
 	  return t;
 	}
+
+      if (cp_unevaluated_operand && !manifestly_const_eval)
+	return t;
 
       tree r = cxx_eval_outermost_constant_expr (t, true, true,
 						 manifestly_const_eval,
