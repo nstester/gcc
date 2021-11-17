@@ -3665,7 +3665,7 @@ zero_all_vector_registers (HARD_REG_SET need_zeroed_hardregs)
     return NULL;
 
   for (unsigned int regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-    if ((IN_RANGE (regno, FIRST_SSE_REG, LAST_SSE_REG)
+    if ((LEGACY_SSE_REGNO_P (regno)
 	 || (TARGET_64BIT
 	     && (REX_SSE_REGNO_P (regno)
 		 || (TARGET_AVX512F && EXT_REX_SSE_REGNO_P (regno)))))
@@ -5733,7 +5733,7 @@ static bool indirect_thunk_needed = false;
 
 /* Bit masks of integer registers, which contain branch target, used
    by call thunk functions.  */
-static int indirect_thunks_used;
+static HARD_REG_SET indirect_thunks_used;
 
 /* True if return thunk function is needed.  */
 static bool indirect_return_needed = false;
@@ -6030,8 +6030,7 @@ ix86_code_end (void)
 
   for (regno = FIRST_REX_INT_REG; regno <= LAST_REX_INT_REG; regno++)
     {
-      unsigned int i = regno - FIRST_REX_INT_REG + LAST_INT_REG + 1;
-      if ((indirect_thunks_used & (1 << i)))
+      if (TEST_HARD_REG_BIT (indirect_thunks_used, regno))
 	output_indirect_thunk_function (indirect_thunk_prefix_none,
 					regno, false);
     }
@@ -6041,7 +6040,7 @@ ix86_code_end (void)
       char name[32];
       tree decl;
 
-      if ((indirect_thunks_used & (1 << regno)))
+      if (TEST_HARD_REG_BIT (indirect_thunks_used, regno))
 	output_indirect_thunk_function (indirect_thunk_prefix_none,
 					regno, false);
 
@@ -16014,12 +16013,8 @@ ix86_output_indirect_branch_via_reg (rtx call_op, bool sibcall_p)
       != indirect_branch_thunk_inline)
     {
       if (cfun->machine->indirect_branch_type == indirect_branch_thunk)
-	{
-	  int i = regno;
-	  if (i >= FIRST_REX_INT_REG)
-	    i -= (FIRST_REX_INT_REG - LAST_INT_REG - 1);
-	  indirect_thunks_used |= 1 << i;
-	}
+	SET_HARD_REG_BIT (indirect_thunks_used, regno);
+
       indirect_thunk_name (thunk_name_buf, regno, need_prefix, false);
       thunk_name = thunk_name_buf;
     }
@@ -16307,7 +16302,7 @@ ix86_output_indirect_function_return (rtx ret_op)
 	  if (need_thunk)
 	    {
 	      indirect_return_via_cx = true;
-	      indirect_thunks_used |= 1 << CX_REG;
+	      SET_HARD_REG_BIT (indirect_thunks_used, CX_REG);
 	    }
 	  fprintf (asm_out_file, "\tjmp\t");
 	  assemble_name (asm_out_file, thunk_name);
@@ -19089,15 +19084,13 @@ ix86_register_priority (int hard_regno)
     return 0;
   if (hard_regno == BP_REG)
     return 1;
-  /* New x86-64 int registers result in bigger code size.  Discourage
-     them.  */
-  if (IN_RANGE (hard_regno, FIRST_REX_INT_REG, LAST_REX_INT_REG))
+  /* New x86-64 int registers result in bigger code size.  Discourage them.  */
+  if (REX_INT_REGNO_P (hard_regno))
     return 2;
-  /* New x86-64 SSE registers result in bigger code size.  Discourage
-     them.  */
-  if (IN_RANGE (hard_regno, FIRST_REX_SSE_REG, LAST_REX_SSE_REG))
+  /* New x86-64 SSE registers result in bigger code size.  Discourage them.  */
+  if (REX_SSE_REGNO_P (hard_regno))
     return 2;
-  if (IN_RANGE (hard_regno, FIRST_EXT_REX_SSE_REG, LAST_EXT_REX_SSE_REG))
+  if (EXT_REX_SSE_REGNO_P (hard_regno))
     return 1;
   /* Usage of AX register results in smaller code.  Prefer it.  */
   if (hard_regno == AX_REG)
@@ -19974,9 +19967,8 @@ ix86_hard_regno_call_part_clobbered (unsigned int abi_id, unsigned int regno,
   /* Special ABI for vzeroupper which only clobber higher part of sse regs.  */
   if (abi_id == ABI_VZEROUPPER)
       return (GET_MODE_SIZE (mode) > 16
-	      && ((TARGET_64BIT
-		   && (IN_RANGE (regno, FIRST_REX_SSE_REG, LAST_REX_SSE_REG)))
-		  || (IN_RANGE (regno, FIRST_SSE_REG, LAST_SSE_REG))));
+	      && ((TARGET_64BIT && REX_SSE_REGNO_P (regno))
+		  || LEGACY_SSE_REGNO_P (regno)));
 
   return SSE_REGNO_P (regno) && GET_MODE_SIZE (mode) > 16;
 }
