@@ -11315,9 +11315,9 @@
   switch (which_alternative)
     {
     case 0:
-      return "vpextrw\t{%2, %1, %k0|%k0, %1, %2}";
+      return "%vpextrw\t{%2, %1, %k0|%k0, %1, %2}";
     case 1:
-      return "vpextrw\t{%2, %1, %0|%0, %1, %2}";
+      return "%vpextrw\t{%2, %1, %0|%0, %1, %2}";
 
     case 2:
       operands[2] = GEN_INT (INTVAL (operands[2]) * 2);
@@ -11330,7 +11330,7 @@
       gcc_unreachable ();
    }
 }
-  [(set_attr "isa" "*,*,noavx,avx")
+  [(set_attr "isa" "*,sse4,noavx,avx")
    (set_attr "type" "sselog1,sselog1,sseishft1,sseishft1")
    (set_attr "prefix" "maybe_evex")
    (set_attr "mode" "TI")])
@@ -17272,7 +17272,7 @@
    (V2DI "TARGET_SSE4_1 && TARGET_64BIT")])
 
 (define_mode_attr sse2p4_1
-  [(V16QI "sse4_1") (V8HI "sse2") (V8HF "sse4_1")
+  [(V16QI "sse4_1") (V8HI "sse2") (V8HF "sse2")
    (V4SI "sse4_1") (V2DI "sse4_1")])
 
 (define_mode_attr pinsr_evex_isa

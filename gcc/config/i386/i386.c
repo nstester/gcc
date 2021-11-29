@@ -19277,7 +19277,7 @@ ix86_secondary_reload (bool in_p, rtx x, reg_class_t rclass,
     }
 
   /* Require movement to gpr, and then store to memory.  */
-  if (mode == HFmode
+  if ((mode == HFmode || mode == HImode)
       && !TARGET_SSE4_1
       && SSE_CLASS_P (rclass)
       && !in_p && MEM_P (x))
@@ -19437,8 +19437,9 @@ inline_secondary_memory_needed (machine_mode mode, reg_class_t class1,
       if (msize > UNITS_PER_WORD)
 	return true;
 
-      /* In addition to SImode moves, AVX512FP16 also enables HImode moves.  */
-      int minsize = GET_MODE_SIZE (TARGET_AVX512FP16 ? HImode : SImode);
+      /* In addition to SImode moves, HImode moves are supported for SSE2 and above,
+	 Use vmovw with AVX512FP16, or pinsrw/pextrw without AVX512FP16.  */
+      int minsize = GET_MODE_SIZE (TARGET_SSE2 ? HImode : SImode);
 
       if (msize < minsize)
 	return true;
