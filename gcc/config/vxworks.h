@@ -101,11 +101,23 @@ along with GCC; see the file COPYING3.  If not see
    the default CPP spec for C++ as well.  */
 #undef CPLUSPLUS_CPP_SPEC
 
-/* For VxWorks static rtps, the system provides libc_internal.a, a superset of
-   libgcc.a that we need to use e.g. to satisfy references to __init and
-   __fini.  We still want our libgcc to prevail for symbols it would provide
-   (e.g. register save entry points), so re-place it here between libraries
-   that might reference it and libc_internal.
+/* For VxWorks static rtps, the system provides libc_internal.a for a variety
+   of purposes. Care is needed to include it appropriately.
+
+   - In some configurations, libc_internal fills in possible references from
+     the static libc that we don't wouldn't satisfy ourselves, say, with
+     libgcc.  An example is the __aeabi_memcpy family of functions on arm,
+     which have very specific ABI allowances.
+
+   - OTOH, in some configurations the library provides typical libgcc
+     services, for example register save/restore entry points on powerpc. We
+     want our libgcc to prevail for symbols it would provide, so place
+     -lc_internal after -lc -lgcc.
+
+   - libc_internal also contains __init/__fini functions for
+     USE_INITFINI_ARRAY support. However, the system expects these in
+     every shared lib as well, with slightly different names, and it is
+     simpler for us to provide our own versions through vxcrtstuff.
 
    In addition, some versions of VxWorks rely on explicit extra libraries for
    system calls and the set of base network libraries of common use varies
@@ -120,7 +132,7 @@ along with GCC; see the file COPYING3.  If not see
 #define VXWORKS_NET_LIBS_RTP "-lnet -ldsi"
 #endif
 
-#define VXWORKS_BASE_LIBS_RTP "-lc -lgcc -lc_internal"
+#define VXWORKS_BASE_LIBS_RTP "-lc -lgcc %{!shared:-lc_internal}"
 
 #define VXWORKS_EXTRA_LIBS_RTP
 
@@ -143,29 +155,46 @@ along with GCC; see the file COPYING3.  If not see
    tlsLib, responsible for TLS support by the OS.  */
 
 #if TARGET_VXWORKS7
+
+/* For static links, /usr/lib/common has everything. For dynamic links,
+   /usr/lib/common/PIC has the static libs and objects that might be needed
+   in the closure (e.g. crt0.o), while the shared version of standard deps
+   (e.g. libc.so) are still in /usr/lib/common.  */
 #undef  STARTFILE_PREFIX_SPEC
-#define STARTFILE_PREFIX_SPEC "/usr/lib/common"
+#define STARTFILE_PREFIX_SPEC \
+  "%{shared|non-static:/usr/lib/common/PIC} /usr/lib/common"
+
 #define TLS_SYM "-u __tls__"
+
 #else
+
 #define TLS_SYM ""
+
 #endif
 
 #undef VXWORKS_LIB_SPEC
-#define	VXWORKS_LIB_SPEC						\
-"%{mrtp:%{shared:-u " USER_LABEL_PREFIX "__init -u " USER_LABEL_PREFIX "__fini} \
-	%{!shared:%{non-static:-u " USER_LABEL_PREFIX "_STI__6__rtld -ldl} \
-		  " TLS_SYM " \
+#define	VXWORKS_LIB_SPEC						   \
+"%{mrtp:%{!shared:%{non-static:-u " USER_LABEL_PREFIX "_STI__6__rtld -ldl} \
+		  " TLS_SYM "                                              \
 		  --start-group " VXWORKS_LIBS_RTP " --end-group}}"
 
-/* The no-op spec for "-shared" below is present because otherwise GCC
-   will treat it as an unrecognized option.  */
-#undef VXWORKS_LINK_SPEC
-#define VXWORKS_LINK_SPEC				\
+#if TARGET_VXWORKS7
+#define VXWORKS_EXTRA_LINK_SPEC ""
+#else
+/* Older VxWorks RTPs can only link with shared libs, and
+   need special switches --force-dynamic --export-dynamic. */
+#define VXWORKS_EXTRA_LINK_SPEC				\
+"%{mrtp:%{!shared:%{non-static:--force-dynamic --export-dynamic}}}"
+#endif
+
+/* A default link_os expansion for RTPs, that cpu ports may override.  */
+#undef VXWORKS_LINK_OS_SPEC
+#define VXWORKS_LINK_OS_SPEC "%(link_os)"
+
+/* The -B and -X switches are for DIAB based linking. */
+#undef VXWORKS_BASE_LINK_SPEC
+#define VXWORKS_BASE_LINK_SPEC				\
 "%{!mrtp:-r}						\
- %{!shared:						\
-   %{mrtp:-q %{h*}					\
-          %{R*} %{!T*: %(link_start) }			\
-          %(link_os)}}					\
  %{v:-V}						\
  %{shared:-shared}					\
  %{Bstatic:-Bstatic}					\
@@ -173,17 +202,30 @@ along with GCC; see the file COPYING3.  If not see
  %{!Xbind-lazy:-z now}					\
  %{Xbind-now:%{Xbind-lazy:				\
    %e-Xbind-now and -Xbind-lazy are incompatible}}	\
- %{mrtp:%{!shared:%{!non-static:-static}		\
- 		  %{non-static:--force-dynamic --export-dynamic}}}"
+ %{mrtp:-q %{!shared:%{!non-static:-static}}            \
+        %{h*} %{R*} %{!T*: %(link_start)}"              \
+        VXWORKS_LINK_OS_SPEC "}"
+
+#undef VXWORKS_LINK_SPEC
+#define VXWORKS_LINK_SPEC VXWORKS_BASE_LINK_SPEC " " VXWORKS_EXTRA_LINK_SPEC
 
 #undef VXWORKS_LIBGCC_SPEC
+#if defined(ENABLE_SHARED_LIBGCC)
+#define VXWORKS_LIBGCC_SPEC                                             \
+"%{!mrtp:-lgcc -lgcc_eh}                                                \
+ %{mrtp:%{!static-libgcc:%{shared|non-static:-lgcc_s;:-lgcc -lgcc_eh}}  \
+         %{static-libgcc:-lgcc -lgcc_eh}}"
+#else
 #define VXWORKS_LIBGCC_SPEC "-lgcc"
+#endif
 
-/* Setup the crtstuff begin/end we might need for dwarf EH registration.  */
+/* Setup the crtstuff begin/end we might need for dwarf EH registration
+   and/or INITFINI_ARRAY support for shared libs.  */
 
-#if !defined(CONFIG_SJLJ_EXCEPTIONS) && DWARF2_UNWIND_INFO
-#define VX_CRTBEGIN_SPEC "vx_crtbegin.o%s"
-#define VX_CRTEND_SPEC "-l:vx_crtend.o"
+#if (HAVE_INITFINI_ARRAY_SUPPORT && defined(ENABLE_SHARED_LIBGCC)) \
+    || (DWARF2_UNWIND_INFO && !defined(CONFIG_SJLJ_EXCEPTIONS))
+#define VX_CRTBEGIN_SPEC "%{!shared:vx_crtbegin.o%s;:vx_crtbeginS.o%s}"
+#define VX_CRTEND_SPEC   "%{!shared:vx_crtend.o%s;:vx_crtendS.o%s}"
 #else
 #define VX_CRTBEGIN_SPEC ""
 #define VX_CRTEND_SPEC ""
