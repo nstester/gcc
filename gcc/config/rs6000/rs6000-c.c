@@ -37,9 +37,6 @@
 
 #include "rs6000-internal.h"
 
-static tree altivec_resolve_new_overloaded_builtin (location_t, tree, void *);
-
-
 /* Handle the machine specific pragma longcall.  Its syntax is
 
    # pragma longcall ( TOGGLE )
@@ -817,7 +814,7 @@ is_float128_p (tree t)
 
 /* Return true iff ARGTYPE can be compatibly passed as PARMTYPE.  */
 static bool
-rs6000_new_builtin_type_compatible (tree parmtype, tree argtype)
+rs6000_builtin_type_compatible (tree parmtype, tree argtype)
 {
   if (parmtype == error_mark_node)
     return false;
@@ -840,23 +837,6 @@ rs6000_new_builtin_type_compatible (tree parmtype, tree argtype)
   return lang_hooks.types_compatible_p (parmtype, argtype);
 }
 
-static inline bool
-rs6000_builtin_type_compatible (tree t, int id)
-{
-  tree builtin_type;
-  builtin_type = rs6000_builtin_type (id);
-  if (t == error_mark_node)
-    return false;
-  if (INTEGRAL_TYPE_P (t) && INTEGRAL_TYPE_P (builtin_type))
-    return true;
-  else if (TARGET_IEEEQUAD && TARGET_LONG_DOUBLE_128
-	   && is_float128_p (t) && is_float128_p (builtin_type))
-    return true;
-  else
-    return lang_hooks.types_compatible_p (t, builtin_type);
-}
-
-
 /* In addition to calling fold_convert for EXPR of type TYPE, also
    call c_fully_fold to remove any C_MAYBE_CONST_EXPRs that could be
    hiding there (PR47197).  */
@@ -873,16 +853,6 @@ fully_fold_convert (tree type, tree expr)
   return result;
 }
 
-/* Implementation of the resolve_overloaded_builtin target hook, to
-   support Altivec's overloaded builtins.  */
-
-tree
-altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
-				    void *passed_arglist)
-{
-  return altivec_resolve_new_overloaded_builtin (loc, fndecl, passed_arglist);
-}
-
 /* Build a tree for a function call to an Altivec non-overloaded builtin.
    The overloaded builtin that matched the types and args is described
    by DESC.  The N arguments are given in ARGS, respectively.
@@ -891,14 +861,13 @@ altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
    a small exception for vec_{all,any}_{ge,le} predicates. */
 
 static tree
-altivec_build_new_resolved_builtin (tree *args, int n, tree fntype,
-				    tree ret_type,
-				    rs6000_gen_builtins bif_id,
-				    rs6000_gen_builtins ovld_id)
+altivec_build_resolved_builtin (tree *args, int n, tree fntype, tree ret_type,
+				rs6000_gen_builtins bif_id,
+				rs6000_gen_builtins ovld_id)
 {
   tree argtypes = TYPE_ARG_TYPES (fntype);
   tree arg_type[MAX_OVLD_ARGS];
-  tree fndecl = rs6000_builtin_decls_x[bif_id];
+  tree fndecl = rs6000_builtin_decls[bif_id];
 
   for (int i = 0; i < n; i++)
     {
@@ -963,9 +932,9 @@ altivec_build_new_resolved_builtin (tree *args, int n, tree fntype,
    support Altivec's overloaded builtins.  FIXME: This code needs
    to be brutally factored.  */
 
-static tree
-altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
-					void *passed_arglist)
+tree
+altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
+				    void *passed_arglist)
 {
   vec<tree, va_gc> *arglist = static_cast<vec<tree, va_gc> *> (passed_arglist);
   unsigned int nargs = vec_safe_length (arglist);
@@ -1032,13 +1001,13 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 	  case E_SFmode:
 	    {
 	      /* For floats use the xvmulsp instruction directly.  */
-	      tree call = rs6000_builtin_decls_x[RS6000_BIF_XVMULSP];
+	      tree call = rs6000_builtin_decls[RS6000_BIF_XVMULSP];
 	      return build_call_expr (call, 2, arg0, arg1);
 	    }
 	  case E_DFmode:
 	    {
 	      /* For doubles use the xvmuldp instruction directly.  */
-	      tree call = rs6000_builtin_decls_x[RS6000_BIF_XVMULDP];
+	      tree call = rs6000_builtin_decls[RS6000_BIF_XVMULDP];
 	      return build_call_expr (call, 2, arg0, arg1);
 	    }
 	  /* Other types are errors.  */
@@ -1096,8 +1065,8 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 		vec<tree, va_gc> *params = make_tree_vector ();
 		vec_safe_push (params, arg0);
 		vec_safe_push (params, arg1);
-		tree call = altivec_resolve_new_overloaded_builtin
-		  (loc, rs6000_builtin_decls_x[RS6000_OVLD_VEC_CMPEQ],
+		tree call = altivec_resolve_overloaded_builtin
+		  (loc, rs6000_builtin_decls[RS6000_OVLD_VEC_CMPEQ],
 		   params);
 		/* Use save_expr to ensure that operands used more than once
 		   that may have side effects (like calls) are only evaluated
@@ -1106,8 +1075,8 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 		params = make_tree_vector ();
 		vec_safe_push (params, call);
 		vec_safe_push (params, call);
-		return altivec_resolve_new_overloaded_builtin
-		  (loc, rs6000_builtin_decls_x[RS6000_OVLD_VEC_NOR], params);
+		return altivec_resolve_overloaded_builtin
+		  (loc, rs6000_builtin_decls[RS6000_OVLD_VEC_NOR], params);
 	      }
 	      /* Other types are errors.  */
 	    default:
@@ -1160,14 +1129,13 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 	      vec_safe_push (params, arg1);
 
 	      if (fcode == RS6000_OVLD_VEC_ADDE)
-		add_sub_builtin = rs6000_builtin_decls_x[RS6000_OVLD_VEC_ADD];
+		add_sub_builtin = rs6000_builtin_decls[RS6000_OVLD_VEC_ADD];
 	      else
-		add_sub_builtin = rs6000_builtin_decls_x[RS6000_OVLD_VEC_SUB];
+		add_sub_builtin = rs6000_builtin_decls[RS6000_OVLD_VEC_SUB];
 
 	      tree call
-		= altivec_resolve_new_overloaded_builtin (loc,
-							  add_sub_builtin,
-							  params);
+		= altivec_resolve_overloaded_builtin (loc, add_sub_builtin,
+						      params);
 	      tree const1 = build_int_cstu (TREE_TYPE (arg0_type), 1);
 	      tree ones_vector = build_vector_from_val (arg0_type, const1);
 	      tree and_expr = fold_build2_loc (loc, BIT_AND_EXPR, arg0_type,
@@ -1175,9 +1143,8 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 	      params = make_tree_vector ();
 	      vec_safe_push (params, call);
 	      vec_safe_push (params, and_expr);
-	      return altivec_resolve_new_overloaded_builtin (loc,
-							     add_sub_builtin,
-							     params);
+	      return altivec_resolve_overloaded_builtin (loc, add_sub_builtin,
+							 params);
 	    }
 	  /* For {un}signed __int128s use the vaddeuqm/vsubeuqm instruction
 	     directly.  */
@@ -1240,25 +1207,23 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 	    vec_safe_push (params, arg1);
 
 	    if (fcode == RS6000_OVLD_VEC_ADDEC)
-	      as_c_builtin = rs6000_builtin_decls_x[RS6000_OVLD_VEC_ADDC];
+	      as_c_builtin = rs6000_builtin_decls[RS6000_OVLD_VEC_ADDC];
 	    else
-	      as_c_builtin = rs6000_builtin_decls_x[RS6000_OVLD_VEC_SUBC];
+	      as_c_builtin = rs6000_builtin_decls[RS6000_OVLD_VEC_SUBC];
 
-	    tree call1 = altivec_resolve_new_overloaded_builtin (loc,
-								 as_c_builtin,
-								 params);
+	    tree call1 = altivec_resolve_overloaded_builtin (loc, as_c_builtin,
+							     params);
 	    params = make_tree_vector ();
 	    vec_safe_push (params, arg0);
 	    vec_safe_push (params, arg1);
 
 	    if (fcode == RS6000_OVLD_VEC_ADDEC)
-	      as_builtin = rs6000_builtin_decls_x[RS6000_OVLD_VEC_ADD];
+	      as_builtin = rs6000_builtin_decls[RS6000_OVLD_VEC_ADD];
 	    else
-	      as_builtin = rs6000_builtin_decls_x[RS6000_OVLD_VEC_SUB];
+	      as_builtin = rs6000_builtin_decls[RS6000_OVLD_VEC_SUB];
 
-	    tree call2 = altivec_resolve_new_overloaded_builtin (loc,
-								 as_builtin,
-								 params);
+	    tree call2 = altivec_resolve_overloaded_builtin (loc, as_builtin,
+							     params);
 	    tree const1 = build_int_cstu (TREE_TYPE (arg0_type), 1);
 	    tree ones_vector = build_vector_from_val (arg0_type, const1);
 	    tree and_expr = fold_build2_loc (loc, BIT_AND_EXPR, arg0_type,
@@ -1266,14 +1231,14 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 	    params = make_tree_vector ();
 	    vec_safe_push (params, call2);
 	    vec_safe_push (params, and_expr);
-	    call2 = altivec_resolve_new_overloaded_builtin (loc, as_c_builtin,
-							    params);
+	    call2 = altivec_resolve_overloaded_builtin (loc, as_c_builtin,
+							params);
 	    params = make_tree_vector ();
 	    vec_safe_push (params, call1);
 	    vec_safe_push (params, call2);
-	    tree or_builtin = rs6000_builtin_decls_x[RS6000_OVLD_VEC_OR];
-	    return altivec_resolve_new_overloaded_builtin (loc, or_builtin,
-							   params);
+	    tree or_builtin = rs6000_builtin_decls[RS6000_OVLD_VEC_OR];
+	    return altivec_resolve_overloaded_builtin (loc, or_builtin,
+						       params);
 	    }
 	  /* For {un}signed __int128s use the vaddecuq/vsubbecuq
 	     instructions.  This occurs through normal processing.  */
@@ -1415,34 +1380,34 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 		  break;
 
 		case E_V1TImode:
-		  call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V1TI];
+		  call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V1TI];
 		  break;
 
 		case E_V2DFmode:
-		  call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V2DF];
+		  call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V2DF];
 		  break;
 
 		case E_V2DImode:
-		  call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V2DI];
+		  call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V2DI];
 		  break;
 
 		case E_V4SFmode:
-		  call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V4SF];
+		  call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V4SF];
 		  break;
 
 		case E_V4SImode:
 		  if (TARGET_DIRECT_MOVE_64BIT)
-		    call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V4SI];
+		    call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V4SI];
 		  break;
 
 		case E_V8HImode:
 		  if (TARGET_DIRECT_MOVE_64BIT)
-		    call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V8HI];
+		    call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V8HI];
 		  break;
 
 		case E_V16QImode:
 		  if (TARGET_DIRECT_MOVE_64BIT)
-		    call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V16QI];
+		    call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V16QI];
 		  break;
 		}
 	    }
@@ -1457,27 +1422,27 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 		  break;
 
 		case E_V2DFmode:
-		  call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V2DF];
+		  call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V2DF];
 		  break;
 
 		case E_V2DImode:
-		  call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V2DI];
+		  call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V2DI];
 		  break;
 
 		case E_V4SFmode:
-		  call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V4SF];
+		  call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V4SF];
 		  break;
 
 		case E_V4SImode:
-		  call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V4SI];
+		  call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V4SI];
 		  break;
 
 		case E_V8HImode:
-		  call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V8HI];
+		  call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V8HI];
 		  break;
 
 		case E_V16QImode:
-		  call = rs6000_builtin_decls_x[RS6000_BIF_VEC_EXT_V16QI];
+		  call = rs6000_builtin_decls[RS6000_BIF_VEC_EXT_V16QI];
 		  break;
 		}
 	    }
@@ -1577,9 +1542,9 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 
 	  arg2 = wide_int_to_tree (TREE_TYPE (arg2), selector);
 	  if (mode == V2DFmode)
-	    call = rs6000_builtin_decls_x[RS6000_BIF_VEC_SET_V2DF];
+	    call = rs6000_builtin_decls[RS6000_BIF_VEC_SET_V2DF];
 	  else if (mode == V2DImode)
-	    call = rs6000_builtin_decls_x[RS6000_BIF_VEC_SET_V2DI];
+	    call = rs6000_builtin_decls[RS6000_BIF_VEC_SET_V2DI];
 
 	  /* Note, __builtin_vec_insert_<xxx> has vector and scalar types
 	     reversed.  */
@@ -1589,7 +1554,7 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
       else if (mode == V1TImode && VECTOR_UNIT_VSX_P (mode)
 	       && TREE_CODE (arg2) == INTEGER_CST)
 	{
-	  tree call = rs6000_builtin_decls_x[RS6000_BIF_VEC_SET_V1TI];
+	  tree call = rs6000_builtin_decls[RS6000_BIF_VEC_SET_V1TI];
 	  wide_int selector = wi::zero(32);
 
 	  arg2 = wide_int_to_tree (TREE_TYPE (arg2), selector);
@@ -1775,21 +1740,21 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 	  instance = instance->next;
 
 	gcc_assert (instance != NULL);
-	tree fntype = rs6000_builtin_info_x[instance->bifid].fntype;
+	tree fntype = rs6000_builtin_info[instance->bifid].fntype;
 	tree parmtype0 = TREE_VALUE (TYPE_ARG_TYPES (fntype));
 	tree parmtype1 = TREE_VALUE (TREE_CHAIN (TYPE_ARG_TYPES (fntype)));
 
-	if (rs6000_new_builtin_type_compatible (types[0], parmtype0)
-	    && rs6000_new_builtin_type_compatible (types[1], parmtype1))
+	if (rs6000_builtin_type_compatible (types[0], parmtype0)
+	    && rs6000_builtin_type_compatible (types[1], parmtype1))
 	  {
 	    if (rs6000_builtin_decl (instance->bifid, false) != error_mark_node
-		&& rs6000_new_builtin_is_supported (instance->bifid))
+		&& rs6000_builtin_is_supported (instance->bifid))
 	      {
 		tree ret_type = TREE_TYPE (instance->fntype);
-		return altivec_build_new_resolved_builtin (args, n, fntype,
-							   ret_type,
-							   instance->bifid,
-							   fcode);
+		return altivec_build_resolved_builtin (args, n, fntype,
+						       ret_type,
+						       instance->bifid,
+						       fcode);
 	      }
 	    else
 	      unsupported_builtin = true;
@@ -1833,21 +1798,21 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 	  instance = instance->next;
 
 	gcc_assert (instance != NULL);
-	tree fntype = rs6000_builtin_info_x[instance->bifid].fntype;
+	tree fntype = rs6000_builtin_info[instance->bifid].fntype;
 	tree parmtype0 = TREE_VALUE (TYPE_ARG_TYPES (fntype));
 	tree parmtype1 = TREE_VALUE (TREE_CHAIN (TYPE_ARG_TYPES (fntype)));
 
-	if (rs6000_new_builtin_type_compatible (types[0], parmtype0)
-	    && rs6000_new_builtin_type_compatible (types[1], parmtype1))
+	if (rs6000_builtin_type_compatible (types[0], parmtype0)
+	    && rs6000_builtin_type_compatible (types[1], parmtype1))
 	  {
 	    if (rs6000_builtin_decl (instance->bifid, false) != error_mark_node
-		&& rs6000_new_builtin_is_supported (instance->bifid))
+		&& rs6000_builtin_is_supported (instance->bifid))
 	      {
 		tree ret_type = TREE_TYPE (instance->fntype);
-		return altivec_build_new_resolved_builtin (args, n, fntype,
-							   ret_type,
-							   instance->bifid,
-							   fcode);
+		return altivec_build_resolved_builtin (args, n, fntype,
+						       ret_type,
+						       instance->bifid,
+						       fcode);
 	      }
 	    else
 	      unsupported_builtin = true;
@@ -1869,8 +1834,7 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 		 arg_i++)
 	      {
 		tree parmtype = TREE_VALUE (nextparm);
-		if (!rs6000_new_builtin_type_compatible (types[arg_i],
-							 parmtype))
+		if (!rs6000_builtin_type_compatible (types[arg_i], parmtype))
 		  {
 		    mismatch = true;
 		    break;
@@ -1881,16 +1845,16 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 	    if (mismatch)
 	      continue;
 
-	    supported = rs6000_new_builtin_is_supported (instance->bifid);
+	    supported = rs6000_builtin_is_supported (instance->bifid);
 	    if (rs6000_builtin_decl (instance->bifid, false) != error_mark_node
 		&& supported)
 	      {
-		tree fntype = rs6000_builtin_info_x[instance->bifid].fntype;
+		tree fntype = rs6000_builtin_info[instance->bifid].fntype;
 		tree ret_type = TREE_TYPE (instance->fntype);
-		return altivec_build_new_resolved_builtin (args, n, fntype,
-							   ret_type,
-							   instance->bifid,
-							   fcode);
+		return altivec_build_resolved_builtin (args, n, fntype,
+						       ret_type,
+						       instance->bifid,
+						       fcode);
 	      }
 	    else
 	      {
@@ -1908,11 +1872,11 @@ altivec_resolve_new_overloaded_builtin (location_t loc, tree fndecl,
 	    /* Indicate that the instantiation of the overloaded builtin
 	       name is not available with the target flags in effect.  */
 	    rs6000_gen_builtins fcode = (rs6000_gen_builtins) instance->bifid;
-	    rs6000_invalid_new_builtin (fcode);
+	    rs6000_invalid_builtin (fcode);
 	    /* Provide clarity of the relationship between the overload
 	       and the instantiation.  */
 	    const char *internal_name
-	      = rs6000_builtin_info_x[instance->bifid].bifname;
+	      = rs6000_builtin_info[instance->bifid].bifname;
 	    rich_location richloc (line_table, input_location);
 	    inform (&richloc,
 		    "overloaded builtin %qs is implemented by builtin %qs",

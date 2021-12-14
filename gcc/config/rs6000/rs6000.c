@@ -171,7 +171,6 @@ static int dbg_cost_ctrl;
 
 /* Built in types.  */
 tree rs6000_builtin_types[RS6000_BTI_MAX];
-tree rs6000_builtin_decls[RS6000_BUILTIN_COUNT];
 
 /* Flag to say the TOC is initialized */
 int toc_initialized, need_toc_init;
@@ -2585,8 +2584,6 @@ rs6000_debug_reg_global (void)
 	   (int)rs6000_sched_restricted_insns_priority);
   fprintf (stderr, DEBUG_FMT_D, "Number of standard builtins",
 	   (int)END_BUILTINS);
-  fprintf (stderr, DEBUG_FMT_D, "Number of rs6000 builtins",
-	   (int)RS6000_BUILTIN_COUNT);
 
   fprintf (stderr, DEBUG_FMT_D, "Enable float128 on VSX",
 	   (int)TARGET_FLOAT128_ENABLE_TYPE);
@@ -5571,14 +5568,14 @@ rs6000_loop_unroll_adjust (unsigned nunroll, struct loop *loop)
    Implement targetm.vectorize.builtin_vectorized_function.  */
 
 static tree
-rs6000_new_builtin_vectorized_function (unsigned int fn, tree type_out,
-					tree type_in)
+rs6000_builtin_vectorized_function (unsigned int fn, tree type_out,
+				    tree type_in)
 {
   machine_mode in_mode, out_mode;
   int in_n, out_n;
 
   if (TARGET_DEBUG_BUILTIN)
-    fprintf (stderr, "rs6000_new_builtin_vectorized_function (%s, %s, %s)\n",
+    fprintf (stderr, "rs6000_builtin_vectorized_function (%s, %s, %s)\n",
 	     combined_fn_name (combined_fn (fn)),
 	     GET_MODE_NAME (TYPE_MODE (type_out)),
 	     GET_MODE_NAME (TYPE_MODE (type_in)));
@@ -5599,95 +5596,95 @@ rs6000_new_builtin_vectorized_function (unsigned int fn, tree type_out,
       if (VECTOR_UNIT_VSX_P (V2DFmode)
 	  && out_mode == DFmode && out_n == 2
 	  && in_mode == DFmode && in_n == 2)
-	return rs6000_builtin_decls_x[RS6000_BIF_CPSGNDP];
+	return rs6000_builtin_decls[RS6000_BIF_CPSGNDP];
       if (VECTOR_UNIT_VSX_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_CPSGNSP];
+	return rs6000_builtin_decls[RS6000_BIF_CPSGNSP];
       if (VECTOR_UNIT_ALTIVEC_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_COPYSIGN_V4SF];
+	return rs6000_builtin_decls[RS6000_BIF_COPYSIGN_V4SF];
       break;
     CASE_CFN_CEIL:
       if (VECTOR_UNIT_VSX_P (V2DFmode)
 	  && out_mode == DFmode && out_n == 2
 	  && in_mode == DFmode && in_n == 2)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVRDPIP];
+	return rs6000_builtin_decls[RS6000_BIF_XVRDPIP];
       if (VECTOR_UNIT_VSX_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVRSPIP];
+	return rs6000_builtin_decls[RS6000_BIF_XVRSPIP];
       if (VECTOR_UNIT_ALTIVEC_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_VRFIP];
+	return rs6000_builtin_decls[RS6000_BIF_VRFIP];
       break;
     CASE_CFN_FLOOR:
       if (VECTOR_UNIT_VSX_P (V2DFmode)
 	  && out_mode == DFmode && out_n == 2
 	  && in_mode == DFmode && in_n == 2)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVRDPIM];
+	return rs6000_builtin_decls[RS6000_BIF_XVRDPIM];
       if (VECTOR_UNIT_VSX_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVRSPIM];
+	return rs6000_builtin_decls[RS6000_BIF_XVRSPIM];
       if (VECTOR_UNIT_ALTIVEC_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_VRFIM];
+	return rs6000_builtin_decls[RS6000_BIF_VRFIM];
       break;
     CASE_CFN_FMA:
       if (VECTOR_UNIT_VSX_P (V2DFmode)
 	  && out_mode == DFmode && out_n == 2
 	  && in_mode == DFmode && in_n == 2)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVMADDDP];
+	return rs6000_builtin_decls[RS6000_BIF_XVMADDDP];
       if (VECTOR_UNIT_VSX_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVMADDSP];
+	return rs6000_builtin_decls[RS6000_BIF_XVMADDSP];
       if (VECTOR_UNIT_ALTIVEC_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_VMADDFP];
+	return rs6000_builtin_decls[RS6000_BIF_VMADDFP];
       break;
     CASE_CFN_TRUNC:
       if (VECTOR_UNIT_VSX_P (V2DFmode)
 	  && out_mode == DFmode && out_n == 2
 	  && in_mode == DFmode && in_n == 2)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVRDPIZ];
+	return rs6000_builtin_decls[RS6000_BIF_XVRDPIZ];
       if (VECTOR_UNIT_VSX_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVRSPIZ];
+	return rs6000_builtin_decls[RS6000_BIF_XVRSPIZ];
       if (VECTOR_UNIT_ALTIVEC_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_VRFIZ];
+	return rs6000_builtin_decls[RS6000_BIF_VRFIZ];
       break;
     CASE_CFN_NEARBYINT:
       if (VECTOR_UNIT_VSX_P (V2DFmode)
 	  && flag_unsafe_math_optimizations
 	  && out_mode == DFmode && out_n == 2
 	  && in_mode == DFmode && in_n == 2)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVRDPI];
+	return rs6000_builtin_decls[RS6000_BIF_XVRDPI];
       if (VECTOR_UNIT_VSX_P (V4SFmode)
 	  && flag_unsafe_math_optimizations
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVRSPI];
+	return rs6000_builtin_decls[RS6000_BIF_XVRSPI];
       break;
     CASE_CFN_RINT:
       if (VECTOR_UNIT_VSX_P (V2DFmode)
 	  && !flag_trapping_math
 	  && out_mode == DFmode && out_n == 2
 	  && in_mode == DFmode && in_n == 2)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVRDPIC];
+	return rs6000_builtin_decls[RS6000_BIF_XVRDPIC];
       if (VECTOR_UNIT_VSX_P (V4SFmode)
 	  && !flag_trapping_math
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_XVRSPIC];
+	return rs6000_builtin_decls[RS6000_BIF_XVRSPIC];
       break;
     default:
       break;
@@ -5703,15 +5700,15 @@ rs6000_new_builtin_vectorized_function (unsigned int fn, tree type_out,
 /* Implement targetm.vectorize.builtin_md_vectorized_function.  */
 
 static tree
-rs6000_new_builtin_md_vectorized_function (tree fndecl, tree type_out,
-					   tree type_in)
+rs6000_builtin_md_vectorized_function (tree fndecl, tree type_out,
+				       tree type_in)
 {
   machine_mode in_mode, out_mode;
   int in_n, out_n;
 
   if (TARGET_DEBUG_BUILTIN)
     fprintf (stderr,
-	     "rs6000_new_builtin_md_vectorized_function (%s, %s, %s)\n",
+	     "rs6000_builtin_md_vectorized_function (%s, %s, %s)\n",
 	     IDENTIFIER_POINTER (DECL_NAME (fndecl)),
 	     GET_MODE_NAME (TYPE_MODE (type_out)),
 	     GET_MODE_NAME (TYPE_MODE (type_in)));
@@ -5734,25 +5731,25 @@ rs6000_new_builtin_md_vectorized_function (tree fndecl, tree type_out,
       if (VECTOR_UNIT_ALTIVEC_OR_VSX_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_VRSQRTFP];
+	return rs6000_builtin_decls[RS6000_BIF_VRSQRTFP];
       break;
     case RS6000_BIF_RSQRT:
       if (VECTOR_UNIT_VSX_P (V2DFmode)
 	  && out_mode == DFmode && out_n == 2
 	  && in_mode == DFmode && in_n == 2)
-	return rs6000_builtin_decls_x[RS6000_BIF_RSQRT_2DF];
+	return rs6000_builtin_decls[RS6000_BIF_RSQRT_2DF];
       break;
     case RS6000_BIF_RECIPF:
       if (VECTOR_UNIT_ALTIVEC_OR_VSX_P (V4SFmode)
 	  && out_mode == SFmode && out_n == 4
 	  && in_mode == SFmode && in_n == 4)
-	return rs6000_builtin_decls_x[RS6000_BIF_VRECIPFP];
+	return rs6000_builtin_decls[RS6000_BIF_VRECIPFP];
       break;
     case RS6000_BIF_RECIP:
       if (VECTOR_UNIT_VSX_P (V2DFmode)
 	  && out_mode == DFmode && out_n == 2
 	  && in_mode == DFmode && in_n == 2)
-	return rs6000_builtin_decls_x[RS6000_BIF_RECIP_V2DF];
+	return rs6000_builtin_decls[RS6000_BIF_RECIP_V2DF];
       break;
     default:
       break;
@@ -5807,7 +5804,7 @@ rs6000_new_builtin_md_vectorized_function (tree fndecl, tree type_out,
 	}
 
       if (in_mode == exp_mode && in_vmode == exp_vmode)
-	return rs6000_builtin_decls_x[bif];
+	return rs6000_builtin_decls[bif];
     }
 
   return NULL_TREE;
@@ -5921,25 +5918,6 @@ rs6000_builtin_vectorized_libmass (combined_fn fn, tree type_out,
   return new_fndecl;
 }
 
-/* Returns a function decl for a vectorized version of the builtin function
-   with builtin function code FN and the result vector type TYPE, or NULL_TREE
-   if it is not available.  */
-
-static tree
-rs6000_builtin_vectorized_function (unsigned int fn, tree type_out,
-				    tree type_in)
-{
-  return rs6000_new_builtin_vectorized_function (fn, type_out, type_in);
-}
-
-/* Implement TARGET_VECTORIZE_BUILTIN_MD_VECTORIZED_FUNCTION.  */
-
-static tree
-rs6000_builtin_md_vectorized_function (tree fndecl, tree type_out,
-				       tree type_in)
-{
-  return rs6000_new_builtin_md_vectorized_function (fndecl, type_out, type_in);
-}
 
 /* Default CPU string for rs6000*_file_start functions.  */
 static const char *rs6000_default_cpu;
@@ -22518,13 +22496,13 @@ rs6000_builtin_reciprocal (tree fndecl)
       if (!RS6000_RECIP_AUTO_RSQRTE_P (V2DFmode))
 	return NULL_TREE;
 
-      return rs6000_builtin_decls_x[RS6000_BIF_RSQRT_2DF];
+      return rs6000_builtin_decls[RS6000_BIF_RSQRT_2DF];
 
     case RS6000_BIF_XVSQRTSP:
       if (!RS6000_RECIP_AUTO_RSQRTE_P (V4SFmode))
 	return NULL_TREE;
 
-      return rs6000_builtin_decls_x[RS6000_BIF_RSQRT_4SF];
+      return rs6000_builtin_decls[RS6000_BIF_RSQRT_4SF];
 
     default:
       return NULL_TREE;
@@ -25146,7 +25124,7 @@ add_condition_to_bb (tree function_decl, tree version_decl,
 
   tree bool_zero = build_int_cst (bool_int_type_node, 0);
   tree cond_var = create_tmp_var (bool_int_type_node);
-  tree predicate_decl = rs6000_builtin_decls_x[(int) RS6000_BIF_CPU_SUPPORTS];
+  tree predicate_decl = rs6000_builtin_decls[(int) RS6000_BIF_CPU_SUPPORTS];
   const char *arg_str = rs6000_clone_map[clone_isa].name;
   tree predicate_arg = build_string_literal (strlen (arg_str) + 1, arg_str);
   gimple *call_cond_stmt = gimple_build_call (predicate_decl, 1, predicate_arg);
@@ -27788,8 +27766,8 @@ rs6000_atomic_assign_expand_fenv (tree *hold, tree *clear, tree *update)
       return;
     }
 
-  tree mffs = rs6000_builtin_decls_x[RS6000_BIF_MFFS];
-  tree mtfsf = rs6000_builtin_decls_x[RS6000_BIF_MTFSF];
+  tree mffs = rs6000_builtin_decls[RS6000_BIF_MFFS];
+  tree mtfsf = rs6000_builtin_decls[RS6000_BIF_MTFSF];
   tree call_mffs = build_call_expr (mffs, 0);
 
   /* Generates the equivalent of feholdexcept (&fenv_var)
