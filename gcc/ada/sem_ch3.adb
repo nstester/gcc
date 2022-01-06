@@ -4409,9 +4409,9 @@ package body Sem_Ch3 is
 
          --  If E is null and has been replaced by an N_Raise_Constraint_Error
          --  node (which was marked already-analyzed), we need to set the type
-         --  to something other than Any_Access in order to keep gigi happy.
+         --  to something else than Universal_Access to keep gigi happy.
 
-         if Etype (E) = Any_Access then
+         if Etype (E) = Universal_Access then
             Set_Etype (E, T);
          end if;
 
@@ -6048,13 +6048,13 @@ package body Sem_Ch3 is
    begin
       Analyze (T);
 
-      if R /= Error then
+      if R = Error then
+         Set_Error_Posted (R);
+         Set_Error_Posted (T);
+      else
          Analyze (R);
          Set_Etype (N, Etype (R));
          Resolve (R, Entity (T));
-      else
-         Set_Error_Posted (R);
-         Set_Error_Posted (T);
       end if;
    end Analyze_Subtype_Indication;
 
@@ -9351,13 +9351,11 @@ package body Sem_Ch3 is
          declare
             Iface : Node_Id;
          begin
-            if Is_Non_Empty_List (Interface_List (Type_Def)) then
-               Iface := First (Interface_List (Type_Def));
-               while Present (Iface) loop
-                  Freeze_Before (N, Etype (Iface));
-                  Next (Iface);
-               end loop;
-            end if;
+            Iface := First (Interface_List (Type_Def));
+            while Present (Iface) loop
+               Freeze_Before (N, Etype (Iface));
+               Next (Iface);
+            end loop;
          end;
       end if;
 
