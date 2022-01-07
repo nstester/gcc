@@ -6198,18 +6198,10 @@ package body Exp_Ch4 is
          Set_Sloc (Parent (N), Loc);
       end if;
 
-      --  Make sure Then_Actions and Else_Actions are appropriately moved
-      --  to the new if statement.
+      --  Move Then_Actions and Else_Actions, if any, to the new if statement
 
-      if Present (Then_Actions (N)) then
-         Insert_List_Before
-           (First (Then_Statements (New_If)), Then_Actions (N));
-      end if;
-
-      if Present (Else_Actions (N)) then
-         Insert_List_Before
-           (First (Else_Statements (New_If)), Else_Actions (N));
-      end if;
+      Insert_List_Before (First (Then_Statements (New_If)), Then_Actions (N));
+      Insert_List_Before (First (Else_Statements (New_If)), Else_Actions (N));
 
       Insert_Action (N, Decl);
       Insert_Action (N, New_If);
@@ -10421,8 +10413,6 @@ package body Exp_Ch4 is
       Rneg : Boolean;
       --  Set if corresponding operand can be negative
 
-      pragma Unreferenced (Hi);
-
    begin
       Binary_Op_Validity_Checks (N);
 
@@ -11893,8 +11883,8 @@ package body Exp_Ch4 is
              Reason => PE_Accessibility_Check_Failed));
          Set_Etype (N, Target_Type);
 
-         Error_Msg_N ("<<accessibility check failure", N);
-         Error_Msg_NE ("\<<& [", N, Standard_Program_Error);
+         Error_Msg_N ("accessibility check failure<<", N);
+         Error_Msg_N ("\Program_Error [<<", N);
       end Raise_Accessibility_Error;
 
       ----------------------

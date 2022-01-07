@@ -4615,7 +4615,7 @@ package body Exp_Disp is
                --  case concerning the need for this check, and this topic may
                --  go back to the ARG.
 
-               if not Is_Abstract_Subprogram (Prim)  then
+               if not Is_Abstract_Subprogram (Prim) then
                   Formal := First_Formal (Prim);
                   while Present (Formal) loop
                      Check_Premature_Freezing (Prim, Typ, Etype (Formal));
@@ -6379,9 +6379,7 @@ package body Exp_Disp is
                New_List (New_Occurrence_Of (DT_Ptr, Loc))));
       end if;
 
-      if not Is_Empty_List (Elab_Code) then
-         Append_List_To (Result, Elab_Code);
-      end if;
+      Append_List_To (Result, Elab_Code);
 
       --  Populate the two auxiliary tables used for dispatching asynchronous,
       --  conditional and timed selects for synchronized types that implement

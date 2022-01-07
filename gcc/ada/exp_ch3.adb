@@ -2885,9 +2885,7 @@ package body Exp_Ch3 is
                   Fixed_Comps    => False,
                   Variable_Comps => True);
 
-               if Is_Non_Empty_List (Init_Tags_List) then
-                  Append_List_To (Body_Stmts, Init_Tags_List);
-               end if;
+               Append_List_To (Body_Stmts, Init_Tags_List);
             end if;
          end if;
 
@@ -6910,9 +6908,7 @@ package body Exp_Ch3 is
                New_Nodes := Make_DT (Base_Typ, N);
             end if;
 
-            if not Is_Empty_List (New_Nodes) then
-               Insert_List_Before (N, New_Nodes);
-            end if;
+            Insert_List_Before (N, New_Nodes);
          end;
       end if;
 

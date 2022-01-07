@@ -16005,7 +16005,7 @@ package body Sem_Ch13 is
 
       function Valid_Empty (E :  Entity_Id) return Boolean is
       begin
-         if Etype (E) /= Typ or else Scope (E) /= Scope (Typ)  then
+         if Etype (E) /= Typ or else Scope (E) /= Scope (Typ) then
             return False;
 
          elsif Ekind (E) = E_Constant then
@@ -17131,7 +17131,7 @@ package body Sem_Ch13 is
       Func_Name   : constant Node_Id := Expression (ASN);
       Overloaded  : Boolean := Is_Overloaded (Func_Name);
 
-      I            : Interp_Index;
+      I            : Interp_Index := 0;
       It           : Interp;
       Param_Type   : Entity_Id;
       Match_Found  : Boolean := False;
@@ -17544,6 +17544,22 @@ package body Sem_Ch13 is
         and then In_Same_Source_Unit (Target, N)
       then
          Set_No_Strict_Aliasing (Implementation_Base_Type (Target));
+      end if;
+
+      --  If the unchecked conversion is between Address and an access
+      --  subprogram type, show that we shouldn't use an internal
+      --  representation for the access subprogram type.
+
+      if Is_Access_Subprogram_Type (Target)
+        and then Is_Descendant_Of_Address (Source)
+        and then In_Same_Source_Unit (Target, N)
+      then
+         Set_Can_Use_Internal_Rep (Target, False);
+      elsif Is_Access_Subprogram_Type (Source)
+        and then Is_Descendant_Of_Address (Target)
+        and then In_Same_Source_Unit (Source, N)
+      then
+         Set_Can_Use_Internal_Rep (Source, False);
       end if;
 
       --  Generate N_Validate_Unchecked_Conversion node for back end in case

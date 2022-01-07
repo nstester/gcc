@@ -7059,7 +7059,7 @@ package body Sem_Ch3 is
       Indic : constant Node_Id    := Subtype_Indication (Def);
 
       Corr_Record      : constant Entity_Id := Make_Temporary (Loc, 'C');
-      Corr_Decl        : Node_Id;
+      Corr_Decl        : Node_Id := Empty;
       Corr_Decl_Needed : Boolean;
       --  If the derived type has fewer discriminants than its parent, the
       --  corresponding record is also a derived type, in order to account for
@@ -17272,7 +17272,6 @@ package body Sem_Ch3 is
             --  append the full view's original parent to the interface list,
             --  recursively call Derived_Type_Definition on the full type, and
             --  return True. If a match is not found, return False.
-            --  ??? This seems broken in the case of generic packages.
 
             ------------------------
             -- Reorder_Interfaces --
@@ -17281,6 +17280,7 @@ package body Sem_Ch3 is
             function Reorder_Interfaces return Boolean is
                Iface     : Node_Id;
                New_Iface : Node_Id;
+
             begin
                Iface := First (Interface_List (Def));
                while Present (Iface) loop
@@ -17290,7 +17290,7 @@ package body Sem_Ch3 is
 
                      New_Iface :=
                        Make_Identifier (Sloc (N), Chars (Parent_Type));
-                     Append (New_Iface, Interface_List (Def));
+                     Rewrite (Iface, New_Iface);
 
                      --  Analyze the transformed code
 
