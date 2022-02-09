@@ -2123,9 +2123,15 @@ String_expression::do_get_backend(Translate_context* context)
 
   Location loc = this->location();
   std::vector<Bexpression*> init(2);
-  Bexpression* str_cst =
-      gogo->backend()->string_constant_expression(this->val_);
-  init[0] = gogo->backend()->address_expression(str_cst, loc);
+
+  if (this->val_.size() == 0)
+    init[0] = gogo->backend()->nil_pointer_expression();
+  else
+    {
+      Bexpression* str_cst =
+	gogo->backend()->string_constant_expression(this->val_);
+      init[0] = gogo->backend()->address_expression(str_cst, loc);
+    }
 
   Btype* int_btype = Type::lookup_integer_type("int")->get_backend(gogo);
   mpz_t lenval;
@@ -10326,16 +10332,7 @@ Builtin_call_expression::do_check_types(Gogo*)
     case BUILTIN_PRINTLN:
       {
 	const Expression_list* args = this->args();
-	if (args == NULL)
-	  {
-	    if (this->code_ == BUILTIN_PRINT)
-	      go_warning_at(this->location(), 0,
-			 "no arguments for built-in function %<%s%>",
-			 (this->code_ == BUILTIN_PRINT
-			  ? "print"
-			  : "println"));
-	  }
-	else
+	if (args != NULL)
 	  {
 	    for (Expression_list::const_iterator p = args->begin();
 		 p != args->end();
