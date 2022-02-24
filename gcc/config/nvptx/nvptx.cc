@@ -5382,7 +5382,7 @@ gen_comment (const char *s)
   char *comment = (char *) alloca (len);
   snprintf (comment, len, "%s%s%s", ASM_COMMENT_START, sep, s);
   return gen_rtx_ASM_INPUT_loc (VOIDmode, ggc_strdup (comment),
-				cfun->function_start_locus);
+				DECL_SOURCE_LOCATION (cfun->decl));
 }
 
 /* Initialize all declared regs at function entry.
@@ -6181,7 +6181,13 @@ nvptx_omp_device_kind_arch_isa (enum omp_device_kind_arch_isa trait,
       if (strcmp (name, "sm_35") == 0)
 	return TARGET_SM35 && !TARGET_SM53;
       if (strcmp (name, "sm_53") == 0)
-	return TARGET_SM53;
+	return TARGET_SM53 && !TARGET_SM70;
+      if (strcmp (name, "sm_70") == 0)
+	return TARGET_SM70 && !TARGET_SM75;
+      if (strcmp (name, "sm_75") == 0)
+	return TARGET_SM75 && !TARGET_SM80;
+      if (strcmp (name, "sm_80") == 0)
+	return TARGET_SM80;
       return 0;
     default:
       gcc_unreachable ();
