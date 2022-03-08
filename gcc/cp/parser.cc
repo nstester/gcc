@@ -16148,8 +16148,9 @@ cp_parser_linkage_specification (cp_parser* parser, tree prefix_attr)
   /* Transform the literal into an identifier.  If the literal is a
      wide-character string, or contains embedded NULs, then we can't
      handle it as the user wants.  */
-  if (strlen (TREE_STRING_POINTER (linkage))
-      != (size_t) (TREE_STRING_LENGTH (linkage) - 1))
+  if (linkage == error_mark_node
+      || strlen (TREE_STRING_POINTER (linkage))
+	 != (size_t) (TREE_STRING_LENGTH (linkage) - 1))
     {
       cp_parser_error (parser, "invalid linkage-specification");
       /* Assume C++ linkage.  */
@@ -48217,7 +48218,8 @@ synthesize_implicit_template_parm  (cp_parser *parser, tree constr)
      function template is equivalent to an explicit template.
 
      Note that DECL_ARTIFICIAL is used elsewhere for template parameters.  */
-  DECL_VIRTUAL_P (TREE_VALUE (new_parm)) = true;
+  if (TREE_VALUE (new_parm) != error_mark_node)
+    DECL_VIRTUAL_P (TREE_VALUE (new_parm)) = true;
 
   // Chain the new parameter to the list of implicit parameters.
   if (parser->implicit_template_parms)
