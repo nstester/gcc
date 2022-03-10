@@ -13751,7 +13751,7 @@ grokdeclarator (const cp_declarator *declarator,
       }
     else if (decl_context == FIELD)
       {
-	if (!staticp && !friendp && TREE_CODE (type) != METHOD_TYPE)
+	if (!staticp && !friendp && !FUNC_OR_METHOD_TYPE_P (type))
 	  if (tree auto_node = type_uses_auto (type))
 	    {
 	      location_t tloc = declspecs->locations[ds_type_spec];
@@ -15214,6 +15214,9 @@ grok_op_properties (tree decl, bool complain)
       if (!arg)
 	{
 	  /* Variadic.  */
+	  if (operator_code == ARRAY_REF && cxx_dialect >= cxx23)
+	    break;
+
 	  error_at (loc, "%qD must not have variable number of arguments",
 		    decl);
 	  return false;
@@ -15289,7 +15292,8 @@ grok_op_properties (tree decl, bool complain)
     }
 
   /* There can be no default arguments.  */
-  for (tree arg = argtypes; arg != void_list_node; arg = TREE_CHAIN (arg))
+  for (tree arg = argtypes; arg && arg != void_list_node;
+       arg = TREE_CHAIN (arg))
     if (TREE_PURPOSE (arg))
       {
 	TREE_PURPOSE (arg) = NULL_TREE;
