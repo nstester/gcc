@@ -15,21 +15,22 @@ foo (void)
   /* { dg-note {OpenACC 'kernels' decomposition: variable 'k' declared in block requested to be made addressable} {} { target *-*-* } l_compute1 } */
   /* { dg-note {variable 'k' made addressable} {} { target *-*-* } l_compute1 } */
   /* { dg-note {variable 'k' declared in block is candidate for adjusting OpenACC privatization level} {} { target *-*-* } l_compute1 } */
+  /* { dg-note {variable 'arr_0\.0' declared in block isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_compute1 } */
   {
     int k;
 
-    /* { dg-note {forwarded loop nest in OpenACC 'kernels' region to 'parloops' for analysis} {} { target *-*-* } .+1 } */
-#pragma acc loop /* { dg-line l_loop_k1 } */
+    /* { dg-note {parallelized loop nest in OpenACC 'kernels' region} {} { target *-*-* } .+1 } */
+#pragma acc loop seq /* { dg-line l_loop_k1 } */
     /* { dg-note {variable 'k' in 'private' clause isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_loop_k1 } */
     /* { dg-optimized {assigned OpenACC seq loop parallelism} {} { target *-*-* } l_loop_k1 } */
     for (k = 0; k < 2; k++)
       arr_0 = k;
 
-    /* { dg-note {forwarded loop nest in OpenACC 'kernels' region to 'parloops' for analysis} {} { target *-*-* } .+1 } */
-#pragma acc loop /* { dg-line l_loop_k2 } */
+    /* { dg-note {parallelized loop nest in OpenACC 'kernels' region} {} { target *-*-* } .+1 } */
+#pragma acc loop independent reduction(+: arr_0) /* { dg-line l_loop_k2 } */
     /* { dg-note {variable 'k' in 'private' clause isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_loop_k2 } */
-    /* { dg-optimized {assigned OpenACC seq loop parallelism} {} { target *-*-* } l_loop_k2 } */
+    /* { dg-optimized {assigned OpenACC gang vector loop parallelism} {} { target *-*-* } l_loop_k2 } */
     for (k = 0; k < 2; k++)
-      arr_0 = k;
+      arr_0 += k;
   }
 }
