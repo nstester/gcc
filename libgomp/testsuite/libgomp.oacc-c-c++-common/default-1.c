@@ -1,3 +1,5 @@
+/* { dg-additional-options "--param=openacc-kernels=decompose" } */
+
 /* { dg-additional-options "-fopt-info-all-omp" }
    { dg-additional-options "-foffload=-fopt-info-all-omp" } */
 
@@ -71,12 +73,19 @@ int test_kernels ()
 
   /* val defaults to copy, ary defaults to copy.  */
 #pragma acc kernels copy(ondev) /* { dg-line l_compute[incr c_compute] } */
-  /* { dg-note {variable 'i' declared in block isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_compute$c_compute } */
-  /* { dg-optimized {assigned OpenACC seq loop parallelism} {} { target *-*-* } l_compute$c_compute } */
+  /* { dg-note {OpenACC 'kernels' decomposition: variable 'val' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+     { dg-note {variable 'val' made addressable} {} { target *-*-* } l_compute$c_compute } */
+  /* { dg-note {variable 'ondev\.[0-9]+' declared in block isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_compute$c_compute } */
   {
+    /* { dg-note {beginning 'gang-single' part in OpenACC 'kernels' region} {} { target *-*-* } .+1 } */
     ondev = acc_on_device (acc_device_not_host);
+    /* { dg-optimized {assigned OpenACC seq loop parallelism} {} { target { c++ && { ! __OPTIMIZE__ } } } .-1 }
+       ..., as without optimizations, we're not inlining the C++ 'acc_on_device' wrapper.  */
 #pragma acc loop /* { dg-line l_loop_i[incr c_loop_i] } */
+    /* { dg-note {forwarded loop nest in OpenACC 'kernels' region to 'parloops' for analysis} {} { target *-*-* } l_loop_i$c_loop_i } */
+    /* { dg-note {variable 'i' declared in block isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_loop_i$c_loop_i } */
     /* { dg-note {variable 'i' in 'private' clause isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_loop_i$c_loop_i } */
+    /* { dg-optimized {assigned OpenACC seq loop parallelism} {} { target *-*-* } l_loop_i$c_loop_i } */
     for (unsigned i = 0; i < 32; i++)
       {
 	ary[i] = val;

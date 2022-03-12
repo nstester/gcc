@@ -1,6 +1,8 @@
 /* OpenACC parallelism dimensions clauses: num_gangs, num_workers,
    vector_length.  */
 
+/* { dg-additional-options "--param=openacc-kernels=decompose" } */
+
 /* { dg-additional-options "-fopt-info-all-omp" }
    { dg-additional-options "-foffload=-fopt-info-all-omp" } */
 
@@ -643,17 +645,30 @@ int main ()
     gangs_min = workers_min = vectors_min = INT_MAX;
     gangs_max = workers_max = vectors_max = INT_MIN;
 #pragma acc kernels /* { dg-line l_compute[incr c_compute] } */
-    /* { dg-note {variable 'i' declared in block isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_compute$c_compute } */
-    /* { dg-optimized {assigned OpenACC seq loop parallelism} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'vectors_max' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'vectors_max' made addressable} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'vectors_min' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'vectors_min' made addressable} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'workers_max' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'workers_max' made addressable} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'workers_min' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'workers_min' made addressable} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'gangs_max' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'gangs_max' made addressable} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'gangs_min' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'gangs_min' made addressable} {} { target *-*-* } l_compute$c_compute } */
     {
-      /* This is to make the OpenACC kernels construct unparallelizable.  */
-      asm volatile ("" : : : "memory");
-
 #pragma acc loop /* { dg-line l_loop_i[incr c_loop_i] } */ \
   reduction (min: gangs_min, workers_min, vectors_min) reduction (max: gangs_max, workers_max, vectors_max)
+      /* { dg-note {forwarded loop nest in OpenACC 'kernels' region to 'parloops' for analysis} {} { target *-*-* } l_loop_i$c_loop_i } */
+      /* { dg-note {variable 'i' declared in block isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_loop_i$c_loop_i } */
       /* { dg-note {variable 'i' in 'private' clause isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_loop_i$c_loop_i } */
+      /* { dg-optimized {assigned OpenACC seq loop parallelism} {} { target *-*-* } l_loop_i$c_loop_i } */
       for (int i = 100; i > -100; --i)
 	{
+	  /* This is to make the loop unparallelizable.  */
+	  asm volatile ("" : : : "memory");
+
 	  gangs_min = gangs_max = acc_gang ();
 	  workers_min = workers_max = acc_worker ();
 	  vectors_min = vectors_max = acc_vector ();
@@ -680,17 +695,30 @@ int main ()
   num_gangs (gangs) \
   num_workers (WORKERS) \
   vector_length (VECTORS)
-    /* { dg-note {variable 'i' declared in block isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_compute$c_compute } */
-    /* { dg-optimized {assigned OpenACC seq loop parallelism} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'vectors_max' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'vectors_max' made addressable} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'vectors_min' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'vectors_min' made addressable} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'workers_max' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'workers_max' made addressable} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'workers_min' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'workers_min' made addressable} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'gangs_max' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'gangs_max' made addressable} {} { target *-*-* } l_compute$c_compute } */
+    /* { dg-note {OpenACC 'kernels' decomposition: variable 'gangs_min' in 'copy' clause requested to be made addressable} {} { target *-*-* } l_compute$c_compute }
+       { dg-note {variable 'gangs_min' made addressable} {} { target *-*-* } l_compute$c_compute } */
     {
-      /* This is to make the OpenACC kernels construct unparallelizable.  */
-      asm volatile ("" : : : "memory");
-
 #pragma acc loop /* { dg-line l_loop_i[incr c_loop_i] } */ \
   reduction (min: gangs_min, workers_min, vectors_min) reduction (max: gangs_max, workers_max, vectors_max)
+      /* { dg-note {forwarded loop nest in OpenACC 'kernels' region to 'parloops' for analysis} {} { target *-*-* } l_loop_i$c_loop_i } */
+      /* { dg-note {variable 'i' declared in block isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_loop_i$c_loop_i } */
       /* { dg-note {variable 'i' in 'private' clause isn't candidate for adjusting OpenACC privatization level: not addressable} {} { target *-*-* } l_loop_i$c_loop_i } */
+      /* { dg-optimized {assigned OpenACC seq loop parallelism} {} { target *-*-* } l_loop_i$c_loop_i } */
       for (int i = 100; i > -100; --i)
 	{
+	  /* This is to make the loop unparallelizable.  */
+	  asm volatile ("" : : : "memory");
+
 	  gangs_min = gangs_max = acc_gang ();
 	  workers_min = workers_max = acc_worker ();
 	  vectors_min = vectors_max = acc_vector ();
