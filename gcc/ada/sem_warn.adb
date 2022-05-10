@@ -1882,15 +1882,6 @@ package body Sem_Warn is
          return;
       end if;
 
-      --  Nothing to do for numeric or string literal. Do this test early to
-      --  save time in a common case (it does not matter that we do not include
-      --  character literal here, since that will be caught later on in the
-      --  when others branch of the case statement).
-
-      if Nkind (N) in N_Numeric_Or_String_Literal then
-         return;
-      end if;
-
       --  Ignore reference unless it comes from source. Almost always if we
       --  have a reference from generated code, it is bogus (e.g. calls to init
       --  procs to set default discriminant values).
@@ -1924,7 +1915,7 @@ package body Sem_Warn is
                  and then (No (Unset_Reference (E))
                             or else
                               Earlier_In_Extended_Unit
-                                (Sloc (N), Sloc (Unset_Reference (E))))
+                                (N, Unset_Reference (E)))
                  and then not Has_Pragma_Unmodified_Check_Spec (E)
                  and then not Warnings_Off_Check_Spec (E)
                  and then not Has_Junk_Name (E)
@@ -2016,6 +2007,11 @@ package body Sem_Warn is
                               then
                                  return True;
                               end if;
+
+                           --  Prevent the search from going too far
+
+                           elsif Is_Body_Or_Package_Declaration (Nod) then
+                              exit;
                            end if;
 
                            Nod := Parent (Nod);
@@ -2244,13 +2240,11 @@ package body Sem_Warn is
                Check_Unset_Reference (Pref);
             end;
 
-         --  For type conversions, qualifications, or expressions with actions,
-         --  examine the expression.
+         --  Type conversions can appear in assignment statements both
+         --  as variable names and as expressions. We examine their own
+         --  expressions only when processing their parent node.
 
-         when N_Expression_With_Actions
-            | N_Qualified_Expression
-            | N_Type_Conversion
-         =>
+         when N_Type_Conversion =>
             Check_Unset_Reference (Expression (N));
 
          --  For explicit dereference, always check prefix, which will generate
