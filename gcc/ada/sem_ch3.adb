@@ -3479,6 +3479,14 @@ package body Sem_Ch3 is
       then
          Check_Nonoverridable_Aspects;
       end if;
+
+      --  Check for tagged type declaration at library level
+
+      if Is_Tagged_Type (T)
+        and then not Is_Library_Level_Entity (T)
+      then
+         Check_Restriction (No_Local_Tagged_Types, T);
+      end if;
    end Analyze_Full_Type_Declaration;
 
    ----------------------------------
@@ -13345,11 +13353,12 @@ package body Sem_Ch3 is
    is
       T             : constant Entity_Id := Entity (Subtype_Mark (S));
       Desig_Type    : constant Entity_Id := Designated_Type (T);
-      Desig_Subtype : Entity_Id := Create_Itype (E_Void, Related_Nod);
+      Desig_Subtype : Entity_Id;
       Constraint_OK : Boolean := True;
 
    begin
       if Is_Array_Type (Desig_Type) then
+         Desig_Subtype := Create_Itype (E_Void, Related_Nod);
          Constrain_Array (Desig_Subtype, S, Related_Nod, Def_Id, 'P');
 
       elsif (Is_Record_Type (Desig_Type)
@@ -13445,12 +13454,14 @@ package body Sem_Ch3 is
             end;
          end if;
 
+         Desig_Subtype := Create_Itype (E_Void, Related_Nod);
          Constrain_Discriminated_Type (Desig_Subtype, S, Related_Nod,
            For_Access => True);
 
       elsif Is_Concurrent_Type (Desig_Type)
         and then not Is_Constrained (Desig_Type)
       then
+         Desig_Subtype := Create_Itype (E_Void, Related_Nod);
          Constrain_Concurrent (Desig_Subtype, S, Related_Nod, Desig_Type, ' ');
 
       else
@@ -13963,7 +13974,7 @@ package body Sem_Ch3 is
               or else D = CR_Discriminant (Discr_Id)
               or else Corresponding_Discriminant (D) = Discr_Id
             then
-               return Node (E);
+               return New_Copy_Tree (Node (E));
             end if;
 
             Next_Discriminant (D);
@@ -13987,7 +13998,7 @@ package body Sem_Ch3 is
             E := First_Elmt (Constraints);
             while Present (D) loop
                if D = Discr_Id then
-                  return Node (E);
+                  return New_Copy_Tree (Node (E));
                end if;
 
                Next_Discriminant (D);

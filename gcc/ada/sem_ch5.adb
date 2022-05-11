@@ -4012,6 +4012,7 @@ package body Sem_Ch5 is
 
             if Ekind (Ent) = E_Label then
                Reinit_Field_To_Zero (Ent, F_Enclosing_Scope);
+               Reinit_Field_To_Zero (Ent, F_Reachable);
                Mutate_Ekind (Ent, E_Loop);
 
                if Nkind (Parent (Ent)) = N_Implicit_Label_Declaration then
@@ -4383,7 +4384,9 @@ package body Sem_Ch5 is
 
       S := First (L);
       while Present (S) loop
-         if Nkind (S) = N_Label then
+         if Nkind (S) = N_Label
+           and then Ekind (Entity (Identifier (S))) = E_Label
+         then
             Set_Reachable (Entity (Identifier (S)), False);
          end if;
 

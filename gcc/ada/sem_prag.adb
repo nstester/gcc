@@ -14322,15 +14322,6 @@ package body Sem_Prag is
          when Pragma_Compile_Time_Error | Pragma_Compile_Time_Warning =>
             GNAT_Pragma;
 
-            --  These pragmas rely on the context. In adc files they raise
-            --  Constraint_Error. Ban them from use as configuration pragmas
-            --  even in cases where such a use could work.
-
-            if Is_Configuration_Pragma then
-               Error_Pragma
-                  ("pragma% is not allowed as a configuration pragma");
-            end if;
-
             Process_Compile_Time_Warning_Or_Error;
 
          -----------------------------
@@ -20381,12 +20372,12 @@ package body Sem_Prag is
 
          --  pragma Obsolescent (
          --    [Message =>] static_string_EXPRESSION
-         --  [,[Version =>] Ada_05]]);
+         --  [,[Version =>] Ada_05]);
 
          --  pragma Obsolescent (
          --    [Entity  =>] NAME
          --  [,[Message =>] static_string_EXPRESSION
-         --  [,[Version =>] Ada_05]] );
+         --  [,[Version =>] Ada_05]]);
 
          when Pragma_Obsolescent => Obsolescent : declare
             Decl  : Node_Id;
