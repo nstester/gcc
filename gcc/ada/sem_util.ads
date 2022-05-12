@@ -1258,9 +1258,8 @@ package Sem_Util is
    --  Retrieve one of the primitives First, Last, Next, Previous, Has_Element,
    --  Element from the value of the Iterable aspect of a type.
 
-   procedure Get_Library_Unit_Name_String (Decl_Node : Node_Id);
-   --  Retrieve the fully expanded name of the library unit declared by
-   --  Decl_Node into the name buffer.
+   function Get_Library_Unit_Name (Decl_Node : Node_Id) return String_Id;
+   --  Return the full expanded name of the library unit declared by Decl_Node
 
    function Get_Max_Queue_Length (Id : Entity_Id) return Uint;
    --  Return the argument of pragma Max_Queue_Length or zero if the annotation
@@ -2337,12 +2336,6 @@ package Sem_Util is
    function Is_Reversible_Iterator (Typ : Entity_Id) return Boolean;
    --  AI05-0139-2: Check whether Typ is derived from the predefined interface
    --  Ada.Iterator_Interfaces.Reversible_Iterator.
-
-   function Is_Selector_Name (N : Node_Id) return Boolean;
-   --  Given an N_Identifier node N, determines if it is a Selector_Name.
-   --  As described in Sinfo, Selector_Names are special because they
-   --  represent use of the N_Identifier node for a true identifier, when
-   --  normally such nodes represent a direct name.
 
    function Is_Single_Concurrent_Object (Id : Entity_Id) return Boolean;
    --  Determine whether arbitrary entity Id denotes the anonymous object
