@@ -327,9 +327,8 @@ package body Sem_Util is
 
             elsif Nkind (Node_Par) in N_Extended_Return_Statement
                                     | N_Simple_Return_Statement
-              and then Ekind (Current_Scope) = E_Function
             then
-               return Scope_Depth (Current_Scope);
+               return Scope_Depth (Enclosing_Subprogram (Node_Par));
 
             --  Statements are counted as masters
 
@@ -8287,10 +8286,32 @@ package body Sem_Util is
    -- Enclosing_Package --
    -----------------------
 
-   function Enclosing_Package (E : Entity_Id) return Entity_Id is
-      Dynamic_Scope : constant Entity_Id := Enclosing_Dynamic_Scope (E);
+   function Enclosing_Package (N : Node_Or_Entity_Id) return Entity_Id is
+      Dynamic_Scope : Entity_Id;
 
    begin
+      --  Obtain the enclosing scope when N is a Node_Id - taking care to
+      --  handle the case when the enclosing scope is already a package.
+
+      if Nkind (N) not in N_Entity then
+         declare
+            Encl_Scop : constant Entity_Id := Find_Enclosing_Scope (N);
+         begin
+            if No (Encl_Scop) then
+               return Empty;
+            elsif Ekind (Encl_Scop) in
+                    E_Generic_Package | E_Package | E_Package_Body
+            then
+               return Encl_Scop;
+            end if;
+
+            return Enclosing_Package (Encl_Scop);
+         end;
+      end if;
+
+      --  When N is already an Entity_Id proceed
+
+      Dynamic_Scope := Enclosing_Dynamic_Scope (N);
       if Dynamic_Scope = Standard_Standard then
          return Standard_Standard;
 
@@ -8334,10 +8355,29 @@ package body Sem_Util is
    -- Enclosing_Subprogram --
    --------------------------
 
-   function Enclosing_Subprogram (E : Entity_Id) return Entity_Id is
-      Dyn_Scop : constant Entity_Id := Enclosing_Dynamic_Scope (E);
+   function Enclosing_Subprogram (N : Node_Or_Entity_Id) return Entity_Id is
+      Dyn_Scop  : Entity_Id;
+      Encl_Scop : Entity_Id;
 
    begin
+      --  Obtain the enclosing scope when N is a Node_Id - taking care to
+      --  handle the case when the enclosing scope is already a subprogram.
+
+      if Nkind (N) not in N_Entity then
+         Encl_Scop := Find_Enclosing_Scope (N);
+
+         if No (Encl_Scop) then
+            return Empty;
+         elsif Ekind (Encl_Scop) in Subprogram_Kind then
+            return Encl_Scop;
+         end if;
+
+         return Enclosing_Subprogram (Encl_Scop);
+      end if;
+
+      --  When N is already an Entity_Id proceed
+
+      Dyn_Scop := Enclosing_Dynamic_Scope (N);
       if Dyn_Scop = Standard_Standard then
          return Empty;
 
@@ -23069,8 +23109,8 @@ package body Sem_Util is
          if not Is_Limited_Type (Comp_Typ) then
             return False;
 
-            --  Only limited types can have access discriminants with
-            --  defaults.
+         --  Only limited types can have access discriminants with
+         --  defaults.
 
          elsif Has_Unconstrained_Access_Discriminants (Comp_Typ) then
             return True;
@@ -23100,16 +23140,18 @@ package body Sem_Util is
          return False;
       end Has_Unconstrained_Access_Discriminant_Component;
 
-      Disable_Coextension_Cases : constant Boolean := True;
-      --  Flag used to temporarily disable a "True" result for types with
-      --  access discriminants and related coextension cases.
+      Disable_Tagged_Cases : constant Boolean := True;
+      --  Flag used to temporarily disable a "True" result for tagged types.
+      --  See comments further below for details.
 
    --  Start of processing for Needs_Result_Accessibility_Level
 
    begin
-      --  False if completion unavailable (how does this happen???)
+      --  False if completion unavailable, which can happen when we are
+      --  analyzing an abstract subprogram or if the subprogram has
+      --  delayed freezing.
 
-      if not Present (Func_Typ) then
+      if No (Func_Typ) then
          return False;
 
       --  False if not a function, also handle enum-lit renames case
@@ -23142,14 +23184,6 @@ package body Sem_Util is
       elsif Ekind (Func_Typ) = E_Anonymous_Access_Type then
          return True;
 
-      --  The following cases are related to coextensions and do not fully
-      --  cover everything mentioned in RM 3.10.2 (12) ???
-
-      --  Temporarily disabled ???
-
-      elsif Disable_Coextension_Cases then
-         return False;
-
       --  In the case of, say, a null tagged record result type, the need for
       --  this extra parameter might not be obvious so this function returns
       --  True for all tagged types for compatibility reasons.
@@ -23166,8 +23200,11 @@ package body Sem_Util is
       --  solve these issues by introducing wrappers, but that is not the
       --  approach that was chosen.
 
+      --  Note: Despite the reasoning noted above, the extra accessibility
+      --  parameter for tagged types is disabled for performance reasons.
+
       elsif Is_Tagged_Type (Func_Typ) then
-         return True;
+         return not Disable_Tagged_Cases;
 
       elsif Has_Unconstrained_Access_Discriminants (Func_Typ) then
          return True;
@@ -30337,6 +30374,9 @@ package body Sem_Util is
       Found_Type : constant Entity_Id := First_Subtype (Etype (Expr));
       Expec_Type : constant Entity_Id := First_Subtype (Expected_Type);
 
+      Err_Msg_Exp_Typ : Entity_Id := Expected_Type;
+      --  Type entity used when printing errors concerning the expected type
+
       Matching_Field : Entity_Id;
       --  Entity to give a more precise suggestion on how to write a one-
       --  element positional aggregate.
@@ -30494,6 +30534,15 @@ package body Sem_Util is
          end if;
       end if;
 
+      --  Avoid printing internally generated subtypes in error messages and
+      --  instead use the corresponding first subtype in such cases.
+
+      if not Comes_From_Source (Err_Msg_Exp_Typ)
+        or else not Comes_From_Source (Declaration_Node (Err_Msg_Exp_Typ))
+      then
+         Err_Msg_Exp_Typ := First_Subtype (Err_Msg_Exp_Typ);
+      end if;
+
       --  An interesting special check. If the expression is parenthesized
       --  and its type corresponds to the type of the sole component of the
       --  expected record type, or to the component type of the expected one
@@ -30531,7 +30580,7 @@ package body Sem_Util is
          Error_Msg_N
            ("result must be general access type!", Expr);
          Error_Msg_NE -- CODEFIX
-           ("\add ALL to }!", Expr, Expec_Type);
+           ("\add ALL to }!", Expr, Err_Msg_Exp_Typ);
 
       --  Another special check, if the expected type is an integer type,
       --  but the expression is of type System.Address, and the parent is
@@ -30623,7 +30672,7 @@ package body Sem_Util is
             Error_Msg_NE ("expected}!", Expr,
                           Corresponding_Remote_Type (Expec_Type));
          else
-            Error_Msg_NE ("expected}!", Expr, Expec_Type);
+            Error_Msg_NE ("expected}!", Expr, Err_Msg_Exp_Typ);
          end if;
 
          if Is_Entity_Name (Expr)
