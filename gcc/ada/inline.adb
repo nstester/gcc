@@ -1893,8 +1893,9 @@ package body Inline is
       then
          return False;
 
-      --  Subprograms in generic instances are currently not inlined, to avoid
-      --  problems with inlining of standard library subprograms.
+      --  Subprograms in generic instances are currently not inlined, as this
+      --  interacts badly with the expansion of object renamings in GNATprove
+      --  mode.
 
       elsif Instantiation_Location (Sloc (Id)) /= No_Location then
          return False;
@@ -2773,7 +2774,7 @@ package body Inline is
             Scop := Protected_Body_Subprogram (Scop);
 
          elsif Is_Subprogram (Scop)
-           and then Is_Protected_Type (Scope (Scop))
+           and then Is_Protected_Type (Underlying_Type (Scope (Scop)))
            and then Present (Protected_Body_Subprogram (Scop))
          then
             --  If a protected operation contains an instance, its cleanup

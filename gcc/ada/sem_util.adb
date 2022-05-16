@@ -6475,7 +6475,7 @@ package body Sem_Util is
          elsif Nkind (Parent (B_Type)) = N_Full_Type_Declaration
            and then Present (Incomplete_View (Parent (B_Type)))
          then
-            Id := Defining_Entity (Incomplete_View (Parent (B_Type)));
+            Id := Incomplete_View (Parent (B_Type));
 
             --  If T is a derived from a type with an incomplete view declared
             --  elsewhere, that incomplete view is irrelevant, we want the
@@ -11770,32 +11770,25 @@ package body Sem_Util is
       return Task_Body_Procedure (Underlying_Type (Root_Type (E)));
    end Get_Task_Body_Procedure;
 
-   -------------------------
-   -- Get_User_Defined_Eq --
-   -------------------------
+   -------------------------------
+   -- Get_User_Defined_Equality --
+   -------------------------------
 
-   function Get_User_Defined_Eq (E : Entity_Id) return Entity_Id is
+   function Get_User_Defined_Equality (E : Entity_Id) return Entity_Id is
       Prim : Elmt_Id;
-      Op   : Entity_Id;
 
    begin
       Prim := First_Elmt (Collect_Primitive_Operations (E));
       while Present (Prim) loop
-         Op := Node (Prim);
-
-         if Chars (Op) = Name_Op_Eq
-           and then Etype (Op) = Standard_Boolean
-           and then Etype (First_Formal (Op)) = E
-           and then Etype (Next_Formal (First_Formal (Op))) = E
-         then
-            return Op;
+         if Is_User_Defined_Equality (Node (Prim)) then
+            return Node (Prim);
          end if;
 
          Next_Elmt (Prim);
       end loop;
 
       return Empty;
-   end Get_User_Defined_Eq;
+   end Get_User_Defined_Equality;
 
    ---------------
    -- Get_Views --
@@ -12632,44 +12625,6 @@ package body Sem_Util is
       function Type_Or_Variable_Has_Enabled_Property
         (Item_Id : Entity_Id) return Boolean
       is
-         function Is_Enabled (Prag : Node_Id) return Boolean;
-         --  Determine whether property pragma Prag (if present) denotes an
-         --  enabled property.
-
-         ----------------
-         -- Is_Enabled --
-         ----------------
-
-         function Is_Enabled (Prag : Node_Id) return Boolean is
-            Arg1 : Node_Id;
-
-         begin
-            if Present (Prag) then
-               Arg1 := First (Pragma_Argument_Associations (Prag));
-
-               --  The pragma has an optional Boolean expression, the related
-               --  property is enabled only when the expression evaluates to
-               --  True.
-
-               if Present (Arg1) then
-                  return Is_True (Expr_Value (Get_Pragma_Arg (Arg1)));
-
-               --  Otherwise the lack of expression enables the property by
-               --  default.
-
-               else
-                  return True;
-               end if;
-
-            --  The property was never set in the first place
-
-            else
-               return False;
-            end if;
-         end Is_Enabled;
-
-         --  Local variables
-
          AR : constant Node_Id :=
                 Get_Pragma (Item_Id, Pragma_Async_Readers);
          AW : constant Node_Id :=
@@ -12682,8 +12637,6 @@ package body Sem_Util is
          Is_Derived_Type_With_Volatile_Parent_Type : constant Boolean :=
            Is_Derived_Type (Item_Id)
            and then Is_Effectively_Volatile (Etype (Base_Type (Item_Id)));
-
-      --  Start of processing for Type_Or_Variable_Has_Enabled_Property
 
       begin
          --  A non-effectively volatile object can never possess external
@@ -12699,16 +12652,16 @@ package body Sem_Util is
          --  missing altogether.
 
          elsif Property = Name_Async_Readers    and then Present (AR) then
-            return Is_Enabled (AR);
+            return Is_Enabled_Pragma (AR);
 
          elsif Property = Name_Async_Writers    and then Present (AW) then
-            return Is_Enabled (AW);
+            return Is_Enabled_Pragma (AW);
 
          elsif Property = Name_Effective_Reads  and then Present (ER) then
-            return Is_Enabled (ER);
+            return Is_Enabled_Pragma (ER);
 
          elsif Property = Name_Effective_Writes and then Present (EW) then
-            return Is_Enabled (EW);
+            return Is_Enabled_Pragma (EW);
 
          --  If other properties are set explicitly, then this one is set
          --  implicitly to False, except in the case of a derived type
@@ -12723,7 +12676,8 @@ package body Sem_Util is
          then
             return False;
 
-         --  For a private type, may need to look at the full view
+         --  For a private type (including subtype of a private types), look at
+         --  the full view.
 
          elsif Is_Private_Type (Item_Id) and then Present (Full_View (Item_Id))
          then
@@ -12736,10 +12690,17 @@ package body Sem_Util is
             return Type_Or_Variable_Has_Enabled_Property
               (First_Subtype (Etype (Base_Type (Item_Id))));
 
-         --  If not specified explicitly for an object and the type
+         --  For a subtype, the property will be inherited from its base type.
+
+         elsif Is_Type (Item_Id)
+           and then not Is_Base_Type (Item_Id)
+         then
+            return Type_Or_Variable_Has_Enabled_Property (Etype (Item_Id));
+
+         --  If not specified explicitly for an object and its type
          --  is effectively volatile, then take result from the type.
 
-         elsif not Is_Type (Item_Id)
+         elsif Is_Object (Item_Id)
            and then Is_Effectively_Volatile (Etype (Item_Id))
          then
             return Has_Enabled_Property (Etype (Item_Id), Property);
@@ -17663,6 +17624,21 @@ package body Sem_Util is
       end if;
    end Is_Effectively_Volatile_Object_Shared;
 
+   ----------------------------------------
+   -- Is_Entity_Of_Quantified_Expression --
+   ----------------------------------------
+
+   function Is_Entity_Of_Quantified_Expression (Id : Entity_Id) return Boolean
+   is
+      Par : constant Node_Id := Parent (Id);
+
+   begin
+      return (Nkind (Par) = N_Loop_Parameter_Specification
+               or else Nkind (Par) = N_Iterator_Specification)
+        and then Defining_Identifier (Par) = Id
+        and then Nkind (Parent (Par)) = N_Quantified_Expression;
+   end Is_Entity_Of_Quantified_Expression;
+
    -------------------
    -- Is_Entry_Body --
    -------------------
@@ -21530,15 +21506,31 @@ package body Sem_Util is
    ------------------------------
 
    function Is_User_Defined_Equality (Id : Entity_Id) return Boolean is
+      F1, F2 : Entity_Id;
+
    begin
-      return Ekind (Id) = E_Function
+      --  An equality operator is a function that carries the name "=", returns
+      --  Boolean, and has exactly two formal parameters of an identical type.
+
+      if Ekind (Id) = E_Function
         and then Chars (Id) = Name_Op_Eq
-        and then Comes_From_Source (Id)
+        and then Base_Type (Etype (Id)) = Standard_Boolean
+      then
+         F1 := First_Formal (Id);
 
-        --  Internally generated equalities have a full type declaration
-        --  as their parent.
+         if No (F1) then
+            return False;
+         end if;
 
-        and then Nkind (Parent (Id)) = N_Function_Specification;
+         F2 := Next_Formal (F1);
+
+         return Present (F2)
+           and then No (Next_Formal (F2))
+           and then Base_Type (Etype (F1)) = Base_Type (Etype (F2));
+
+      else
+         return False;
+      end if;
    end Is_User_Defined_Equality;
 
    -----------------------------
@@ -24645,19 +24637,17 @@ package body Sem_Util is
          --  ??? this list is flaky, and may hide dormant bugs
          --  Should functions be included???
 
-         --  Loop parameters appear within quantified expressions and contain
-         --  an entity declaration that must be replaced when the expander is
-         --  active if the expression has been preanalyzed or analyzed.
+         --  Quantified expressions contain an entity declaration that must
+         --  always be replaced when the expander is active, even if it has
+         --  not been analyzed yet like e.g. in predicates.
 
-         elsif Ekind (Id) not in
-                 E_Block     | E_Constant | E_Label | E_Loop_Parameter |
-                 E_Procedure | E_Variable
+         elsif Ekind (Id) not in E_Block
+                               | E_Constant
+                               | E_Label
+                               | E_Procedure
+                               | E_Variable
+           and then not Is_Entity_Of_Quantified_Expression (Id)
            and then not Is_Type (Id)
-         then
-            return;
-
-         elsif Ekind (Id) = E_Loop_Parameter
-           and then No (Etype (Condition (Parent (Parent (Id)))))
          then
             return;
 
@@ -24684,9 +24674,12 @@ package body Sem_Util is
          New_Id := New_Copy (Id);
 
          --  Create a new name for the new entity because the back end needs
-         --  distinct names for debugging purposes.
+         --  distinct names for debugging purposes, provided that the entity
+         --  has already been analyzed.
 
-         Set_Chars (New_Id, New_Internal_Name ('T'));
+         if Ekind (Id) /= E_Void then
+            Set_Chars (New_Id, New_Internal_Name ('T'));
+         end if;
 
          --  Update the Comes_From_Source and Sloc attributes of the entity in
          --  case the caller has supplied new values.
@@ -32309,47 +32302,6 @@ package body Sem_Util is
 
    package body Storage_Model_Support is
 
-      -----------------------------------
-      -- Get_Storage_Model_Type_Entity --
-      -----------------------------------
-
-      function Get_Storage_Model_Type_Entity
-        (Typ : Entity_Id;
-         Nam : Name_Id) return Entity_Id
-      is
-         pragma Assert
-           (Is_Type (Typ)
-            and then
-              Nam in Name_Address_Type
-                   | Name_Null_Address
-                   | Name_Allocate
-                   | Name_Deallocate
-                   | Name_Copy_From
-                   | Name_Copy_To
-                   | Name_Storage_Size);
-
-         SMT_Aspect_Value : constant Node_Id :=
-           Find_Value_Of_Aspect (Typ, Aspect_Storage_Model_Type);
-         Assoc            : Node_Id;
-
-      begin
-         if No (SMT_Aspect_Value) then
-            return Empty;
-
-         else
-            Assoc := First (Component_Associations (SMT_Aspect_Value));
-            while Present (Assoc) loop
-               if Chars (First (Choices (Assoc))) = Nam then
-                  return Entity (Expression (Assoc));
-               end if;
-
-               Next (Assoc);
-            end loop;
-
-            return Empty;
-         end if;
-      end Get_Storage_Model_Type_Entity;
-
       -----------------------------------------
       -- Has_Designated_Storage_Model_Aspect --
       -----------------------------------------
@@ -32377,13 +32329,11 @@ package body Sem_Util is
 
       function Storage_Model_Object (Typ : Entity_Id) return Entity_Id is
       begin
-         if Has_Designated_Storage_Model_Aspect (Typ) then
-            return
-              Entity
-                (Find_Value_Of_Aspect (Typ, Aspect_Designated_Storage_Model));
-         else
-            return Empty;
-         end if;
+         pragma Assert (Has_Designated_Storage_Model_Aspect (Typ));
+
+         return
+           Entity
+             (Find_Value_Of_Aspect (Typ, Aspect_Designated_Storage_Model));
       end Storage_Model_Object;
 
       ------------------------
@@ -32392,76 +32342,132 @@ package body Sem_Util is
 
       function Storage_Model_Type (Obj : Entity_Id) return Entity_Id is
       begin
-         if Present
-              (Find_Value_Of_Aspect (Etype (Obj), Aspect_Storage_Model_Type))
-         then
-            return Etype (Obj);
-         else
-            return Empty;
-         end if;
+         pragma Assert (Has_Storage_Model_Type_Aspect (Etype (Obj)));
+
+         return Etype (Obj);
       end Storage_Model_Type;
+
+      -----------------------------------
+      -- Get_Storage_Model_Type_Entity --
+      -----------------------------------
+
+      function Get_Storage_Model_Type_Entity
+        (SM_Obj_Or_Type : Entity_Id;
+         Nam            : Name_Id) return Entity_Id
+      is
+         Typ : constant Entity_Id := (if Is_Object (SM_Obj_Or_Type) then
+                                         Storage_Model_Type (SM_Obj_Or_Type)
+                                      else
+                                         SM_Obj_Or_Type);
+         pragma Assert
+           (Is_Type (Typ)
+             and then
+               Nam in Name_Address_Type
+                    | Name_Null_Address
+                    | Name_Allocate
+                    | Name_Deallocate
+                    | Name_Copy_From
+                    | Name_Copy_To
+                    | Name_Storage_Size);
+
+         Assoc            : Node_Id;
+         SMT_Aspect_Value : constant Node_Id :=
+           Find_Value_Of_Aspect (Typ, Aspect_Storage_Model_Type);
+
+      begin
+         pragma Assert (Present (SMT_Aspect_Value));
+
+         Assoc := First (Component_Associations (SMT_Aspect_Value));
+         while Present (Assoc) loop
+            if Chars (First (Choices (Assoc))) = Nam then
+               return Entity (Expression (Assoc));
+            end if;
+
+            Next (Assoc);
+         end loop;
+
+         return Empty;
+      end Get_Storage_Model_Type_Entity;
 
       --------------------------------
       -- Storage_Model_Address_Type --
       --------------------------------
 
-      function Storage_Model_Address_Type (Typ : Entity_Id) return Entity_Id is
+      function Storage_Model_Address_Type
+        (SM_Obj_Or_Type : Entity_Id) return Entity_Id
+      is
       begin
-         return Get_Storage_Model_Type_Entity (Typ, Name_Address_Type);
+         return
+           Get_Storage_Model_Type_Entity (SM_Obj_Or_Type, Name_Address_Type);
       end Storage_Model_Address_Type;
 
       --------------------------------
       -- Storage_Model_Null_Address --
       --------------------------------
 
-      function Storage_Model_Null_Address (Typ : Entity_Id) return Entity_Id is
+      function Storage_Model_Null_Address
+        (SM_Obj_Or_Type : Entity_Id) return Entity_Id
+      is
       begin
-         return Get_Storage_Model_Type_Entity (Typ, Name_Null_Address);
+         return
+           Get_Storage_Model_Type_Entity (SM_Obj_Or_Type, Name_Null_Address);
       end Storage_Model_Null_Address;
 
       ----------------------------
       -- Storage_Model_Allocate --
       ----------------------------
 
-      function Storage_Model_Allocate (Typ : Entity_Id) return Entity_Id is
+      function Storage_Model_Allocate
+        (SM_Obj_Or_Type : Entity_Id) return Entity_Id
+      is
       begin
-         return Get_Storage_Model_Type_Entity (Typ, Name_Allocate);
+         return Get_Storage_Model_Type_Entity (SM_Obj_Or_Type, Name_Allocate);
       end Storage_Model_Allocate;
 
       ------------------------------
       -- Storage_Model_Deallocate --
       ------------------------------
 
-      function Storage_Model_Deallocate (Typ : Entity_Id) return Entity_Id is
+      function Storage_Model_Deallocate
+        (SM_Obj_Or_Type : Entity_Id) return Entity_Id
+      is
       begin
-         return Get_Storage_Model_Type_Entity (Typ, Name_Deallocate);
+         return
+           Get_Storage_Model_Type_Entity (SM_Obj_Or_Type, Name_Deallocate);
       end Storage_Model_Deallocate;
 
       -----------------------------
       -- Storage_Model_Copy_From --
       -----------------------------
 
-      function Storage_Model_Copy_From (Typ : Entity_Id) return Entity_Id is
+      function Storage_Model_Copy_From
+        (SM_Obj_Or_Type : Entity_Id) return Entity_Id
+      is
       begin
-         return Get_Storage_Model_Type_Entity (Typ, Name_Copy_From);
+         return Get_Storage_Model_Type_Entity (SM_Obj_Or_Type, Name_Copy_From);
       end Storage_Model_Copy_From;
 
       ---------------------------
       -- Storage_Model_Copy_To --
       ---------------------------
 
-      function Storage_Model_Copy_To (Typ : Entity_Id) return Entity_Id is
+      function Storage_Model_Copy_To
+        (SM_Obj_Or_Type : Entity_Id) return Entity_Id
+      is
       begin
-         return Get_Storage_Model_Type_Entity (Typ, Name_Copy_To);
+         return Get_Storage_Model_Type_Entity (SM_Obj_Or_Type, Name_Copy_To);
       end Storage_Model_Copy_To;
 
       --------------------------------
       -- Storage_Model_Storage_Size --
       --------------------------------
 
-      function Storage_Model_Storage_Size (Typ : Entity_Id) return Entity_Id is
+      function Storage_Model_Storage_Size
+        (SM_Obj_Or_Type : Entity_Id) return Entity_Id
+      is
       begin
-         return Get_Storage_Model_Type_Entity (Typ, Name_Storage_Size);
+         return
+           Get_Storage_Model_Type_Entity (SM_Obj_Or_Type, Name_Storage_Size);
       end Storage_Model_Storage_Size;
 
    end Storage_Model_Support;
