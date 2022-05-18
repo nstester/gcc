@@ -5,7 +5,7 @@
 --               A D A . N U M E R I C S . A U X _ F L O A T                --
 --                                                                          --
 --                                 S p e c                                  --
---                        (Intrinsic Version, Float)                        --
+--                      (Intrinsic/SIMD Version, Float)                     --
 --                                                                          --
 --          Copyright (C) 1992-2022, Free Software Foundation, Inc.         --
 --                                                                          --
@@ -31,9 +31,9 @@
 ------------------------------------------------------------------------------
 
 --  This package provides the basic computational interface for the
---  generic elementary functions. With the intrinsic version, the
+--  generic elementary functions. With the intrinsic/SIMD version, the
 --  compiler can use its knowledge of the functions to select the most
---  suitable implementation. It is thus quite portable. These
+--  suitable implementation, including a vector implementation. These
 --  interfaces are suitable for cases in which Float and C's float
 --  share the same representation.
 
@@ -50,21 +50,25 @@ package Ada.Numerics.Aux_Float is
 
    function Sin (X : T) return T with
      Import, Convention => Intrinsic, External_Name => "sinf";
+   pragma Machine_Attribute (Sin, "simd", "notinbranch");
 
    function Cos (X : T) return T with
      Import, Convention => Intrinsic, External_Name => "cosf";
+   pragma Machine_Attribute (Cos, "simd", "notinbranch");
 
    function Tan (X : T) return T with
      Import, Convention => Intrinsic, External_Name => "tanf";
 
    function Exp (X : T) return T with
      Import, Convention => Intrinsic, External_Name => "expf";
+   pragma Machine_Attribute (Exp, "simd", "notinbranch");
 
    function Sqrt (X : T) return T with
      Import, Convention => Intrinsic, External_Name => "sqrtf";
 
    function Log (X : T) return T with
      Import, Convention => Intrinsic, External_Name => "logf";
+   pragma Machine_Attribute (Log, "simd", "notinbranch");
 
    function Acos (X : T) return T with
      Import, Convention => Intrinsic, External_Name => "acosf";
@@ -86,5 +90,6 @@ package Ada.Numerics.Aux_Float is
 
    function Pow (X, Y : T) return T with
      Import, Convention => Intrinsic, External_Name => "powf";
+   pragma Machine_Attribute (Pow, "simd", "notinbranch");
 
 end Ada.Numerics.Aux_Float;

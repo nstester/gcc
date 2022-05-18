@@ -2,10 +2,10 @@
 --                                                                          --
 --                         GNAT RUN-TIME COMPONENTS                         --
 --                                                                          --
---               A D A . N U M E R I C S . A U X _ F L O A T                --
+--          A D A . N U M E R I C S . A U X _ L O N G _ F L O A T           --
 --                                                                          --
 --                                 S p e c                                  --
---                        (Intrinsic Version, Float)                        --
+--                     (Intrinsic/SIMD Version, Long Float)                 --
 --                                                                          --
 --          Copyright (C) 1992-2022, Free Software Foundation, Inc.         --
 --                                                                          --
@@ -31,60 +31,65 @@
 ------------------------------------------------------------------------------
 
 --  This package provides the basic computational interface for the
---  generic elementary functions. With the intrinsic version, the
+--  generic elementary functions. With the intrinsic/SIMD version, the
 --  compiler can use its knowledge of the functions to select the most
---  suitable implementation. It is thus quite portable. These
---  interfaces are suitable for cases in which Float and C's float
---  share the same representation.
+--  suitable implementation, including a vector implementation. These
+--  interfaces are suitable for cases in which Long Float and C's
+--  double share the same representation.
 
 with Ada.Numerics.Aux_Linker_Options;
 pragma Warnings (Off, Ada.Numerics.Aux_Linker_Options);
 
-package Ada.Numerics.Aux_Float is
+package Ada.Numerics.Aux_Long_Float is
    pragma Pure;
 
-   subtype T is Float;
+   subtype T is Long_Float;
 
    --  We import these functions as intrinsics. Note that we label them
    --  all as pure functions, because indeed all of them are in fact pure.
 
    function Sin (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "sinf";
+     Import, Convention => Intrinsic, External_Name => "sin";
+   pragma Machine_Attribute (Sin, "simd", "notinbranch");
 
    function Cos (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "cosf";
+     Import, Convention => Intrinsic, External_Name => "cos";
+   pragma Machine_Attribute (Cos, "simd", "notinbranch");
 
    function Tan (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "tanf";
+     Import, Convention => Intrinsic, External_Name => "tan";
 
    function Exp (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "expf";
+     Import, Convention => Intrinsic, External_Name => "exp";
+   pragma Machine_Attribute (Exp, "simd", "notinbranch");
 
    function Sqrt (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "sqrtf";
+     Import, Convention => Intrinsic, External_Name => "sqrt";
 
    function Log (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "logf";
+     Import, Convention => Intrinsic, External_Name => "log";
+   pragma Machine_Attribute (Log, "simd", "notinbranch");
 
    function Acos (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "acosf";
+     Import, Convention => Intrinsic, External_Name => "acos";
 
    function Asin (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "asinf";
+     Import, Convention => Intrinsic, External_Name => "asin";
 
    function Atan (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "atanf";
+     Import, Convention => Intrinsic, External_Name => "atan";
 
    function Sinh (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "sinhf";
+     Import, Convention => Intrinsic, External_Name => "sinh";
 
    function Cosh (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "coshf";
+     Import, Convention => Intrinsic, External_Name => "cosh";
 
    function Tanh (X : T) return T with
-     Import, Convention => Intrinsic, External_Name => "tanhf";
+     Import, Convention => Intrinsic, External_Name => "tanh";
 
    function Pow (X, Y : T) return T with
-     Import, Convention => Intrinsic, External_Name => "powf";
+     Import, Convention => Intrinsic, External_Name => "pow";
+   pragma Machine_Attribute (Pow, "simd", "notinbranch");
 
-end Ada.Numerics.Aux_Float;
+end Ada.Numerics.Aux_Long_Float;
