@@ -2793,20 +2793,23 @@ package body Exp_Ch9 is
                 Expression => Make_Integer_Literal (Loc, 1));
 
          else
-            pragma Assert (Present (Ret));
+            --  Ranges are in increasing order, so last one doesn't need guard
 
-            if Nkind (Ret) = N_If_Statement then
+            declare
+               Nod : constant Node_Id := Last (Elsif_Parts (Ret));
+            begin
+               Remove (Nod);
+               Set_Else_Statements (Ret, Then_Statements (Nod));
 
-               --  Ranges are in increasing order, so last one doesn't need
-               --  guard.
+               --  If Elsif_Parts becomes empty then remove it entirely, as
+               --  otherwise we would violate the invariant of If_Statement
+               --  node described in Sinfo.
 
-               declare
-                  Nod : constant Node_Id := Last (Elsif_Parts (Ret));
-               begin
-                  Remove (Nod);
-                  Set_Else_Statements (Ret, Then_Statements (Nod));
-               end;
-            end if;
+               if Is_Empty_List (Elsif_Parts (Ret)) then
+                  pragma Assert (Elsif_Parts (Ret) /= No_List);
+                  Set_Elsif_Parts (Ret, No_List);
+               end if;
+            end;
          end if;
       end if;
 

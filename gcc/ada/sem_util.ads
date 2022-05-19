@@ -672,11 +672,10 @@ package Sem_Util is
    --  Current_Scope is returned. The returned value is Empty if this is called
    --  from a library package which is not within any subprogram.
 
-   function CW_Or_Has_Controlled_Part (T : Entity_Id) return Boolean;
-   --  True if T is a class-wide type, or if it has controlled parts ("part"
-   --  means T or any of its subcomponents). Same as Needs_Finalization, except
-   --  when pragma Restrictions (No_Finalization) applies, in which case we
-   --  know that class-wide objects do not contain controlled parts.
+   function CW_Or_Needs_Finalization (Typ : Entity_Id) return Boolean;
+   --  True if Typ is a class-wide type or requires finalization actions. Same
+   --  as Needs_Finalization except with pragma Restrictions (No_Finalization),
+   --  in which case we know that class-wide objects do not need finalization.
 
    function Deepest_Type_Access_Level
      (Typ             : Entity_Id;
@@ -2931,6 +2930,26 @@ package Sem_Util is
    --  Typ, taking into account Predicates_Ignored and
    --  Predicate_Checks_Suppressed.
 
+   function Predicate_Failure_Expression
+    (Typ : Entity_Id; Inherited_OK : Boolean) return Node_Id;
+   --  If the given type or subtype is subject to a Predicate_Failure
+   --  aspect specification, then returns the specified expression.
+   --  Otherwise, if Inherited_OK is False then returns Empty.
+   --  Otherwise, if Typ denotes a subtype or a derived type then
+   --  returns the result of recursing on the ancestor subtype.
+   --  Otherwise, returns Empty.
+
+   function Predicate_Function_Needs_Membership_Parameter (Typ : Entity_Id)
+     return Boolean is
+     (Present (Predicate_Failure_Expression (Typ, Inherited_OK => True)));
+   --  The predicate function for some, but not all, subtypes needs to
+   --  know whether the predicate is being evaluated as part of a membership
+   --  test. The predicate function for such a subtype takes an additional
+   --  boolean to convey this information. This function returns True if this
+   --  additional parameter is needed. More specifically, this function
+   --  returns true if the Predicate_Failure aspect is specified for the
+   --  given subtype or for any of its "ancestor" subtypes.
+
    function Predicate_Tests_On_Arguments (Subp : Entity_Id) return Boolean;
    --  Subp is the entity for a subprogram call. This function returns True if
    --  predicate tests are required for the arguments in this call (this is the
@@ -3048,14 +3067,13 @@ package Sem_Util is
    --  This is used as a defense mechanism against ill-formed trees caused by
    --  previous errors (particularly in -gnatq mode).
 
-   function Requires_Transient_Scope (Id : Entity_Id) return Boolean;
-   --  Id is a type entity. The result is True when temporaries of this type
-   --  need to be wrapped in a transient scope to be reclaimed properly when a
-   --  secondary stack is in use. Examples of types requiring such wrapping are
-   --  controlled types and variable-sized types including unconstrained
-   --  arrays.
-
-   --  WARNING: There is a matching C declaration of this subprogram in fe.h
+   function Requires_Transient_Scope (Typ : Entity_Id) return Boolean;
+   pragma Inline (Requires_Transient_Scope);
+   --  Return true if temporaries of Typ need to be wrapped in a transient
+   --  scope, either because they are allocated on the secondary stack or
+   --  finalization actions must be generated before the next instruction.
+   --  Examples of types requiring such wrapping are variable-sized types,
+   --  including unconstrained arrays, and controlled types.
 
    procedure Reset_Analyzed_Flags (N : Node_Id);
    --  Reset the Analyzed flags in all nodes of the tree whose root is N
@@ -3063,6 +3081,12 @@ package Sem_Util is
    procedure Restore_SPARK_Mode (Mode : SPARK_Mode_Type; Prag : Node_Id);
    --  Set the current SPARK_Mode to Mode and SPARK_Mode_Pragma to Prag. This
    --  routine must be used in tandem with Set_SPARK_Mode.
+
+   function Returns_On_Secondary_Stack (Id : Entity_Id) return Boolean;
+   --  Return true if functions whose result type is Id must return on the
+   --  secondary stack, i.e. allocate the return object on this stack.
+
+   --  WARNING: There is a matching C declaration of this subprogram in fe.h
 
    function Returns_Unconstrained_Type (Subp : Entity_Id) return Boolean;
    --  Return true if Subp is a function that returns an unconstrained type
@@ -3166,9 +3190,8 @@ package Sem_Util is
    --  This procedure has the same calling sequence as Set_Entity, but it
    --  performs additional checks as follows:
    --
-   --    If Style_Check is set, then it calls a style checking routine which
-   --    can check identifier spelling style. This procedure also takes care
-   --    of checking the restriction No_Implementation_Identifiers.
+   --    If Style_Check is set, then it calls a style checking routine that
+   --    can check identifier spelling style.
    --
    --    If restriction No_Abort_Statements is set, then it checks that the
    --    entity is not Ada.Task_Identification.Abort_Task.

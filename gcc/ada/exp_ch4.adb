@@ -4537,7 +4537,10 @@ package body Exp_Ch4 is
          if Present (Pool) then
             Set_Storage_Pool (N, Pool);
 
-            if Is_RTE (Pool, RE_SS_Pool) then
+            if Is_RTE (Pool, RE_RS_Pool) then
+               Set_Procedure_To_Call (N, RTE (RE_RS_Allocate));
+
+            elsif Is_RTE (Pool, RE_SS_Pool) then
                Check_Restriction (No_Secondary_Stack, N);
                Set_Procedure_To_Call (N, RTE (RE_SS_Allocate));
 
@@ -6959,7 +6962,9 @@ package body Exp_Ch4 is
            and then Nkind (Rop) /= N_Range
          then
             if not In_Range_Check then
-               R_Op := Make_Predicate_Call (Rtyp, Lop, Mem => True);
+               --  Indicate via Static_Mem parameter that this predicate
+               --  evaluation is for a membership test.
+               R_Op := Make_Predicate_Call (Rtyp, Lop, Static_Mem => True);
             else
                R_Op := New_Occurrence_Of (Standard_True, Loc);
             end if;
@@ -14103,6 +14108,7 @@ package body Exp_Ch4 is
 
    procedure Narrow_Large_Operation (N : Node_Id) is
       Kind   : constant Node_Kind := Nkind (N);
+      Otyp   : constant Entity_Id := Etype (N);
       In_Rng : constant Boolean   := Kind = N_In;
       Binary : constant Boolean   := Kind in N_Binary_Op or else In_Rng;
       Compar : constant Boolean   := Kind in N_Op_Compare or else In_Rng;
@@ -14257,8 +14263,7 @@ package body Exp_Ch4 is
          --  Analyze it with the comparison type and checks suppressed since
          --  the conversions of the operands cannot overflow.
 
-         Analyze_And_Resolve
-           (N, Etype (Original_Node (N)), Suppress => Overflow_Check);
+         Analyze_And_Resolve (N, Otyp, Suppress => Overflow_Check);
 
       else
          --  Analyze it with the narrower type and checks suppressed, but only
