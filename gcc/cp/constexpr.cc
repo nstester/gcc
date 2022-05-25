@@ -1356,6 +1356,7 @@ static tree cxx_eval_constant_expression (const constexpr_ctx *, tree,
 					  value_cat, bool *, bool *, tree * = NULL);
 static tree cxx_fold_indirect_ref (const constexpr_ctx *, location_t, tree, tree,
 				   bool * = NULL);
+static tree find_heap_var_refs (tree *, int *, void *);
 
 /* Attempt to evaluate T which represents a call to a builtin function.
    We assume here that all builtin functions evaluate to scalar types
@@ -2965,6 +2966,10 @@ cxx_eval_call_expression (const constexpr_ctx *ctx, tree t,
 		      cacheable = false;
 		      break;
 		    }
+	      /* Also don't cache a call that returns a deallocated pointer.  */
+	      if (cacheable && (cp_walk_tree_without_duplicates
+				(&result, find_heap_var_refs, NULL)))
+		cacheable = false;
 	    }
 
 	    /* Rewrite all occurrences of the function's RESULT_DECL with the
@@ -8301,9 +8306,15 @@ maybe_constant_init_1 (tree t, tree decl, bool allow_non_constant,
   else if (CONSTANT_CLASS_P (t) && allow_non_constant)
     /* No evaluation needed.  */;
   else
-    t = cxx_eval_outermost_constant_expr (t, allow_non_constant,
-					  /*strict*/false,
-					  manifestly_const_eval, false, decl);
+    {
+      /* [basic.start.static] allows constant-initialization of variables with
+	 static or thread storage duration even if it isn't required, but we
+	 shouldn't bend the rules the same way for automatic variables.  */
+      bool is_static = (decl && DECL_P (decl)
+			&& (TREE_STATIC (decl) || DECL_EXTERNAL (decl)));
+      t = cxx_eval_outermost_constant_expr (t, allow_non_constant, !is_static,
+					    manifestly_const_eval, false, decl);
+    }
   if (TREE_CODE (t) == TARGET_EXPR)
     {
       tree init = TARGET_EXPR_INITIAL (t);
