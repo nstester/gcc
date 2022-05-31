@@ -9812,10 +9812,12 @@ maybe_get_template_decl_from_type_decl (tree decl)
    that we want to avoid. It also causes some problems with argument
    coercion (see convert_nontype_argument for more information on this).  */
 
-static tree
-lookup_template_class_1 (tree d1, tree arglist, tree in_decl, tree context,
-			 int entering_scope, tsubst_flags_t complain)
+tree
+lookup_template_class (tree d1, tree arglist, tree in_decl, tree context,
+		       int entering_scope, tsubst_flags_t complain)
 {
+  auto_timevar tv (TV_TEMPLATE_INST);
+
   tree templ = NULL_TREE, parmlist;
   tree t;
   spec_entry **slot;
@@ -10351,20 +10353,6 @@ lookup_template_class_1 (tree d1, tree arglist, tree in_decl, tree context,
 
       return t;
     }
-}
-
-/* Wrapper for lookup_template_class_1.  */
-
-tree
-lookup_template_class (tree d1, tree arglist, tree in_decl, tree context,
-                       int entering_scope, tsubst_flags_t complain)
-{
-  tree ret;
-  timevar_push (TV_TEMPLATE_INST);
-  ret = lookup_template_class_1 (d1, arglist, in_decl, context,
-                                 entering_scope, complain);
-  timevar_pop (TV_TEMPLATE_INST);
-  return ret;
 }
 
 /* Return a TEMPLATE_ID_EXPR for the given variable template and ARGLIST.  */
@@ -11871,9 +11859,11 @@ perform_instantiation_time_access_checks (tree tmpl, tree targs)
       }
 }
 
-static tree
-instantiate_class_template_1 (tree type)
+tree
+instantiate_class_template (tree type)
 {
+  auto_timevar tv (TV_TEMPLATE_INST);
+
   tree templ, args, pattern, t, member;
   tree typedecl;
   tree pbinfo;
@@ -12393,18 +12383,6 @@ instantiate_class_template_1 (tree type)
     vec_safe_push (keyed_classes, type);
 
   return type;
-}
-
-/* Wrapper for instantiate_class_template_1.  */
-
-tree
-instantiate_class_template (tree type)
-{
-  tree ret;
-  timevar_push (TV_TEMPLATE_INST);
-  ret = instantiate_class_template_1 (type);
-  timevar_pop (TV_TEMPLATE_INST);
-  return ret;
 }
 
 tree
@@ -13740,7 +13718,7 @@ tsubst_aggr_type (tree t,
 	    {
 	      r = lookup_template_class (t, argvec, in_decl, context,
 					 entering_scope, complain);
-	      r = cp_build_qualified_type_real (r, cp_type_quals (t), complain);
+	      r = cp_build_qualified_type (r, cp_type_quals (t), complain);
 	    }
 
 	  return r;
@@ -13936,7 +13914,7 @@ rebuild_function_or_method_type (tree t, tree return_type, tree arg_types,
     {
       tree r = TREE_TYPE (TREE_VALUE (arg_types));
       /* Don't pick up extra function qualifiers from the basetype.  */
-      r = cp_build_qualified_type_real (r, type_memfn_quals (t), complain);
+      r = cp_build_qualified_type (r, type_memfn_quals (t), complain);
       if (! MAYBE_CLASS_TYPE_P (r))
 	{
 	  /* [temp.deduct]
@@ -15624,7 +15602,7 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
       if (r)
 	{
 	  r = TREE_TYPE (r);
-	  r = cp_build_qualified_type_real
+	  r = cp_build_qualified_type
 	    (r, cp_type_quals (t) | cp_type_quals (r),
 	     complain | tf_ignore_bad_quals);
 	  return r;
@@ -15634,8 +15612,8 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	  /* We don't have an instantiation yet, so drop the typedef.  */
 	  int quals = cp_type_quals (t);
 	  t = DECL_ORIGINAL_TYPE (decl);
-	  t = cp_build_qualified_type_real (t, quals,
-					    complain | tf_ignore_bad_quals);
+	  t = cp_build_qualified_type (t, quals,
+				       complain | tf_ignore_bad_quals);
 	}
     }
 
@@ -15782,7 +15760,7 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
 		quals = cp_type_quals (arg) | cp_type_quals (t);
 
-		return cp_build_qualified_type_real
+		return cp_build_qualified_type
 		  (arg, quals, complain | tf_ignore_bad_quals);
 	      }
 	    else if (code == BOUND_TEMPLATE_TEMPLATE_PARM)
@@ -15847,7 +15825,7 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 					   DECL_CONTEXT (arg),
 					    /*entering_scope=*/0,
 					   complain);
-		return cp_build_qualified_type_real
+		return cp_build_qualified_type
 		  (r, cp_type_quals (t) | cp_type_quals (r), complain);
 	      }
 	    else if (code == TEMPLATE_TEMPLATE_PARM)
@@ -15882,7 +15860,7 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	    if (cp_type_quals (t))
 	      {
 		r = tsubst (TYPE_MAIN_VARIANT (t), args, complain, in_decl);
-		r = cp_build_qualified_type_real
+		r = cp_build_qualified_type
 		  (r, cp_type_quals (t),
 		   complain | (code == TEMPLATE_TYPE_PARM
 			       ? tf_ignore_bad_quals : 0));
@@ -16052,7 +16030,7 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	       TYPE_REF_IS_RVALUE (t) && TYPE_REF_IS_RVALUE (type));
 	else
 	  r = cp_build_reference_type (type, TYPE_REF_IS_RVALUE (t));
-	r = cp_build_qualified_type_real (r, cp_type_quals (t), complain);
+	r = cp_build_qualified_type (r, cp_type_quals (t), complain);
 
 	if (r != error_mark_node)
 	  /* Will this ever be needed for TYPE_..._TO values?  */
@@ -16098,13 +16076,13 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	      = build_memfn_type (type, r, type_memfn_quals (type),
 				  type_memfn_rqual (type));
 	    memptr = build_ptrmemfunc_type (build_pointer_type (method_type));
-	    return cp_build_qualified_type_real (memptr, cp_type_quals (t),
-						 complain);
+	    return cp_build_qualified_type (memptr, cp_type_quals (t),
+					    complain);
 	  }
 	else
-	  return cp_build_qualified_type_real (build_ptrmem_type (r, type),
-					       cp_type_quals (t),
-					       complain);
+	  return cp_build_qualified_type (build_ptrmem_type (r, type),
+					  cp_type_quals (t),
+					  complain);
       }
     case FUNCTION_TYPE:
     case METHOD_TYPE:
@@ -16255,7 +16233,7 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	      }
 	  }
 
-	return cp_build_qualified_type_real
+	return cp_build_qualified_type
 	  (f, cp_type_quals (f) | cp_type_quals (t), complain);
       }
 
@@ -16289,10 +16267,10 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	--c_inhibit_evaluation_warnings;
 
 	type = finish_typeof (type);
-	return cp_build_qualified_type_real (type,
-					     cp_type_quals (t)
-					     | cp_type_quals (type),
-					     complain);
+	return cp_build_qualified_type (type,
+					cp_type_quals (t)
+					| cp_type_quals (type),
+					complain);
       }
 
     case DECLTYPE_TYPE:
@@ -16328,10 +16306,10 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	      id = false;
 	    type = finish_decltype_type (type, id, complain);
 	  }
-	return cp_build_qualified_type_real (type,
-					     cp_type_quals (t)
-					     | cp_type_quals (type),
-					     complain | tf_ignore_bad_quals);
+	return cp_build_qualified_type (type,
+					cp_type_quals (t)
+					| cp_type_quals (type),
+					complain | tf_ignore_bad_quals);
       }
 
     case UNDERLYING_TYPE:
@@ -16831,8 +16809,8 @@ maybe_dependent_member_ref (tree t, tree args, tsubst_flags_t complain,
 	decl = maybe_dependent_member_ref (decl, args, complain, in_decl);
       if (!decl)
 	return NULL_TREE;
-      return cp_build_qualified_type_real (TREE_TYPE (decl), cp_type_quals (t),
-					   complain);
+      return cp_build_qualified_type (TREE_TYPE (decl), cp_type_quals (t),
+				      complain);
     }
 
   tree name = DECL_NAME (t);
@@ -21545,9 +21523,11 @@ recheck_decl_substitution (tree d, tree tmpl, tree args)
 /* Instantiate the indicated variable, function, or alias template TMPL with
    the template arguments in TARG_PTR.  */
 
-static tree
-instantiate_template_1 (tree tmpl, tree orig_args, tsubst_flags_t complain)
+tree
+instantiate_template (tree tmpl, tree orig_args, tsubst_flags_t complain)
 {
+  auto_timevar tv (TV_TEMPLATE_INST);
+
   tree targ_ptr = orig_args;
   tree fndecl;
   tree gen_tmpl;
@@ -21717,18 +21697,6 @@ instantiate_template_1 (tree tmpl, tree orig_args, tsubst_flags_t complain)
       return error_mark_node;
     }
   return fndecl;
-}
-
-/* Wrapper for instantiate_template_1.  */
-
-tree
-instantiate_template (tree tmpl, tree orig_args, tsubst_flags_t complain)
-{
-  tree ret;
-  timevar_push (TV_TEMPLATE_INST);
-  ret = instantiate_template_1 (tmpl, orig_args,  complain);
-  timevar_pop (TV_TEMPLATE_INST);
-  return ret;
 }
 
 /* Instantiate the alias template TMPL with ARGS.  Also push a template
@@ -24204,7 +24172,7 @@ unify (tree tparms, tree targs, tree parm, tree arg, int strict,
 
 	  /* Consider the case where ARG is `const volatile int' and
 	     PARM is `const T'.  Then, T should be `volatile int'.  */
-	  arg = cp_build_qualified_type_real
+	  arg = cp_build_qualified_type
 	    (arg, cp_type_quals (arg) & ~cp_type_quals (parm), tf_none);
 	  if (arg == error_mark_node)
 	    return unify_invalid (explain_p);
@@ -26568,7 +26536,7 @@ instantiate_decl (tree d, bool defer_ok, bool expl_inst_class_mem_p)
   if (! push_tinst_level (d))
     return d;
 
-  timevar_push (TV_TEMPLATE_INST);
+  auto_timevar tv (TV_TEMPLATE_INST);
 
   /* Set TD to the template whose DECL_TEMPLATE_RESULT is the pattern
      for the instantiation.  */
@@ -26734,7 +26702,6 @@ instantiate_decl (tree d, bool defer_ok, bool expl_inst_class_mem_p)
     }
 
   pop_deferring_access_checks ();
-  timevar_pop (TV_TEMPLATE_INST);
   pop_tinst_level ();
   input_location = saved_loc;
   cp_unevaluated_operand = saved_unevaluated_operand;
