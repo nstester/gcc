@@ -570,42 +570,52 @@ package body Sem_Ch6 is
          --  RM in 4.9(3.2/5-3.4/5) and we flag an error.
 
          if Is_Static_Function (Def_Id) then
-            if not Is_Static_Expression (Expr) then
-               declare
-                  Exp_Copy : constant Node_Id := New_Copy_Tree (Expr);
-               begin
-                  Set_Checking_Potentially_Static_Expression (True);
+            declare
+               --  If a potentially static expr like "Parameter / 0"
+               --  is transformed into "(raise Constraint_Error)", then we
+               --  need to copy the Original_Node.
+               function Make_Expr_Copy return Node_Id is
+                 (New_Copy_Tree (if Expr in N_Raise_xxx_Error_Id
+                                 then Original_Node (Expr)
+                                 else Expr));
+            begin
+               if not Is_Static_Expression (Expr) then
+                  declare
+                     Exp_Copy : constant Node_Id := Make_Expr_Copy;
+                  begin
+                     Set_Checking_Potentially_Static_Expression (True);
 
-                  Preanalyze_Formal_Expression (Exp_Copy, Typ);
+                     Preanalyze_Formal_Expression (Exp_Copy, Typ);
 
-                  if not Is_Static_Expression (Exp_Copy) then
-                     Error_Msg_N
-                       ("static expression function requires "
-                          & "potentially static expression", Expr);
-                  end if;
+                     if not Is_Static_Expression (Exp_Copy) then
+                        Error_Msg_N
+                          ("static expression function requires "
+                             & "potentially static expression", Expr);
+                     end if;
 
-                  Set_Checking_Potentially_Static_Expression (False);
-               end;
-            end if;
+                     Set_Checking_Potentially_Static_Expression (False);
+                  end;
+               end if;
 
-            --  We also make an additional copy of the expression and
-            --  replace the expression of the expression function with
-            --  this copy, because the currently present expression is
-            --  now associated with the body created for the static
-            --  expression function, which will later be analyzed and
-            --  possibly rewritten, and we need to have the separate
-            --  unanalyzed copy available for use with later static
-            --  calls.
+               --  We also make an additional copy of the expression and
+               --  replace the expression of the expression function with
+               --  this copy, because the currently present expression is
+               --  now associated with the body created for the static
+               --  expression function, which will later be analyzed and
+               --  possibly rewritten, and we need to have the separate
+               --  unanalyzed copy available for use with later static
+               --  calls.
 
-            Set_Expression
-              (Original_Node (Subprogram_Spec (Def_Id)),
-               New_Copy_Tree (Expr));
+               Set_Expression
+                 (Original_Node (Subprogram_Spec (Def_Id)),
+                  Make_Expr_Copy);
 
-            --  Mark static expression functions as inlined, to ensure
-            --  that even calls with nonstatic actuals will be inlined.
+               --  Mark static expression functions as inlined, to ensure
+               --  that even calls with nonstatic actuals will be inlined.
 
-            Set_Has_Pragma_Inline (Def_Id);
-            Set_Is_Inlined (Def_Id);
+               Set_Has_Pragma_Inline (Def_Id);
+               Set_Is_Inlined (Def_Id);
+            end;
          end if;
       end if;
 
@@ -4379,25 +4389,15 @@ package body Sem_Ch6 is
             end if;
 
             --  A subprogram body should cause freezing of its own declaration,
-            --  but if there was no previous explicit declaration, then the
-            --  subprogram will get frozen too late (there may be code within
-            --  the body that depends on the subprogram having been frozen,
-            --  such as uses of extra formals), so we force it to be frozen
-            --  here. Same holds if the body and spec are compilation units.
-            --  Finally, if the return type is an anonymous access to protected
-            --  subprogram, it must be frozen before the body because its
-            --  expansion has generated an equivalent type that is used when
-            --  elaborating the body.
+            --  so, if the body and spec are compilation units, we must do it
+            --  manually here. Moreover, if the return type is anonymous access
+            --  to protected subprogram, it must be frozen before the body
+            --  because its expansion has generated an equivalent type that is
+            --  used when elaborating the body.
 
-            --  An exception in the case of Ada 2012, AI05-177: The bodies
-            --  created for expression functions do not freeze.
-
-            if No (Spec_Id)
-              and then Nkind (Original_Node (N)) /= N_Expression_Function
+            if Present (Spec_Id)
+              and then Nkind (Parent (N)) = N_Compilation_Unit
             then
-               Freeze_Before (N, Body_Id);
-
-            elsif Nkind (Parent (N)) = N_Compilation_Unit then
                Freeze_Before (N, Spec_Id);
 
             elsif Is_Access_Subprogram_Type (Etype (Body_Id)) then
@@ -4765,12 +4765,27 @@ package body Sem_Ch6 is
 
            --  No warnings for expression functions
 
-           and then Nkind (Original_Node (N)) /= N_Expression_Function
+           and then (Nkind (N) /= N_Subprogram_Body
+                      or else not Was_Expression_Function (N))
          then
             Style.Body_With_No_Spec (N);
          end if;
 
          New_Overloaded_Entity (Body_Id);
+
+         --  A subprogram body should cause freezing of its own declaration,
+         --  but if there was no previous explicit declaration, then the
+         --  subprogram will get frozen too late (there may be code within
+         --  the body that depends on the subprogram having been frozen,
+         --  such as uses of extra formals), so we force it to be frozen here.
+         --  An exception in Ada 2012 is that the body created for expression
+         --  functions does not freeze.
+
+         if Nkind (N) /= N_Subprogram_Body
+           or else not Was_Expression_Function (N)
+         then
+            Freeze_Before (N, Body_Id);
+         end if;
 
          if Nkind (N) /= N_Subprogram_Body_Stub then
             Set_Acts_As_Spec (N);

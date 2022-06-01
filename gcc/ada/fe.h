@@ -203,7 +203,6 @@ extern Boolean In_Extended_Main_Code_Unit	(Entity_Id);
 /* opt: */
 
 #define Ada_Version			opt__ada_version
-#define Assume_No_Invalid_Values	opt__assume_no_invalid_values
 #define Back_End_Inlining		opt__back_end_inlining
 #define Debug_Generated_Code		opt__debug_generated_code
 #define Enable_128bit_Types		opt__enable_128bit_types
@@ -220,7 +219,6 @@ typedef enum {
 } Ada_Version_Type;
 
 extern Ada_Version_Type Ada_Version;
-extern Boolean Assume_No_Invalid_Values;
 extern Boolean Back_End_Inlining;
 extern Boolean Debug_Generated_Code;
 extern Boolean Enable_128bit_Types;
@@ -299,15 +297,15 @@ extern Boolean Compile_Time_Known_Value	(Node_Id);
 #define First_Actual			sem_util__first_actual
 #define Is_Expression_Function		sem_util__is_expression_function
 #define Is_Variable_Size_Record 	sem_util__is_variable_size_record
+#define Needs_Secondary_Stack		sem_util__needs_secondary_stack
 #define Next_Actual			sem_util__next_actual
-#define Returns_On_Secondary_Stack	sem_util__returns_on_secondary_stack
 
 extern Entity_Id Defining_Entity		(Node_Id);
 extern Node_Id First_Actual			(Node_Id);
 extern Boolean Is_Expression_Function		(Entity_Id);
 extern Boolean Is_Variable_Size_Record 		(Entity_Id);
+extern Boolean Needs_Secondary_Stack		(Entity_Id);
 extern Node_Id Next_Actual			(Node_Id);
-extern Boolean Returns_On_Secondary_Stack	(Entity_Id);
 
 /* sinfo: */
 

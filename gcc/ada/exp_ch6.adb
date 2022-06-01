@@ -1055,11 +1055,12 @@ package body Exp_Ch6 is
      (Func_Call   : Node_Id;
       Result_Subt : Entity_Id) return Boolean
    is
+      Ctrl : constant Node_Id   := Controlling_Argument (Func_Call);
+      Utyp : constant Entity_Id := Underlying_Type (Result_Subt);
+
    begin
-      return
-          (Is_Definite_Subtype (Underlying_Type (Result_Subt))
-            and then No (Controlling_Argument (Func_Call)))
-        or else not Requires_Transient_Scope (Underlying_Type (Result_Subt));
+      return (No (Ctrl) and then Is_Definite_Subtype (Utyp))
+        or else not Needs_Secondary_Stack (Utyp);
    end Caller_Known_Size;
 
    -----------------------
@@ -4945,7 +4946,7 @@ package body Exp_Ch6 is
                  Is_Build_In_Place_Function_Call (Parent (Call_Node)))
          then
             Establish_Transient_Scope
-              (Call_Node, Returns_On_Secondary_Stack (Etype (Subp)));
+              (Call_Node, Needs_Secondary_Stack (Etype (Subp)));
          end if;
       end if;
    end Expand_Call_Helper;
@@ -7340,7 +7341,7 @@ package body Exp_Ch6 is
       --  A return statement from an ignored Ghost function does not use the
       --  secondary stack (or any other one).
 
-      elsif not Returns_On_Secondary_Stack (R_Type)
+      elsif not Needs_Secondary_Stack (R_Type)
         or else Is_Ignored_Ghost_Entity (Scope_Id)
       then
          --  Mutable records with variable-length components are not returned
@@ -7454,7 +7455,7 @@ package body Exp_Ch6 is
          --  how to do a copy.)
 
          if Exp_Is_Function_Call
-           and then Returns_On_Secondary_Stack (Exp_Typ)
+           and then Needs_Secondary_Stack (Exp_Typ)
          then
             Set_By_Ref (N);
 
@@ -7839,6 +7840,7 @@ package body Exp_Ch6 is
 
       procedure Register_Predefined_DT_Entry (Prim : Entity_Id) is
          Iface_DT_Ptr : Elmt_Id;
+         L            : List_Id;
          Tagged_Typ   : Entity_Id;
          Thunk_Id     : Entity_Id;
          Thunk_Code   : Node_Id;
@@ -7871,7 +7873,7 @@ package body Exp_Ch6 is
               Iface => Related_Type (Node (Iface_DT_Ptr)));
 
             if Present (Thunk_Code) then
-               Insert_Actions_After (N, New_List (
+               L := New_List (
                  Thunk_Code,
 
                  Build_Set_Predefined_Prim_Op_Address (Loc,
@@ -7894,7 +7896,14 @@ package body Exp_Ch6 is
                      Unchecked_Convert_To (RTE (RE_Prim_Ptr),
                        Make_Attribute_Reference (Loc,
                          Prefix         => New_Occurrence_Of (Prim, Loc),
-                         Attribute_Name => Name_Unrestricted_Access)))));
+                         Attribute_Name => Name_Unrestricted_Access))));
+
+               if No (Actions (N)) then
+                  Set_Actions (N, L);
+
+               else
+                  Append_List (L, Actions (N));
+               end if;
             end if;
 
             --  Skip the tag of the predefined primitives dispatch table
@@ -10210,7 +10219,7 @@ package body Exp_Ch6 is
       pragma Assert (Is_Build_In_Place_Function (Func_Id));
       Func_Typ : constant Entity_Id := Underlying_Type (Etype (Func_Id));
    begin
-      return Requires_Transient_Scope (Func_Typ);
+      return Needs_Secondary_Stack (Func_Typ);
    end Needs_BIP_Alloc_Form;
 
    -------------------------------------
