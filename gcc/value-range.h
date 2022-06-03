@@ -50,29 +50,45 @@ enum value_range_discriminator
 };
 
 // Abstract class for ranges of any of the supported types.
+//
+// To query what types ranger and the entire ecosystem can support,
+// use Value_Range::supports_type_p(tree type).  This is a static
+// method available independently of any vrange object.
+//
+// To query what a given vrange variant can support, use:
+//    irange::supports_p ()
+//    frange::supports_p ()
+//    etc
+//
+// To query what a range object can support, use:
+//    void foo (vrange &v, irange &i, frange &f)
+//    {
+//	if (v.supports_type_p (type)) ...
+//	if (i.supports_type_p (type)) ...
+//	if (f.supports_type_p (type)) ...
+//    }
 
 class vrange
 {
   template <typename T> friend bool is_a (vrange &);
   friend class Value_Range;
 public:
-  virtual void set (tree, tree, value_range_kind = VR_RANGE) = 0;
-  virtual tree type () const = 0;
-  virtual void set_varying (tree type) = 0;
-  virtual void set_undefined () = 0;
+  virtual void set (tree, tree, value_range_kind = VR_RANGE);
+  virtual tree type () const;
+  virtual bool supports_type_p (tree type) const;
+  virtual void set_varying (tree type);
+  virtual void set_undefined ();
   virtual void dump (FILE * = stderr) const = 0;
-  virtual bool union_ (const vrange &) = 0;
-  virtual bool intersect (const vrange &) = 0;
+  virtual bool union_ (const vrange &);
+  virtual bool intersect (const vrange &);
   virtual bool singleton_p (tree *result = NULL) const;
   virtual bool contains_p (tree cst) const;
-  virtual bool zero_p () const = 0;
-  virtual bool nonzero_p () const = 0;
-  virtual void set_nonzero (tree type) = 0;
-  virtual void set_zero (tree type) = 0;
-  virtual void set_nonnegative (tree type) = 0;
-  virtual bool fits_p (const vrange &r) const = 0;
-
-  static bool supports_type_p (tree);
+  virtual bool zero_p () const;
+  virtual bool nonzero_p () const;
+  virtual void set_nonzero (tree type);
+  virtual void set_zero (tree type);
+  virtual void set_nonnegative (tree type);
+  virtual bool fits_p (const vrange &r) const;
 
   bool varying_p () const;
   bool undefined_p () const;
@@ -103,7 +119,8 @@ public:
   virtual void set_undefined () override;
 
   // Range types.
-  static bool supports_type_p (tree);
+  static bool supports_p (tree type);
+  virtual bool supports_type_p (tree type) const override;
   virtual tree type () const override;
 
   // Iteration over sub-ranges.
@@ -219,46 +236,21 @@ private:
 };
 
 // Unsupported temporaries may be created by ranger before it's known
-// they're unsupported, or by vr_values::get_value_range.  All
-// operations except construction cause a trap.
+// they're unsupported, or by vr_values::get_value_range.
 
 class unsupported_range : public vrange
 {
 public:
   unsupported_range ();
-  virtual void set (tree, tree, value_range_kind) override;
-  virtual tree type () const override;
-  virtual void set_varying (tree type) override;
-  virtual void set_undefined () override;
   virtual void dump (FILE *) const override;
-  virtual bool union_ (const vrange &) override;
-  virtual bool intersect (const vrange &) override;
-  virtual bool zero_p () const override;
-  virtual bool nonzero_p () const override;
-  virtual void set_nonzero (tree) override;
-  virtual void set_zero (tree) override;
-  virtual void set_nonnegative (tree) override;
-  virtual bool fits_p (const vrange &) const override;
 };
 
-// Traits to implement vrange is_a<> and as_a<>.
+// is_a<> and as_a<> implementation for vrange.
 
-template<typename T>
-struct vrange_traits
-{
-  // Default to something unusable.
-  typedef void range_type;
-};
-
-template<>
-struct vrange_traits<irange>
-{
-  typedef irange range_type;
-};
-
+// Anything we haven't specialized is a hard fail.
 template <typename T>
 inline bool
-is_a (vrange &v)
+is_a (vrange &)
 {
   gcc_unreachable ();
   return false;
@@ -277,18 +269,16 @@ template <typename T>
 inline T &
 as_a (vrange &v)
 {
-  typedef typename vrange_traits<T>::range_type range_type;
-  gcc_checking_assert (is_a <range_type> (v));
-  return static_cast <range_type &> (v);
+  gcc_checking_assert (is_a <T> (v));
+  return static_cast <T &> (v);
 }
 
 template <typename T>
 inline const T &
 as_a (const vrange &v)
 {
-  typedef typename vrange_traits<T>::range_type range_type;
-  gcc_checking_assert (is_a <range_type> (v));
-  return static_cast <const range_type &> (v);
+  gcc_checking_assert (is_a <T> (v));
+  return static_cast <const T &> (v);
 }
 
 // Specializations for the different range types.
@@ -324,6 +314,7 @@ public:
   Value_Range ();
   Value_Range (const vrange &r);
   Value_Range (tree type);
+  Value_Range (const Value_Range &);
   void set_type (tree type);
   vrange& operator= (const vrange &);
   bool operator== (const Value_Range &r) const;
@@ -331,6 +322,7 @@ public:
   operator vrange &();
   operator const vrange &() const;
   void dump (FILE *out = stderr) const;
+  static bool supports_type_p (tree type);
 
   // Convenience methods for vrange compatability.
   void set (tree min, tree max, value_range_kind kind = VR_RANGE)
@@ -350,10 +342,9 @@ public:
   wide_int upper_bound () const; // For irange/prange compatability.
 private:
   void init (tree type);
-  static unsupported_range m_unsupported;
+  unsupported_range m_unsupported;
   vrange *m_vrange;
   int_range_max m_irange;
-  DISABLE_COPY_AND_ASSIGN (Value_Range);
 };
 
 inline
@@ -379,6 +370,12 @@ Value_Range::Value_Range (tree type)
   init (type);
 }
 
+inline
+Value_Range::Value_Range (const Value_Range &r)
+{
+  m_vrange = r.m_vrange;
+}
+
 // Initialize object so it is possible to store temporaries of TYPE
 // into it.
 
@@ -387,7 +384,7 @@ Value_Range::init (tree type)
 {
   gcc_checking_assert (TYPE_P (type));
 
-  if (irange::supports_type_p (type))
+  if (irange::supports_p (type))
     m_vrange = &m_irange;
   else
     m_vrange = &m_unsupported;
@@ -442,6 +439,14 @@ inline
 Value_Range::operator const vrange &() const
 {
   return *m_vrange;
+}
+
+// Return TRUE if TYPE is supported by the vrange infrastructure.
+
+inline bool
+Value_Range::supports_type_p (tree type)
+{
+  return irange::supports_p (type);
 }
 
 // Returns true for an old-school value_range as described above.
@@ -580,7 +585,7 @@ irange::nonzero_p () const
 }
 
 inline bool
-irange::supports_type_p (tree type)
+irange::supports_p (tree type)
 {
   return INTEGRAL_TYPE_P (type) || POINTER_TYPE_P (type);
 }
@@ -864,12 +869,6 @@ irange::normalize_kind ()
     }
 }
 
-inline bool
-vrange::supports_type_p (tree type)
-{
-  return irange::supports_type_p (type);
-}
-
 // Return the maximum value for TYPE.
 
 inline tree
@@ -944,7 +943,7 @@ vrange_allocator::alloc (unsigned bytes)
 inline vrange *
 vrange_allocator::alloc_vrange (tree type)
 {
-  if (irange::supports_type_p (type))
+  if (irange::supports_p (type))
     return alloc_irange (2);
 
   gcc_unreachable ();
