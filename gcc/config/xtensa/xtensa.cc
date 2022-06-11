@@ -55,6 +55,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "dumpfile.h"
 #include "hw-doloop.h"
 #include "rtl-iter.h"
+#include "insn-attr.h"
 
 /* This file should be included last.  */
 #include "target-def.h"
@@ -134,6 +135,7 @@ static unsigned int xtensa_multibss_section_type_flags (tree, const char *,
 static section *xtensa_select_rtx_section (machine_mode, rtx,
 					   unsigned HOST_WIDE_INT);
 static bool xtensa_rtx_costs (rtx, machine_mode, int, int, int *, bool);
+static int xtensa_insn_cost (rtx_insn *, bool);
 static int xtensa_register_move_cost (machine_mode, reg_class_t,
 				      reg_class_t);
 static int xtensa_memory_move_cost (machine_mode, reg_class_t, bool);
@@ -212,6 +214,8 @@ static rtx xtensa_delegitimize_address (rtx);
 #define TARGET_MEMORY_MOVE_COST xtensa_memory_move_cost
 #undef TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS xtensa_rtx_costs
+#undef TARGET_INSN_COST
+#define TARGET_INSN_COST xtensa_insn_cost
 #undef TARGET_ADDRESS_COST
 #define TARGET_ADDRESS_COST hook_int_rtx_mode_as_bool_0
 
@@ -1033,6 +1037,123 @@ xtensa_split_operand_pair (rtx operands[4], machine_mode mode)
 }
 
 
+/* Try to emit insns to load srcval (that cannot fit into signed 12-bit)
+   into dst with synthesizing a such constant value from a sequence of
+   load-immediate / arithmetic ones, instead of a L32R instruction
+   (plus a constant in litpool).  */
+
+static void
+xtensa_emit_constantsynth (rtx dst, enum rtx_code code,
+			   HOST_WIDE_INT imm0, HOST_WIDE_INT imm1,
+			   rtx (*gen_op)(rtx, HOST_WIDE_INT),
+			   HOST_WIDE_INT imm2)
+{
+  gcc_assert (REG_P (dst));
+  emit_move_insn (dst, GEN_INT (imm0));
+  emit_move_insn (dst, gen_rtx_fmt_ee (code, SImode,
+				       dst, GEN_INT (imm1)));
+  if (gen_op)
+    emit_move_insn (dst, gen_op (dst, imm2));
+}
+
+static int
+xtensa_constantsynth_2insn (rtx dst, HOST_WIDE_INT srcval,
+			    rtx (*gen_op)(rtx, HOST_WIDE_INT),
+			    HOST_WIDE_INT op_imm)
+{
+  int shift = exact_log2 (srcval + 1);
+
+  if (IN_RANGE (shift, 1, 31))
+    {
+      xtensa_emit_constantsynth (dst, LSHIFTRT, -1, 32 - shift,
+				 gen_op, op_imm);
+      return 1;
+    }
+
+  if (IN_RANGE (srcval, (-2048 - 32768), (2047 + 32512)))
+    {
+      HOST_WIDE_INT imm0, imm1;
+
+      if (srcval < -32768)
+	imm1 = -32768;
+      else if (srcval > 32512)
+	imm1 = 32512;
+      else
+	imm1 = srcval & ~255;
+      imm0 = srcval - imm1;
+      if (TARGET_DENSITY && imm1 < 32512 && IN_RANGE (imm0, 224, 255))
+	imm0 -= 256, imm1 += 256;
+      xtensa_emit_constantsynth (dst, PLUS, imm0, imm1, gen_op, op_imm);
+	return 1;
+    }
+
+  shift = ctz_hwi (srcval);
+  if (xtensa_simm12b (srcval >> shift))
+    {
+      xtensa_emit_constantsynth (dst, ASHIFT, srcval >> shift, shift,
+				 gen_op, op_imm);
+      return 1;
+    }
+
+  return 0;
+}
+
+static rtx
+xtensa_constantsynth_rtx_SLLI (rtx reg, HOST_WIDE_INT imm)
+{
+  return gen_rtx_ASHIFT (SImode, reg, GEN_INT (imm));
+}
+
+static rtx
+xtensa_constantsynth_rtx_ADDSUBX (rtx reg, HOST_WIDE_INT imm)
+{
+  return imm == 7
+	 ? gen_rtx_MINUS (SImode, gen_rtx_ASHIFT (SImode, reg, GEN_INT (3)),
+			  reg)
+	 : gen_rtx_PLUS (SImode, gen_rtx_ASHIFT (SImode, reg,
+						 GEN_INT (floor_log2 (imm - 1))),
+			 reg);
+}
+
+int
+xtensa_constantsynth (rtx dst, HOST_WIDE_INT srcval)
+{
+  /* No need for synthesizing for what fits into MOVI instruction.  */
+  if (xtensa_simm12b (srcval))
+    return 0;
+
+  /* 2-insns substitution.  */
+  if ((optimize_size || (optimize && xtensa_extra_l32r_costs >= 1))
+      && xtensa_constantsynth_2insn (dst, srcval, NULL, 0))
+    return 1;
+
+  /* 3-insns substitution.  */
+  if (optimize > 1 && !optimize_size && xtensa_extra_l32r_costs >= 2)
+    {
+      int shift, divisor;
+
+      /* 2-insns substitution followed by SLLI.  */
+      shift = ctz_hwi (srcval);
+      if (IN_RANGE (shift, 1, 31) &&
+	  xtensa_constantsynth_2insn (dst, srcval >> shift,
+				      xtensa_constantsynth_rtx_SLLI,
+				      shift))
+	return 1;
+
+      /* 2-insns substitution followed by ADDX[248] or SUBX8.  */
+      if (TARGET_ADDX)
+	for (divisor = 3; divisor <= 9; divisor += 2)
+	  if (srcval % divisor == 0 &&
+	      xtensa_constantsynth_2insn (dst, srcval / divisor,
+					  xtensa_constantsynth_rtx_ADDSUBX,
+					  divisor))
+	    return 1;
+    }
+
+  return 0;
+}
+
+
 /* Emit insns to move operands[1] into operands[0].
    Return 1 if we have written out everything that needs to be done to
    do the move.  Otherwise, return 0 and the caller will emit the move
@@ -1070,22 +1191,6 @@ xtensa_emit_move_sequence (rtx *operands, machine_mode mode)
 
       if (! TARGET_AUTO_LITPOOLS && ! TARGET_CONST16)
 	{
-	  /* Try to emit MOVI + SLLI sequence, that is smaller
-	     than L32R + literal.  */
-	  if (optimize_size && mode == SImode && CONST_INT_P (src)
-	      && register_operand (dst, mode))
-	    {
-	      HOST_WIDE_INT srcval = INTVAL (src);
-	      int shift = ctz_hwi (srcval);
-
-	      if (xtensa_simm12b (srcval >> shift))
-		{
-		  emit_move_insn (dst, GEN_INT (srcval >> shift));
-		  emit_insn (gen_ashlsi3_internal (dst, dst, GEN_INT (shift)));
-		  return 1;
-		}
-	    }
-
 	  src = force_const_mem (SImode, src);
 	  operands[1] = src;
 	}
@@ -1483,7 +1588,7 @@ xtensa_expand_block_set_unrolled_loop (rtx *operands)
 int
 xtensa_expand_block_set_small_loop (rtx *operands)
 {
-  HOST_WIDE_INT bytes, value, align;
+  HOST_WIDE_INT bytes, value, align, count;
   int expand_len, funccall_len;
   rtx x, dst, end, reg;
   machine_mode unit_mode;
@@ -1503,17 +1608,25 @@ xtensa_expand_block_set_small_loop (rtx *operands)
   /* Totally-aligned block only.  */
   if (bytes % align != 0)
     return 0;
+  count = bytes / align;
 
-  /* If 4-byte aligned, small loop substitution is almost optimal, thus
-     limited to only offset to the end address for ADDI/ADDMI instruction.  */
-  if (align == 4
-      && ! (bytes <= 127 || (bytes <= 32512 && bytes % 256 == 0)))
-    return 0;
+  /* If the Loop Option (zero-overhead looping) is configured and active,
+     almost no restrictions about the length of the block.  */
+  if (! (TARGET_LOOPS && optimize))
+    {
+      /* If 4-byte aligned, small loop substitution is almost optimal,
+	 thus limited to only offset to the end address for ADDI/ADDMI
+	 instruction.  */
+      if (align == 4
+	  && ! (bytes <= 127 || (bytes <= 32512 && bytes % 256 == 0)))
+	return 0;
 
-  /* If no 4-byte aligned, loop count should be treated as the constraint.  */
-  if (align != 4
-      && bytes / align > ((optimize > 1 && !optimize_size) ? 8 : 15))
-    return 0;
+      /* If no 4-byte aligned, loop count should be treated as the
+	 constraint.  */
+      if (align != 4
+	  && count > ((optimize > 1 && !optimize_size) ? 8 : 15))
+	return 0;
+    }
 
   /* Insn expansion: holding the init value.
      Either MOV(.N) or L32R w/litpool.  */
@@ -1523,16 +1636,33 @@ xtensa_expand_block_set_small_loop (rtx *operands)
     expand_len = TARGET_DENSITY ? 2 : 3;
   else
     expand_len = 3 + 4;
-  /* Insn expansion: Either ADDI(.N) or ADDMI for the end address.  */
-  expand_len += bytes > 127 ? 3
-			    : (TARGET_DENSITY && bytes <= 15) ? 2 : 3;
-
-  /* Insn expansion: the loop body and branch instruction.
-     For store, one of S8I, S16I or S32I(.N).
-     For advance, ADDI(.N).
-     For branch, BNE.  */
-  expand_len += (TARGET_DENSITY && align == 4 ? 2 : 3)
-		+ (TARGET_DENSITY ? 2 : 3) + 3;
+  if (TARGET_LOOPS && optimize) /* zero-overhead looping */
+    {
+      /* Insn translation: Either MOV(.N) or L32R w/litpool for the
+	 loop count.  */
+      expand_len += xtensa_simm12b (count) ? xtensa_sizeof_MOVI (count)
+					   : 3 + 4;
+      /* Insn translation: LOOP, the zero-overhead looping setup
+	 instruction.  */
+      expand_len += 3;
+      /* Insn expansion: the loop body instructions.
+	For store, one of S8I, S16I or S32I(.N).
+	For advance, ADDI(.N).  */
+      expand_len += (TARGET_DENSITY && align == 4 ? 2 : 3)
+		    + (TARGET_DENSITY ? 2 : 3);
+    }
+  else /* NO zero-overhead looping */
+    {
+      /* Insn expansion: Either ADDI(.N) or ADDMI for the end address.  */
+      expand_len += bytes > 127 ? 3
+				: (TARGET_DENSITY && bytes <= 15) ? 2 : 3;
+      /* Insn expansion: the loop body and branch instruction.
+	For store, one of S8I, S16I or S32I(.N).
+	For advance, ADDI(.N).
+	For branch, BNE.  */
+      expand_len += (TARGET_DENSITY && align == 4 ? 2 : 3)
+		    + (TARGET_DENSITY ? 2 : 3) + 3;
+    }
 
   /* Function call: preparing two arguments.  */
   funccall_len = xtensa_sizeof_MOVI (value);
@@ -1555,7 +1685,11 @@ xtensa_expand_block_set_small_loop (rtx *operands)
   dst = gen_reg_rtx (SImode);
   emit_move_insn (dst, x);
   end = gen_reg_rtx (SImode);
-  emit_insn (gen_addsi3 (end, dst, operands[1] /* the length */));
+  if (TARGET_LOOPS && optimize)
+    x = force_reg (SImode, operands[1] /* the length */);
+  else
+    x = operands[1];
+  emit_insn (gen_addsi3 (end, dst, x));
   switch (align)
     {
     case 1:
@@ -3908,7 +4042,7 @@ xtensa_memory_move_cost (machine_mode mode ATTRIBUTE_UNUSED,
 static bool
 xtensa_rtx_costs (rtx x, machine_mode mode, int outer_code,
 		  int opno ATTRIBUTE_UNUSED,
-		  int *total, bool speed ATTRIBUTE_UNUSED)
+		  int *total, bool speed)
 {
   int code = GET_CODE (x);
 
@@ -3996,7 +4130,12 @@ xtensa_rtx_costs (rtx x, machine_mode mode, int outer_code,
       return true;
 
     case CLZ:
+    case CLRSB:
       *total = COSTS_N_INSNS (TARGET_NSA ? 1 : 50);
+      return true;
+
+    case BSWAP:
+      *total = COSTS_N_INSNS (mode == HImode ? 3 : 5);
       return true;
 
     case NOT:
@@ -4022,13 +4161,16 @@ xtensa_rtx_costs (rtx x, machine_mode mode, int outer_code,
       return true;
 
     case ABS:
+    case NEG:
       {
 	if (mode == SFmode)
 	  *total = COSTS_N_INSNS (TARGET_HARD_FLOAT ? 1 : 50);
 	else if (mode == DFmode)
 	  *total = COSTS_N_INSNS (50);
-	else
+	else if (mode == DImode)
 	  *total = COSTS_N_INSNS (4);
+	else
+	  *total = COSTS_N_INSNS (1);
 	return true;
       }
 
@@ -4043,10 +4185,6 @@ xtensa_rtx_costs (rtx x, machine_mode mode, int outer_code,
 	  *total = COSTS_N_INSNS (1);
 	return true;
       }
-
-    case NEG:
-      *total = COSTS_N_INSNS (mode == DImode ? 4 : 2);
-      return true;
 
     case MULT:
       {
@@ -4087,11 +4225,11 @@ xtensa_rtx_costs (rtx x, machine_mode mode, int outer_code,
     case UMOD:
       {
 	if (mode == DImode)
-	  *total = COSTS_N_INSNS (50);
+	  *total = COSTS_N_INSNS (speed ? 100 : 50);
 	else if (TARGET_DIV32)
 	  *total = COSTS_N_INSNS (32);
 	else
-	  *total = COSTS_N_INSNS (50);
+	  *total = COSTS_N_INSNS (speed ? 100 : 50);
 	return true;
       }
 
@@ -4122,6 +4260,98 @@ xtensa_rtx_costs (rtx x, machine_mode mode, int outer_code,
     default:
       return false;
     }
+}
+
+static bool
+xtensa_is_insn_L32R_p(const rtx_insn *insn)
+{
+  rtx x = PATTERN (insn);
+
+  if (GET_CODE (x) == SET)
+    {
+      x = XEXP (x, 1);
+      if (GET_CODE (x) == MEM)
+	{
+	  x = XEXP (x, 0);
+	  return (GET_CODE (x) == SYMBOL_REF || CONST_INT_P (x))
+		 && CONSTANT_POOL_ADDRESS_P (x);
+	}
+    }
+
+  return false;
+}
+
+/* Compute a relative costs of RTL insns.  This is necessary in order to
+   achieve better RTL insn splitting/combination result.  */
+
+static int
+xtensa_insn_cost (rtx_insn *insn, bool speed)
+{
+  if (!(recog_memoized (insn) < 0))
+    {
+      int len = get_attr_length (insn), n = (len + 2) / 3;
+
+      if (len == 0)
+	return COSTS_N_INSNS (0);
+
+      if (speed)  /* For speed cost.  */
+	{
+	  /* "L32R" may be particular slow (implementation-dependent).  */
+	  if (xtensa_is_insn_L32R_p (insn))
+	    return COSTS_N_INSNS (1 + xtensa_extra_l32r_costs);
+
+	  /* Cost based on the pipeline model.  */
+	  switch (get_attr_type (insn))
+	    {
+	    case TYPE_STORE:
+	    case TYPE_MOVE:
+	    case TYPE_ARITH:
+	    case TYPE_MULTI:
+	    case TYPE_NOP:
+	    case TYPE_FSTORE:
+	      return COSTS_N_INSNS (n);
+
+	    case TYPE_LOAD:
+	      return COSTS_N_INSNS (n - 1 + 2);
+
+	    case TYPE_JUMP:
+	    case TYPE_CALL:
+	      return COSTS_N_INSNS (n - 1 + 3);
+
+	    case TYPE_FCONV:
+	    case TYPE_FLOAD:
+	    case TYPE_MUL16:
+	    case TYPE_MUL32:
+	    case TYPE_RSR:
+	      return COSTS_N_INSNS (n * 2);
+
+	    case TYPE_FMADD:
+	      return COSTS_N_INSNS (n * 4);
+
+	    case TYPE_DIV32:
+	      return COSTS_N_INSNS (n * 16);
+
+	    default:
+	      break;
+	    }
+	}
+      else  /* For size cost.  */
+	{
+	  /* Cost based on the instruction length.  */
+	  if (get_attr_type (insn) != TYPE_UNKNOWN)
+	    {
+	      /* "L32R" itself plus constant in litpool.  */
+	      if (xtensa_is_insn_L32R_p (insn))
+		return COSTS_N_INSNS (2) + 1;
+
+	      /* Consider ".n" short instructions.  */
+	      return COSTS_N_INSNS (n) - (n * 3 - len);
+	    }
+	}
+    }
+
+  /* Fall back.  */
+  return pattern_cost (PATTERN (insn), speed);
 }
 
 /* Worker function for TARGET_RETURN_IN_MEMORY.  */

@@ -98,7 +98,10 @@
 
 ;; Describe a user's asm statement.
 (define_asm_attributes
-  [(set_attr "type" "multi")])
+  [(set_attr "type"	"multi")
+   (set_attr "mode"	"none")
+   (set_attr "length"	"3")])  ;; Should be the maximum possible length
+				;; of a single machine instruction.
 
 
 ;; Pipeline model.
@@ -224,18 +227,40 @@
 
 ;; Multiplication.
 
-(define_expand "<u>mulsidi3"
+(define_expand "mulsidi3"
   [(set (match_operand:DI 0 "register_operand")
-	(mult:DI (any_extend:DI (match_operand:SI 1 "register_operand"))
-		 (any_extend:DI (match_operand:SI 2 "register_operand"))))]
+	(mult:DI (sign_extend:DI (match_operand:SI 1 "register_operand"))
+		 (sign_extend:DI (match_operand:SI 2 "register_operand"))))]
   "TARGET_MUL32_HIGH"
 {
   rtx temp = gen_reg_rtx (SImode);
   emit_insn (gen_mulsi3 (temp, operands[1], operands[2]));
-  emit_insn (gen_<u>mulsi3_highpart (gen_highpart (SImode, operands[0]),
-				     operands[1], operands[2]));
+  emit_insn (gen_mulsi3_highpart (gen_highpart (SImode, operands[0]),
+				  operands[1], operands[2]));
   emit_insn (gen_movsi (gen_lowpart (SImode, operands[0]), temp));
   DONE;
+})
+
+(define_expand "umulsidi3"
+  [(set (match_operand:DI 0 "register_operand")
+	(mult:DI (zero_extend:DI (match_operand:SI 1 "register_operand"))
+		 (zero_extend:DI (match_operand:SI 2 "register_operand"))))]
+  ""
+{
+  if (TARGET_MUL32_HIGH)
+    {
+      rtx temp = gen_reg_rtx (SImode);
+      emit_insn (gen_mulsi3 (temp, operands[1], operands[2]));
+      emit_insn (gen_umulsi3_highpart (gen_highpart (SImode, operands[0]),
+				       operands[1], operands[2]));
+      emit_insn (gen_movsi (gen_lowpart (SImode, operands[0]), temp));
+    }
+  else
+    emit_library_call_value (gen_rtx_SYMBOL_REF (Pmode, "__umulsidi3"),
+			     operands[0], LCT_NORMAL, DImode,
+			     operands[1], SImode,
+			     operands[2], SImode);
+   DONE;
 })
 
 (define_insn "<u>mulsi3_highpart"
@@ -261,30 +286,16 @@
    (set_attr "mode"	"SI")
    (set_attr "length"	"3")])
 
-(define_insn "mulhisi3"
+(define_insn "<u>mulhisi3"
   [(set (match_operand:SI 0 "register_operand" "=C,A")
-	(mult:SI (sign_extend:SI
+	(mult:SI (any_extend:SI
 		  (match_operand:HI 1 "register_operand" "%r,r"))
-		 (sign_extend:SI
+		 (any_extend:SI
 		  (match_operand:HI 2 "register_operand" "r,r"))))]
   "TARGET_MUL16 || TARGET_MAC16"
   "@
-   mul16s\t%0, %1, %2
-   mul.aa.ll\t%1, %2"
-  [(set_attr "type"	"mul16,mac16")
-   (set_attr "mode"	"SI")
-   (set_attr "length"	"3,3")])
-
-(define_insn "umulhisi3"
-  [(set (match_operand:SI 0 "register_operand" "=C,A")
-	(mult:SI (zero_extend:SI
-		  (match_operand:HI 1 "register_operand" "%r,r"))
-		 (zero_extend:SI
-		  (match_operand:HI 2 "register_operand" "r,r"))))]
-  "TARGET_MUL16 || TARGET_MAC16"
-  "@
-   mul16u\t%0, %1, %2
-   umul.aa.ll\t%1, %2"
+   mul16<su>\t%0, %1, %2
+   <u>mul.aa.ll\t%1, %2"
   [(set_attr "type"	"mul16,mac16")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,3")])
@@ -926,6 +937,19 @@
    (set_attr "mode"	"SI")
    (set_attr "length"	"2,2,2,2,2,2,3,3,3,3,6,3,3,3,3,3")])
 
+(define_split
+  [(set (match_operand:SI 0 "register_operand")
+	(match_operand:SI 1 "constantpool_operand"))]
+  "! optimize_debug && reload_completed"
+  [(const_int 0)]
+{
+  rtx x = avoid_constant_pool_reference (operands[1]);
+  if (! CONST_INT_P (x))
+    FAIL;
+  if (! xtensa_constantsynth (operands[0], INTVAL (x)))
+    emit_move_insn (operands[0], x);
+})
+
 ;; 16-bit Integer moves
 
 (define_expand "movhi"
@@ -1127,6 +1151,43 @@
   [(set_attr "type"	"fstore")
    (set_attr "mode"	"SF")
    (set_attr "length"	"3")])
+
+(define_split
+  [(set (match_operand:SF 0 "register_operand")
+	(match_operand:SF 1 "constantpool_operand"))]
+  "! optimize_debug && reload_completed"
+  [(const_int 0)]
+{
+  int i = 0;
+  rtx x = XEXP (operands[1], 0);
+  long l[2];
+  if (GET_CODE (x) == SYMBOL_REF
+      && CONSTANT_POOL_ADDRESS_P (x))
+    x = get_pool_constant (x);
+  else if (GET_CODE (x) == CONST)
+    {
+      x = XEXP (x, 0);
+      gcc_assert (GET_CODE (x) == PLUS
+		  && GET_CODE (XEXP (x, 0)) == SYMBOL_REF
+		  && CONSTANT_POOL_ADDRESS_P (XEXP (x, 0))
+		  && CONST_INT_P (XEXP (x, 1)));
+      i = INTVAL (XEXP (x, 1));
+      gcc_assert (i == 0 || i == 4);
+      i /= 4;
+      x = get_pool_constant (XEXP (x, 0));
+    }
+  else
+    gcc_unreachable ();
+  if (GET_MODE (x) == SFmode)
+    REAL_VALUE_TO_TARGET_SINGLE (*CONST_DOUBLE_REAL_VALUE (x), l[0]);
+  else if (GET_MODE (x) == DFmode)
+    REAL_VALUE_TO_TARGET_DOUBLE (*CONST_DOUBLE_REAL_VALUE (x), l);
+  else
+    FAIL;
+  x = gen_rtx_REG (SImode, REGNO (operands[0]));
+  if (! xtensa_constantsynth (x, l[i]))
+    emit_move_insn (x, GEN_INT (l[i]));
+})
 
 ;; 64-bit floating point moves
 
@@ -1871,7 +1932,10 @@
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
-   (set_attr "length"	"2")])
+   (set (attr "length")
+	(if_then_else (match_test "TARGET_DENSITY")
+		      (const_int 2)
+		      (const_int 3)))])
 
 
 ;; Miscellaneous instructions.
@@ -1926,7 +1990,10 @@
 }
   [(set_attr "type"	"nop")
    (set_attr "mode"	"none")
-   (set_attr "length"	"3")])
+   (set (attr "length")
+	(if_then_else (match_test "TARGET_DENSITY")
+		      (const_int 2)
+		      (const_int 3)))])
 
 (define_expand "nonlocal_goto"
   [(match_operand:SI 0 "general_operand" "")
@@ -1990,8 +2057,9 @@
   [(unspec_volatile [(const_int 0)] UNSPECV_BLOCKAGE)]
   ""
   ""
-  [(set_attr "length" "0")
-   (set_attr "type" "nop")])
+  [(set_attr "type"	"nop")
+   (set_attr "mode"	"none")
+   (set_attr "length"	"0")])
 
 ;; Do not schedule instructions accessing memory before this point.
 
@@ -2010,7 +2078,9 @@
         (unspec:BLK [(match_operand:SI 1 "" "")] UNSPEC_FRAME_BLOCKAGE))]
   ""
   ""
-  [(set_attr "length" "0")])
+  [(set_attr "type"	"nop")
+   (set_attr "mode"	"none")
+   (set_attr "length"	"0")])
 
 (define_insn "trap"
   [(trap_if (const_int 1) (const_int 0))]
@@ -2023,7 +2093,10 @@
 }
   [(set_attr "type"	"trap")
    (set_attr "mode"	"none")
-   (set_attr "length"	"3")])
+   (set (attr "length")
+	(if_then_else (match_test "!TARGET_DEBUG && TARGET_DENSITY")
+		      (const_int 2)
+		      (const_int 3)))])
 
 ;; Setting up a frame pointer is tricky for Xtensa because GCC doesn't
 ;; know if a frame pointer is required until the reload pass, and
