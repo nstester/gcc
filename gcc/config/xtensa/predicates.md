@@ -52,6 +52,16 @@
 	    (match_test "xtensa_mask_immediate (INTVAL (op))"))
        (match_operand 0 "register_operand")))
 
+(define_predicate "shifted_mask_operand"
+  (match_code "const_int")
+{
+  HOST_WIDE_INT mask = INTVAL (op);
+  int shift = ctz_hwi (mask);
+
+  return IN_RANGE (shift, 1, 31)
+	 && xtensa_mask_immediate ((uint32_t)mask >> shift);
+})
+
 (define_predicate "extui_fldsz_operand"
   (and (match_code "const_int")
        (match_test "IN_RANGE (INTVAL (op), 1, 16)")))
@@ -164,8 +174,14 @@
 (define_predicate "boolean_operator"
   (match_code "eq,ne"))
 
+(define_predicate "logical_shift_operator"
+  (match_code "ashift,lshiftrt"))
+
 (define_predicate "xtensa_cstoresi_operator"
   (match_code "eq,ne,gt,ge,lt,le"))
+
+(define_predicate "xtensa_shift_per_byte_operator"
+  (match_code "ashift,ashiftrt,lshiftrt"))
 
 (define_predicate "tls_symbol_operand"
   (and (match_code "symbol_ref")

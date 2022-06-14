@@ -83,6 +83,9 @@
 ;; the same template.
 (define_mode_iterator HQI [HI QI])
 
+;; This code iterator is for *shlrd and its variants.
+(define_code_iterator ior_op [ior plus])
+
 
 ;; Attributes.
 
@@ -641,6 +644,83 @@
   [(set_attr "type"	"arith")
    (set_attr "mode"	"SI")
    (set_attr "length"	"6")])
+
+(define_insn_and_split "*andsi3_const_pow2_minus_one"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(and:SI (match_operand:SI 1 "register_operand" "r")
+		(match_operand:SI 2 "const_int_operand" "i")))]
+  "IN_RANGE (exact_log2 (INTVAL (operands[2]) + 1), 17, 31)"
+  "#"
+  "&& 1"
+  [(set (match_dup 0)
+	(ashift:SI (match_dup 1)
+		   (match_dup 2)))
+   (set (match_dup 0)
+	(lshiftrt:SI (match_dup 0)
+		     (match_dup 2)))]
+{
+  operands[2] = GEN_INT (32 - floor_log2 (INTVAL (operands[2]) + 1));
+}
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set (attr "length")
+	(if_then_else (match_test "TARGET_DENSITY
+				   && INTVAL (operands[2]) == 0x7FFFFFFF")
+		      (const_int 5)
+		      (const_int 6)))])
+
+(define_insn_and_split "*andsi3_const_negative_pow2"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(and:SI (match_operand:SI 1 "register_operand" "r")
+		(match_operand:SI 2 "const_int_operand" "i")))]
+  "IN_RANGE (exact_log2 (-INTVAL (operands[2])), 12, 31)"
+  "#"
+  "&& 1"
+  [(set (match_dup 0)
+	(lshiftrt:SI (match_dup 1)
+		     (match_dup 2)))
+   (set (match_dup 0)
+	(ashift:SI (match_dup 0)
+		   (match_dup 2)))]
+{
+  operands[2] = GEN_INT (floor_log2 (-INTVAL (operands[2])));
+}
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"6")])
+
+(define_insn_and_split "*andsi3_const_shifted_mask"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(and:SI (match_operand:SI 1 "register_operand" "r")
+		(match_operand:SI 2 "shifted_mask_operand" "i")))]
+  "! xtensa_simm12b (INTVAL (operands[2]))"
+  "#"
+  "&& 1"
+  [(set (match_dup 0)
+	(zero_extract:SI (match_dup 1)
+			 (match_dup 3)
+			 (match_dup 4)))
+   (set (match_dup 0)
+	(ashift:SI (match_dup 0)
+		   (match_dup 2)))]
+{
+  HOST_WIDE_INT mask = INTVAL (operands[2]);
+  int shift = ctz_hwi (mask);
+  int mask_size = floor_log2 (((uint32_t)mask >> shift) + 1);
+  int mask_pos = shift;
+  if (BITS_BIG_ENDIAN)
+    mask_pos = (32 - (mask_size + shift)) & 0x1f;
+  operands[2] = GEN_INT (shift);
+  operands[3] = GEN_INT (mask_size);
+  operands[4] = GEN_INT (mask_pos);
+}
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set (attr "length")
+	(if_then_else (match_test "TARGET_DENSITY
+				   && ctz_hwi (INTVAL (operands[2])) == 1")
+		      (const_int 5)
+		      (const_int 6)))])
 
 (define_insn "iorsi3"
   [(set (match_operand:SI 0 "register_operand" "=a")
@@ -1267,16 +1347,6 @@
   operands[1] = xtensa_copy_incoming_a7 (operands[1]);
 })
 
-(define_insn "*ashlsi3_1"
-  [(set (match_operand:SI 0 "register_operand" "=a")
-	(ashift:SI (match_operand:SI 1 "register_operand" "r")
-		   (const_int 1)))]
-  "TARGET_DENSITY"
-  "add.n\t%0, %1, %1"
-  [(set_attr "type"	"arith")
-   (set_attr "mode"	"SI")
-   (set_attr "length"	"2")])
-
 (define_insn "ashlsi3_internal"
   [(set (match_operand:SI 0 "register_operand" "=a,a")
 	(ashift:SI (match_operand:SI 1 "register_operand" "r,r")
@@ -1289,16 +1359,14 @@
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,6")])
 
-(define_insn "*ashlsi3_3x"
-  [(set (match_operand:SI 0 "register_operand" "=a")
-	(ashift:SI (match_operand:SI 1 "register_operand" "r")
-		   (ashift:SI (match_operand:SI 2 "register_operand" "r")
-			      (const_int 3))))]
-  ""
-  "ssa8b\t%2\;sll\t%0, %1"
-  [(set_attr "type"	"arith")
-   (set_attr "mode"	"SI")
-   (set_attr "length"	"6")])
+(define_split
+  [(set (match_operand:SI 0 "register_operand")
+	(ashift:SI (match_operand:SI 1 "register_operand")
+		   (const_int 1)))]
+  "TARGET_DENSITY"
+  [(set (match_dup 0)
+	(plus:SI (match_dup 1)
+		 (match_dup 1)))])
 
 (define_insn "ashrsi3"
   [(set (match_operand:SI 0 "register_operand" "=a,a")
@@ -1312,17 +1380,6 @@
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,6")])
 
-(define_insn "*ashrsi3_3x"
-  [(set (match_operand:SI 0 "register_operand" "=a")
-	(ashiftrt:SI (match_operand:SI 1 "register_operand" "r")
-		     (ashift:SI (match_operand:SI 2 "register_operand" "r")
-				(const_int 3))))]
-  ""
-  "ssa8l\t%2\;sra\t%0, %1"
-  [(set_attr "type"	"arith")
-   (set_attr "mode"	"SI")
-   (set_attr "length"	"6")])
-
 (define_insn "lshrsi3"
   [(set (match_operand:SI 0 "register_operand" "=a,a")
 	(lshiftrt:SI (match_operand:SI 1 "register_operand" "r,r")
@@ -1332,9 +1389,9 @@
   if (which_alternative == 0)
     {
       if ((INTVAL (operands[2]) & 0x1f) < 16)
-        return "srli\t%0, %1, %R2";
+	return "srli\t%0, %1, %R2";
       else
-      	return "extui\t%0, %1, %R2, %L2";
+	return "extui\t%0, %1, %R2, %L2";
     }
   return "ssr\t%2\;srl\t%0, %1";
 }
@@ -1342,13 +1399,170 @@
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,6")])
 
-(define_insn "*lshrsi3_3x"
+(define_insn "*shift_per_byte"
   [(set (match_operand:SI 0 "register_operand" "=a")
-	(lshiftrt:SI (match_operand:SI 1 "register_operand" "r")
-		     (ashift:SI (match_operand:SI 2 "register_operand" "r")
-				(const_int 3))))]
+	(match_operator:SI 3 "xtensa_shift_per_byte_operator"
+		[(match_operand:SI 1 "register_operand" "r")
+		 (ashift:SI (match_operand:SI 2 "register_operand" "r")
+			    (const_int 3))]))]
+  "!optimize_debug && optimize"
+{
+  switch (GET_CODE (operands[3]))
+    {
+    case ASHIFT:	return "ssa8b\t%2\;sll\t%0, %1";
+    case ASHIFTRT:	return "ssa8l\t%2\;sra\t%0, %1";
+    case LSHIFTRT:	return "ssa8l\t%2\;srl\t%0, %1";
+    default:		gcc_unreachable ();
+    }
+}
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"6")])
+
+(define_insn_and_split "*shift_per_byte_omit_AND_0"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(match_operator:SI 4 "xtensa_shift_per_byte_operator"
+		[(match_operand:SI 1 "register_operand" "r")
+		 (and:SI (ashift:SI (match_operand:SI 2 "register_operand" "r")
+				    (const_int 3))
+			 (match_operand:SI 3 "const_int_operand" "i"))]))]
+  "!optimize_debug && optimize
+   && (INTVAL (operands[3]) & 0x1f) == 3 << 3"
+  "#"
+  "&& 1"
+  [(set (match_dup 0)
+	(match_op_dup 4
+		[(match_dup 1)
+		 (ashift:SI (match_dup 2)
+			    (const_int 3))]))]
   ""
-  "ssa8l\t%2\;srl\t%0, %1"
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"6")])
+
+(define_insn_and_split "*shift_per_byte_omit_AND_1"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(match_operator:SI 4 "xtensa_shift_per_byte_operator"
+		[(match_operand:SI 1 "register_operand" "r")
+		 (neg:SI (and:SI (ashift:SI (match_operand:SI 2 "register_operand" "r")
+					    (const_int 3))
+				 (match_operand:SI 3 "const_int_operand" "i")))]))]
+  "!optimize_debug && optimize
+   && (INTVAL (operands[3]) & 0x1f) == 3 << 3"
+  "#"
+  "&& can_create_pseudo_p ()"
+  [(set (match_dup 5)
+	(neg:SI (match_dup 2)))
+   (set (match_dup 0)
+	(match_op_dup 4
+		[(match_dup 1)
+		 (ashift:SI (match_dup 5)
+			    (const_int 3))]))]
+{
+  operands[5] = gen_reg_rtx (SImode);
+}
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"9")])
+
+(define_insn "*shlrd_reg_<code>"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(ior_op:SI (match_operator:SI 4 "logical_shift_operator"
+			[(match_operand:SI 1 "register_operand" "r")
+			 (match_operand:SI 2 "register_operand" "r")])
+		   (match_operator:SI 5 "logical_shift_operator"
+			[(match_operand:SI 3 "register_operand" "r")
+			 (neg:SI (match_dup 2))])))]
+  "!optimize_debug && optimize
+   && xtensa_shlrd_which_direction (operands[4], operands[5]) != UNKNOWN"
+{
+  switch (xtensa_shlrd_which_direction (operands[4], operands[5]))
+    {
+    case ASHIFT:	return "ssl\t%2\;src\t%0, %1, %3";
+    case LSHIFTRT:	return "ssr\t%2\;src\t%0, %3, %1";
+    default:		gcc_unreachable ();
+    }
+}
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"6")])
+
+(define_insn "*shlrd_const_<code>"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(ior_op:SI (match_operator:SI 5 "logical_shift_operator"
+			[(match_operand:SI 1 "register_operand" "r")
+			 (match_operand:SI 3 "const_int_operand" "i")])
+		   (match_operator:SI 6 "logical_shift_operator"
+			[(match_operand:SI 2 "register_operand" "r")
+			 (match_operand:SI 4 "const_int_operand" "i")])))]
+  "!optimize_debug && optimize
+   && xtensa_shlrd_which_direction (operands[5], operands[6]) != UNKNOWN
+   && IN_RANGE (INTVAL (operands[3]), 1, 31)
+   && IN_RANGE (INTVAL (operands[4]), 1, 31)
+   && INTVAL (operands[3]) + INTVAL (operands[4]) == 32"
+{
+  switch (xtensa_shlrd_which_direction (operands[5], operands[6]))
+    {
+    case ASHIFT:	return "ssai\t%L3\;src\t%0, %1, %2";
+    case LSHIFTRT:	return "ssai\t%R3\;src\t%0, %2, %1";
+    default:		gcc_unreachable ();
+    }
+}
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"6")])
+
+(define_insn "*shlrd_per_byte_<code>"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(ior_op:SI (match_operator:SI 4 "logical_shift_operator"
+			[(match_operand:SI 1 "register_operand" "r")
+			 (ashift:SI (match_operand:SI 2 "register_operand" "r")
+				    (const_int 3))])
+		   (match_operator:SI 5 "logical_shift_operator"
+			[(match_operand:SI 3 "register_operand" "r")
+			 (neg:SI (ashift:SI (match_dup 2)
+					    (const_int 3)))])))]
+  "!optimize_debug && optimize
+   && xtensa_shlrd_which_direction (operands[4], operands[5]) != UNKNOWN"
+{
+  switch (xtensa_shlrd_which_direction (operands[4], operands[5]))
+    {
+    case ASHIFT:	return "ssa8b\t%2\;src\t%0, %1, %3";
+    case LSHIFTRT:	return "ssa8l\t%2\;src\t%0, %3, %1";
+    default:		gcc_unreachable ();
+    }
+}
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"6")])
+
+(define_insn_and_split "*shlrd_per_byte_<code>_omit_AND"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(ior_op:SI (match_operator:SI 5 "logical_shift_operator"
+			[(match_operand:SI 1 "register_operand" "r")
+			 (and:SI (ashift:SI (match_operand:SI 2 "register_operand" "r")
+					    (const_int 3))
+				 (match_operand:SI 4 "const_int_operand" "i"))])
+		   (match_operator:SI 6 "logical_shift_operator"
+			[(match_operand:SI 3 "register_operand" "r")
+			 (neg:SI (and:SI (ashift:SI (match_dup 2)
+						    (const_int 3))
+					 (match_dup 4)))])))]
+  "!optimize_debug && optimize
+   && xtensa_shlrd_which_direction (operands[5], operands[6]) != UNKNOWN
+   && (INTVAL (operands[4]) & 0x1f) == 3 << 3"
+  "#"
+  "&& 1"
+  [(set (match_dup 0)
+	(ior_op:SI (match_op_dup 5
+			[(match_dup 1)
+			 (ashift:SI (match_dup 2)
+				    (const_int 3))])
+		   (match_op_dup 6
+			[(match_dup 3)
+			 (neg:SI (ashift:SI (match_dup 2)
+					    (const_int 3)))])))]
+  ""
   [(set_attr "type"	"arith")
    (set_attr "mode"	"SI")
    (set_attr "length"	"6")])
@@ -1409,28 +1623,13 @@
 (define_insn "*btrue"
   [(set (pc)
 	(if_then_else (match_operator 3 "branch_operator"
-		       [(match_operand:SI 0 "register_operand" "r,r")
-			(match_operand:SI 1 "branch_operand" "K,r")])
+			[(match_operand:SI 0 "register_operand" "r,r")
+			 (match_operand:SI 1 "branch_operand" "K,r")])
 		      (label_ref (match_operand 2 "" ""))
 		      (pc)))]
   ""
 {
-  return xtensa_emit_branch (false, which_alternative == 0, operands);
-}
-  [(set_attr "type"	"jump,jump")
-   (set_attr "mode"	"none")
-   (set_attr "length"	"3,3")])
-
-(define_insn "*bfalse"
-  [(set (pc)
-	(if_then_else (match_operator 3 "branch_operator"
-		       [(match_operand:SI 0 "register_operand" "r,r")
-			(match_operand:SI 1 "branch_operand" "K,r")])
-		      (pc)
-		      (label_ref (match_operand 2 "" ""))))]
-  ""
-{
-  return xtensa_emit_branch (true, which_alternative == 0, operands);
+  return xtensa_emit_branch (which_alternative == 0, operands);
 }
   [(set_attr "type"	"jump,jump")
    (set_attr "mode"	"none")
@@ -1439,28 +1638,13 @@
 (define_insn "*ubtrue"
   [(set (pc)
 	(if_then_else (match_operator 3 "ubranch_operator"
-		       [(match_operand:SI 0 "register_operand" "r,r")
-			(match_operand:SI 1 "ubranch_operand" "L,r")])
+			[(match_operand:SI 0 "register_operand" "r,r")
+			 (match_operand:SI 1 "ubranch_operand" "L,r")])
 		      (label_ref (match_operand 2 "" ""))
 		      (pc)))]
   ""
 {
-  return xtensa_emit_branch (false, which_alternative == 0, operands);
-}
-  [(set_attr "type"	"jump,jump")
-   (set_attr "mode"	"none")
-   (set_attr "length"	"3,3")])
-
-(define_insn "*ubfalse"
-  [(set (pc)
-	(if_then_else (match_operator 3 "ubranch_operator"
-			 [(match_operand:SI 0 "register_operand" "r,r")
-			  (match_operand:SI 1 "ubranch_operand" "L,r")])
-		      (pc)
-		      (label_ref (match_operand 2 "" ""))))]
-  ""
-{
-  return xtensa_emit_branch (true, which_alternative == 0, operands);
+  return xtensa_emit_branch (which_alternative == 0, operands);
 }
   [(set_attr "type"	"jump,jump")
    (set_attr "mode"	"none")
@@ -1471,34 +1655,30 @@
 (define_insn "*bittrue"
   [(set (pc)
 	(if_then_else (match_operator 3 "boolean_operator"
-			[(zero_extract:SI
-			    (match_operand:SI 0 "register_operand" "r,r")
-			    (const_int 1)
-			    (match_operand:SI 1 "arith_operand" "J,r"))
+			[(zero_extract:SI (match_operand:SI 0 "register_operand" "r,r")
+					  (const_int 1)
+					  (match_operand:SI 1 "arith_operand" "J,r"))
 			 (const_int 0)])
 		      (label_ref (match_operand 2 "" ""))
 		      (pc)))]
   ""
 {
-  return xtensa_emit_bit_branch (false, which_alternative == 0, operands);
-}
-  [(set_attr "type"	"jump")
-   (set_attr "mode"	"none")
-   (set_attr "length"	"3")])
-
-(define_insn "*bitfalse"
-  [(set (pc)
-	(if_then_else (match_operator 3 "boolean_operator"
-			[(zero_extract:SI
-			    (match_operand:SI 0 "register_operand" "r,r")
-			    (const_int 1)
-			    (match_operand:SI 1 "arith_operand" "J,r"))
-			 (const_int 0)])
-		      (pc)
-		      (label_ref (match_operand 2 "" ""))))]
-  ""
-{
-  return xtensa_emit_bit_branch (true, which_alternative == 0, operands);
+  static char result[64];
+  char op;
+  switch (GET_CODE (operands[3]))
+    {
+    case EQ:	op = 'c'; break;
+    case NE:	op = 's'; break;
+    default:	gcc_unreachable ();
+    }
+  if (which_alternative == 0)
+    {
+      operands[1] = GEN_INT (INTVAL (operands[1]) & 0x1f);
+      sprintf (result, "bb%ci\t%%0, %%d1, %%2", op);
+    }
+  else
+    sprintf (result, "bb%c\t%%0, %%1, %%2", op);
+  return result;
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
@@ -1507,44 +1687,146 @@
 (define_insn "*masktrue"
   [(set (pc)
 	(if_then_else (match_operator 3 "boolean_operator"
-		 [(and:SI (match_operand:SI 0 "register_operand" "r")
-			  (match_operand:SI 1 "register_operand" "r"))
-		  (const_int 0)])
+			[(and:SI (match_operand:SI 0 "register_operand" "r")
+				 (match_operand:SI 1 "register_operand" "r"))
+			 (const_int 0)])
 		      (label_ref (match_operand 2 "" ""))
 		      (pc)))]
   ""
 {
   switch (GET_CODE (operands[3]))
     {
-    case EQ:		return "bnone\t%0, %1, %2";
-    case NE:		return "bany\t%0, %1, %2";
-    default:		gcc_unreachable ();
+    case EQ:	return "bnone\t%0, %1, %2";
+    case NE:	return "bany\t%0, %1, %2";
+    default:	gcc_unreachable ();
     }
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
    (set_attr "length"	"3")])
 
-(define_insn "*maskfalse"
+(define_insn "*masktrue_bitcmpl"
   [(set (pc)
 	(if_then_else (match_operator 3 "boolean_operator"
-		 [(and:SI (match_operand:SI 0 "register_operand" "r")
-			  (match_operand:SI 1 "register_operand" "r"))
-		  (const_int 0)])
-		      (pc)
-		      (label_ref (match_operand 2 "" ""))))]
+			[(and:SI (not:SI (match_operand:SI 0 "register_operand" "r"))
+				 (match_operand:SI 1 "register_operand" "r"))
+			 (const_int 0)])
+		      (label_ref (match_operand 2 "" ""))
+		      (pc)))]
   ""
 {
   switch (GET_CODE (operands[3]))
     {
-    case EQ:		return "bany\t%0, %1, %2";
-    case NE:		return "bnone\t%0, %1, %2";
-    default:		gcc_unreachable ();
+    case EQ:	return "ball\t%0, %1, %2";
+    case NE:	return "bnall\t%0, %1, %2";
+    default:	gcc_unreachable ();
     }
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
    (set_attr "length"	"3")])
+
+(define_insn_and_split "*masktrue_const_pow2_minus_one"
+  [(set (pc)
+	(if_then_else (match_operator 3 "boolean_operator"
+			[(and:SI (match_operand:SI 0 "register_operand" "r")
+				 (match_operand:SI 1 "const_int_operand" "i"))
+			 (const_int 0)])
+		      (label_ref (match_operand 2 "" ""))
+		      (pc)))]
+  "IN_RANGE (exact_log2 (INTVAL (operands[1]) + 1), 17, 31)"
+  "#"
+  "&& can_create_pseudo_p ()"
+  [(set (match_dup 4)
+	(ashift:SI (match_dup 0)
+		   (match_dup 1)))
+   (set (pc)
+	(if_then_else (match_op_dup 3
+			[(match_dup 4)
+			 (const_int 0)])
+		      (label_ref (match_dup 2))
+		      (pc)))]
+{
+  operands[1] = GEN_INT (32 - floor_log2 (INTVAL (operands[1]) + 1));
+  operands[4] = gen_reg_rtx (SImode);
+}
+  [(set_attr "type"	"jump")
+   (set_attr "mode"	"none")
+   (set (attr "length")
+	(if_then_else (match_test "TARGET_DENSITY
+				   && INTVAL (operands[1]) == 0x7FFFFFFF")
+		      (const_int 5)
+		      (const_int 6)))])
+
+(define_insn_and_split "*masktrue_const_negative_pow2"
+  [(set (pc)
+	(if_then_else (match_operator 3 "boolean_operator"
+			[(and:SI (match_operand:SI 0 "register_operand" "r")
+				 (match_operand:SI 1 "const_int_operand" "i"))
+			 (const_int 0)])
+		      (label_ref (match_operand 2 "" ""))
+		      (pc)))]
+  "IN_RANGE (exact_log2 (-INTVAL (operands[1])), 12, 30)"
+  "#"
+  "&& can_create_pseudo_p ()"
+  [(set (match_dup 4)
+	(lshiftrt:SI (match_dup 0)
+		     (match_dup 1)))
+   (set (pc)
+	(if_then_else (match_op_dup 3
+			[(match_dup 4)
+			 (const_int 0)])
+		      (label_ref (match_dup 2))
+		      (pc)))]
+{
+  operands[1] = GEN_INT (floor_log2 (-INTVAL (operands[1])));
+  operands[4] = gen_reg_rtx (SImode);
+}
+  [(set_attr "type"	"jump")
+   (set_attr "mode"	"none")
+   (set_attr "length"	"6")])
+
+(define_insn_and_split "*masktrue_const_shifted_mask"
+  [(set (pc)
+	(if_then_else (match_operator 4 "boolean_operator"
+			[(and:SI (match_operand:SI 0 "register_operand" "r")
+				 (match_operand:SI 1 "shifted_mask_operand" "i"))
+			 (match_operand:SI 2 "const_int_operand" "i")])
+		      (label_ref (match_operand 3 "" ""))
+		      (pc)))]
+  "(INTVAL (operands[2]) & ((1 << ctz_hwi (INTVAL (operands[1]))) - 1)) == 0
+   && xtensa_b4const_or_zero ((uint32_t)INTVAL (operands[2]) >> ctz_hwi (INTVAL (operands[1])))"
+  "#"
+  "&& can_create_pseudo_p ()"
+  [(set (match_dup 6)
+	(zero_extract:SI (match_dup 0)
+			 (match_dup 5)
+			 (match_dup 1)))
+   (set (pc)
+	(if_then_else (match_op_dup 4
+			[(match_dup 6)
+			 (match_dup 2)])
+		      (label_ref (match_dup 3))
+		      (pc)))]
+{
+  HOST_WIDE_INT mask = INTVAL (operands[1]);
+  int shift = ctz_hwi (mask);
+  int mask_size = floor_log2 (((uint32_t)mask >> shift) + 1);
+  int mask_pos = shift;
+  if (BITS_BIG_ENDIAN)
+    mask_pos = (32 - (mask_size + shift)) & 0x1f;
+  operands[1] = GEN_INT (mask_pos);
+  operands[2] = GEN_INT ((uint32_t)INTVAL (operands[2]) >> shift);
+  operands[5] = GEN_INT (mask_size);
+  operands[6] = gen_reg_rtx (SImode);
+}
+  [(set_attr "type"	"jump")
+   (set_attr "mode"	"none")
+   (set (attr "length")
+	(if_then_else (match_test "TARGET_DENSITY
+				   && (uint32_t)INTVAL (operands[2]) >> ctz_hwi (INTVAL (operands[1])) == 0")
+		      (const_int 5)
+		      (const_int 6)))])
 
 
 ;; Zero-overhead looping support.
