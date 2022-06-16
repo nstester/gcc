@@ -25,6 +25,7 @@
   (A7_REG		7)
   (A8_REG		8)
   (A9_REG		9)
+  (A10_REG		10)
 
   (UNSPEC_NOP		2)
   (UNSPEC_PLT		3)
@@ -85,6 +86,10 @@
 
 ;; This code iterator is for *shlrd and its variants.
 (define_code_iterator ior_op [ior plus])
+
+;; This mode iterator allows the DC and SC patterns to be defined from
+;; the same template.
+(define_mode_iterator DSC [DC SC])
 
 
 ;; Attributes.
@@ -2148,18 +2153,13 @@
 	 (match_operand 1 "" ""))]
   ""
 {
-  rtx addr = XEXP (operands[0], 0);
-  if (flag_pic && GET_CODE (addr) == SYMBOL_REF
-      && (!SYMBOL_REF_LOCAL_P (addr) || SYMBOL_REF_EXTERNAL_P (addr)))
-    addr = gen_sym_PLT (addr);
-  if (!call_insn_operand (addr, VOIDmode))
-    XEXP (operands[0], 0) = copy_to_mode_reg (Pmode, addr);
+  xtensa_prepare_expand_call (0, operands);
 })
 
 (define_insn "call_internal"
   [(call (mem (match_operand:SI 0 "call_insn_operand" "nir"))
 	 (match_operand 1 "" "i"))]
-  ""
+  "!SIBLING_CALL_P (insn)"
 {
   return xtensa_emit_call (0, operands);
 }
@@ -2173,25 +2173,84 @@
 	      (match_operand 2 "" "")))]
   ""
 {
-  rtx addr = XEXP (operands[1], 0);
-  if (flag_pic && GET_CODE (addr) == SYMBOL_REF
-      && (!SYMBOL_REF_LOCAL_P (addr) || SYMBOL_REF_EXTERNAL_P (addr)))
-    addr = gen_sym_PLT (addr);
-  if (!call_insn_operand (addr, VOIDmode))
-    XEXP (operands[1], 0) = copy_to_mode_reg (Pmode, addr);
+  xtensa_prepare_expand_call (1, operands);
 })
 
 (define_insn "call_value_internal"
   [(set (match_operand 0 "register_operand" "=a")
         (call (mem (match_operand:SI 1 "call_insn_operand" "nir"))
               (match_operand 2 "" "i")))]
-  ""
+  "!SIBLING_CALL_P (insn)"
 {
   return xtensa_emit_call (1, operands);
 }
   [(set_attr "type"	"call")
    (set_attr "mode"	"none")
    (set_attr "length"	"3")])
+
+(define_expand "sibcall"
+  [(call (match_operand 0 "memory_operand" "")
+	 (match_operand 1 "" ""))]
+  "!TARGET_WINDOWED_ABI"
+{
+  xtensa_prepare_expand_call (0, operands);
+})
+
+(define_insn "sibcall_internal"
+  [(call (mem:SI (match_operand:SI 0 "call_insn_operand" "nir"))
+	 (match_operand 1 "" "i"))]
+  "!TARGET_WINDOWED_ABI && SIBLING_CALL_P (insn)"
+{
+  return xtensa_emit_sibcall (0, operands);
+}
+  [(set_attr "type"	"call")
+   (set_attr "mode"	"none")
+   (set_attr "length"	"3")])
+
+(define_split
+  [(call (mem:SI (match_operand:SI 0 "register_operand"))
+	 (match_operand 1 ""))]
+  "reload_completed
+   && !TARGET_WINDOWED_ABI && SIBLING_CALL_P (insn)
+   && IN_RANGE (REGNO (operands[0]), 12, 15)"
+  [(set (reg:SI A10_REG)
+	(match_dup 0))
+   (call (mem:SI (reg:SI A10_REG))
+	 (match_dup 1))])
+
+(define_expand "sibcall_value"
+  [(set (match_operand 0 "register_operand" "")
+	(call (match_operand 1 "memory_operand" "")
+	      (match_operand 2 "" "")))]
+  "!TARGET_WINDOWED_ABI"
+{
+  xtensa_prepare_expand_call (1, operands);
+})
+
+(define_insn "sibcall_value_internal"
+  [(set (match_operand 0 "register_operand" "=a")
+	(call (mem:SI (match_operand:SI 1 "call_insn_operand" "nir"))
+	      (match_operand 2 "" "i")))]
+  "!TARGET_WINDOWED_ABI && SIBLING_CALL_P (insn)"
+{
+  return xtensa_emit_sibcall (1, operands);
+}
+  [(set_attr "type"	"call")
+   (set_attr "mode"	"none")
+   (set_attr "length"	"3")])
+
+(define_split
+  [(set (match_operand 0 "register_operand")
+	(call (mem:SI (match_operand:SI 1 "register_operand"))
+	      (match_operand 2 "")))]
+  "reload_completed
+   && !TARGET_WINDOWED_ABI && SIBLING_CALL_P (insn)
+   && IN_RANGE (REGNO (operands[1]), 12, 15)"
+  [(set (reg:SI A10_REG)
+	(match_dup 1))
+   (set (match_dup 0)
+	(call (mem:SI (reg:SI A10_REG))
+	      (match_dup 2)))])
 
 (define_insn "entry"
   [(set (reg:SI A1_REG)
@@ -2260,7 +2319,15 @@
   [(return)]
   ""
 {
-  xtensa_expand_epilogue ();
+  xtensa_expand_epilogue (false);
+  DONE;
+})
+
+(define_expand "sibcall_epilogue"
+  [(return)]
+  "!TARGET_WINDOWED_ABI"
+{
+  xtensa_expand_epilogue (true);
   DONE;
 })
 
@@ -2640,4 +2707,104 @@
 {
   xtensa_expand_atomic (<CODE>, operands[0], operands[1], operands[2], true);
   DONE;
+})
+
+(define_insn_and_split "*round_up_to_even"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(and:SI (plus:SI (match_operand:SI 1 "register_operand" "r")
+			 (const_int 1))
+		(const_int -2)))]
+  ""
+  "#"
+  "can_create_pseudo_p ()"
+  [(set (match_dup 2)
+	(and:SI (match_dup 1)
+		(const_int 1)))
+   (set (match_dup 0)
+	(plus:SI (match_dup 2)
+		 (match_dup 1)))]
+{
+  operands[2] = gen_reg_rtx (SImode);
+}
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set (attr "length")
+	(if_then_else (match_test "TARGET_DENSITY")
+		      (const_int 5)
+		      (const_int 6)))])
+
+(define_insn_and_split "*signed_ge_zero"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(ge:SI (match_operand:SI 1 "register_operand" "r")
+	       (const_int 0)))]
+  ""
+  "#"
+  ""
+  [(set (match_dup 0)
+	(ashiftrt:SI (match_dup 1)
+		     (const_int 31)))
+   (set (match_dup 0)
+	(plus:SI (match_dup 0)
+		 (const_int 1)))]
+  ""
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set (attr "length")
+	(if_then_else (match_test "TARGET_DENSITY")
+		      (const_int 5)
+		      (const_int 6)))])
+
+(define_peephole2
+  [(set (match_operand:SI 0 "register_operand")
+	(match_operand:SI 6 "reload_operand"))
+   (set (match_operand:SI 1 "register_operand")
+	(match_operand:SI 7 "reload_operand"))
+   (set (match_operand:SF 2 "register_operand")
+	(match_operand:SF 4 "register_operand"))
+   (set (match_operand:SF 3 "register_operand")
+	(match_operand:SF 5 "register_operand"))]
+  "REGNO (operands[0]) == REGNO (operands[4])
+   && REGNO (operands[1]) == REGNO (operands[5])
+   && peep2_reg_dead_p (4, operands[0])
+   && peep2_reg_dead_p (4, operands[1])"
+  [(set (match_dup 2)
+	(match_dup 6))
+   (set (match_dup 3)
+	(match_dup 7))]
+{
+  uint32_t check = 0;
+  int i;
+  for (i = 0; i <= 3; ++i)
+    {
+      uint32_t mask = (uint32_t)1 << REGNO (operands[i]);
+      if (check & mask)
+	FAIL;
+      check |= mask;
+    }
+  operands[6] = gen_rtx_MEM (SFmode, XEXP (operands[6], 0));
+  operands[7] = gen_rtx_MEM (SFmode, XEXP (operands[7], 0));
+})
+
+(define_split
+  [(clobber (match_operand:DSC 0 "register_operand"))]
+  "GP_REG_P (REGNO (operands[0]))"
+  [(const_int 0)]
+{
+  unsigned int regno = REGNO (operands[0]);
+  machine_mode inner_mode = GET_MODE_INNER (<MODE>mode);
+  rtx_insn *insn;
+  rtx x;
+  if (! ((insn = next_nonnote_nondebug_insn (curr_insn))
+	 && NONJUMP_INSN_P (insn)
+	 && GET_CODE (x = PATTERN (insn)) == SET
+	 && REG_P (x = XEXP (x, 0))
+	 && GET_MODE (x) == inner_mode
+	 && REGNO (x) == regno
+	 && (insn = next_nonnote_nondebug_insn (insn))
+	 && NONJUMP_INSN_P (insn)
+	 && GET_CODE (x = PATTERN (insn)) == SET
+	 && REG_P (x = XEXP (x, 0))
+	 && GET_MODE (x) == inner_mode
+	 && REGNO (x) == regno + REG_NREGS (operands[0]) / 2))
+    FAIL;
 })
