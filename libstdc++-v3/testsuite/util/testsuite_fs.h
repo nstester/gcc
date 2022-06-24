@@ -42,6 +42,20 @@ namespace test_fs = std::experimental::filesystem;
 #include <random>   // std::random_device
 #endif
 
+#ifndef _GLIBCXX_HAVE_SYMLINK
+#define NO_SYMLINKS
+#endif
+
+#if !defined (_GLIBCXX_HAVE_SYS_STATVFS_H) \
+  && !defined (_GLIBCXX_FILESYSTEM_IS_WINDOWS)
+#define NO_SPACE
+#endif
+
+#if !(_GLIBCXX_HAVE_SYS_STAT_H \
+      && (_GLIBCXX_USE_UTIMENSAT || _GLIBCXX_USE_UTIME))
+#define NO_LAST_WRITE_TIME 1
+#endif
+
 namespace __gnu_test
 {
 #define PATH_CHK(p1, p2, fn) \
