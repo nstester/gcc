@@ -2493,8 +2493,8 @@ public:
   eliminate_dom_walker (cdi_direction, bitmap);
   ~eliminate_dom_walker ();
 
-  virtual edge before_dom_children (basic_block);
-  virtual void after_dom_children (basic_block);
+  edge before_dom_children (basic_block) final override;
+  void after_dom_children (basic_block) final override;
 
   virtual tree eliminate_avail (basic_block, tree op);
   virtual void eliminate_push_avail (basic_block, tree op);
@@ -2534,9 +2534,9 @@ public:
     : eliminate_dom_walker (CDI_DOMINATORS, NULL), entry (entry_),
       m_avail_freelist (NULL) {}
 
-  virtual tree eliminate_avail (basic_block, tree op);
+  tree eliminate_avail (basic_block, tree op) final override;
 
-  virtual void eliminate_push_avail (basic_block, tree);
+  void eliminate_push_avail (basic_block, tree) final override;
 
   basic_block entry;
   /* Freelist of avail entries which are allocated from the vn_ssa_aux
@@ -8295,17 +8295,17 @@ public:
   {}
 
   /* opt_pass methods: */
-  opt_pass * clone () { return new pass_fre (m_ctxt); }
-  void set_pass_param (unsigned int n, bool param)
+  opt_pass * clone () final override { return new pass_fre (m_ctxt); }
+  void set_pass_param (unsigned int n, bool param) final override
     {
       gcc_assert (n == 0);
       may_iterate = param;
     }
-  virtual bool gate (function *)
+  bool gate (function *) final override
     {
       return flag_tree_fre != 0 && (may_iterate || optimize > 1);
     }
-  virtual unsigned int execute (function *);
+  unsigned int execute (function *) final override;
 
 private:
   bool may_iterate;
