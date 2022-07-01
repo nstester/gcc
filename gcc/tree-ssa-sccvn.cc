@@ -3243,12 +3243,12 @@ vn_reference_lookup_3 (ao_ref *ref, tree vuse, void *data_,
       poly_int64 extra_off = 0;
       if (j == 0 && i >= 0
 	  && lhs_ops[0].opcode == MEM_REF
-	  && known_ne (lhs_ops[0].off, -1))
+	  && maybe_ne (lhs_ops[0].off, -1))
 	{
 	  if (known_eq (lhs_ops[0].off, vr->operands[i].off))
 	    i--, j--;
 	  else if (vr->operands[i].opcode == MEM_REF
-		   && known_ne (vr->operands[i].off, -1))
+		   && maybe_ne (vr->operands[i].off, -1))
 	    {
 	      extra_off = vr->operands[i].off - lhs_ops[0].off;
 	      i--, j--;
@@ -4243,9 +4243,10 @@ vn_nary_op_insert_into (vn_nary_op_t vno, vn_nary_op_table_type *table)
 		      if (dominated_by_p (CDI_DOMINATORS, vno_bb, val_bb))
 			/* Value registered with more generic predicate.  */
 			return *slot;
-		      else if (dominated_by_p (CDI_DOMINATORS, val_bb, vno_bb))
+		      else if (flag_checking)
 			/* Shouldn't happen, we insert in RPO order.  */
-			gcc_unreachable ();
+			gcc_assert (!dominated_by_p (CDI_DOMINATORS,
+						     val_bb, vno_bb));
 		    }
 		  /* Append value.  */
 		  *next = (vn_pval *) obstack_alloc (&vn_tables_obstack,
