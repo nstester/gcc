@@ -4451,7 +4451,9 @@ package body Sem_Attr is
       -- Has_Same_Storage --
       ----------------------
 
-      when Attribute_Has_Same_Storage =>
+      when Attribute_Has_Same_Storage
+         | Attribute_Overlaps_Storage
+      =>
          Check_E1;
 
          --  The arguments must be objects of any type
@@ -5562,21 +5564,6 @@ package body Sem_Attr is
             end if;
          end if;
       end Old;
-
-      ----------------------
-      -- Overlaps_Storage --
-      ----------------------
-
-      when Attribute_Overlaps_Storage =>
-         Check_E1;
-
-         --  Both arguments must be objects of any type
-
-         Analyze_And_Resolve (P);
-         Analyze_And_Resolve (E1);
-         Check_Object_Reference (P);
-         Check_Object_Reference (E1);
-         Set_Etype (N, Standard_Boolean);
 
       ------------
       -- Output --
@@ -11632,9 +11619,7 @@ package body Sem_Attr is
                end if;
             end if;
 
-            if (Attr_Id = Attribute_Access
-                  or else
-                Attr_Id = Attribute_Unchecked_Access)
+            if Attr_Id in Attribute_Access | Attribute_Unchecked_Access
               and then (Ekind (Btyp) = E_General_Access_Type
                          or else Ekind (Btyp) = E_Anonymous_Access_Type)
             then
@@ -12315,7 +12300,9 @@ package body Sem_Attr is
          --  if it is an element of an entry family, the index itself may
          --  have to be resolved because it can be a general expression.
 
-         when Attribute_Count =>
+         when Attribute_Count
+            | Attribute_Index
+         =>
             if Nkind (P) = N_Indexed_Component
               and then Is_Entity_Name (Prefix (P))
             then
@@ -12353,19 +12340,7 @@ package body Sem_Attr is
          -- Index --
          -----------
 
-         when Attribute_Index =>
-            if Nkind (P) = N_Indexed_Component
-              and then Is_Entity_Name (Prefix (P))
-            then
-               declare
-                  Indx : constant Node_Id   := First (Expressions (P));
-                  Fam  : constant Entity_Id := Entity (Prefix (P));
-
-               begin
-                  Resolve (Indx, Entry_Index_Type (Fam));
-                  Apply_Scalar_Range_Check (Indx, Entry_Index_Type (Fam));
-               end;
-            end if;
+         --  Processing is shared with Count
 
          ----------------
          -- Loop_Entry --

@@ -247,10 +247,10 @@ package body Exp_Ch6 is
    procedure Expand_Call_Helper (N : Node_Id; Post_Call : out List_Id);
    --  Does the main work of Expand_Call. Post_Call is as for Expand_Actuals.
 
-   procedure Expand_Ctrl_Function_Call (N : Node_Id);
+   procedure Expand_Ctrl_Function_Call (N : Node_Id; Use_Sec_Stack : Boolean);
    --  N is a function call which returns a controlled object. Transform the
    --  call into a temporary which retrieves the returned object from the
-   --  secondary stack using 'reference.
+   --  primary or secondary stack (Use_Sec_Stack says which) using 'reference.
 
    procedure Expand_Non_Function_Return (N : Node_Id);
    --  Expand a simple return statement found in a procedure body, entry body,
@@ -850,11 +850,12 @@ package body Exp_Ch6 is
       --  The return type in the function declaration may have been a limited
       --  view, and the extra formals for the function were not generated at
       --  that point. At the point of call the full view must be available and
-      --  the extra formals can be created.
+      --  the extra formals can be created and Returns_By_Ref computed.
 
       if No (Extra_Formal) then
          Create_Extra_Formals (Func);
          Extra_Formal := Extra_Formals (Func);
+         Compute_Returns_By_Ref (Func);
       end if;
 
       --  We search for a formal with a matching suffix. We can't search
@@ -4915,7 +4916,7 @@ package body Exp_Ch6 is
       --  different processing applies. If the call is to a protected function,
       --  the expansion above will call Expand_Call recursively. Otherwise the
       --  function call is transformed into a reference to the result that has
-      --  been built either on the return or the secondary stack.
+      --  been built either on the primary or the secondary stack.
 
       if Needs_Finalization (Etype (Subp)) then
          if not Is_Build_In_Place_Function_Call (Call_Node)
@@ -4924,7 +4925,8 @@ package body Exp_Ch6 is
                or else
                  not Is_Concurrent_Record_Type (Etype (First_Formal (Subp))))
          then
-            Expand_Ctrl_Function_Call (Call_Node);
+            Expand_Ctrl_Function_Call
+              (Call_Node, Needs_Secondary_Stack (Etype (Subp)));
 
          --  Build-in-place function calls which appear in anonymous contexts
          --  need a transient scope to ensure the proper finalization of the
@@ -4955,7 +4957,10 @@ package body Exp_Ch6 is
    -- Expand_Ctrl_Function_Call --
    -------------------------------
 
-   procedure Expand_Ctrl_Function_Call (N : Node_Id) is
+   procedure Expand_Ctrl_Function_Call (N : Node_Id; Use_Sec_Stack : Boolean)
+   is
+      Par : constant Node_Id := Parent (N);
+
       function Is_Element_Reference (N : Node_Id) return Boolean;
       --  Determine whether node N denotes a reference to an Ada 2012 container
       --  element.
@@ -4980,12 +4985,19 @@ package body Exp_Ch6 is
    --  Start of processing for Expand_Ctrl_Function_Call
 
    begin
-      --  Optimization, if the returned value (which is on the sec-stack) is
-      --  returned again, no need to copy/readjust/finalize, we can just pass
-      --  the value thru (see Expand_N_Simple_Return_Statement), and thus no
-      --  attachment is needed.
+      --  Optimization: if the returned value is returned again, then no need
+      --  to copy/readjust/finalize, we can just pass the value through (see
+      --  Expand_N_Simple_Return_Statement), and thus no attachment is needed.
 
-      if Nkind (Parent (N)) = N_Simple_Return_Statement then
+      if Nkind (Par) = N_Simple_Return_Statement then
+         return;
+      end if;
+
+      --  Another optimization: if the returned value is used to initialize an
+      --  object, and the secondary stack is not involved in the call, then no
+      --  need to copy/readjust/finalize, we can just initialize it in place.
+
+      if Nkind (Par) = N_Object_Declaration and then not Use_Sec_Stack then
          return;
       end if;
 
@@ -7240,7 +7252,6 @@ package body Exp_Ch6 is
 
       if not Comes_From_Extended_Return_Statement (N)
         and then Is_Build_In_Place_Function (Scope_Id)
-        and then not Debug_Flag_Dot_L
 
          --  The functionality of interface thunks is simple and it is always
          --  handled by means of simple return statements. This leaves their
@@ -8522,72 +8533,9 @@ package body Exp_Ch6 is
       --  of a function with a limited interface result, where the function
       --  may return objects of nonlimited descendants.
 
-      if Is_Limited_View (Typ) then
-         return Ada_Version >= Ada_2005 and then not Debug_Flag_Dot_L;
-
-      else
-         if Debug_Flag_Dot_9 then
-            return False;
-         end if;
-
-         if Has_Interfaces (Typ) then
-            return False;
-         end if;
-
-         declare
-            T : Entity_Id := Typ;
-         begin
-            --  For T'Class, return True if it's True for T. This is necessary
-            --  because a class-wide function might say "return F (...)", where
-            --  F returns the corresponding specific type. We need a loop in
-            --  case T is a subtype of a class-wide type.
-
-            while Is_Class_Wide_Type (T) loop
-               T := Etype (T);
-            end loop;
-
-            --  If this is a generic formal type in an instance, return True if
-            --  it's True for the generic actual type.
-
-            if Nkind (Parent (T)) = N_Subtype_Declaration
-              and then Present (Generic_Parent_Type (Parent (T)))
-            then
-               T := Entity (Subtype_Indication (Parent (T)));
-
-               if Present (Full_View (T)) then
-                  T := Full_View (T);
-               end if;
-            end if;
-
-            if Present (Underlying_Type (T)) then
-               T := Underlying_Type (T);
-            end if;
-
-            declare
-               Result : Boolean;
-               --  So we can stop here in the debugger
-            begin
-               --  ???For now, enable build-in-place for a very narrow set of
-               --  controlled types. Change "if True" to "if False" to
-               --  experiment with more controlled types. Eventually, we might
-               --  like to enable build-in-place for all tagged types, all
-               --  types that need finalization, and all caller-unknown-size
-               --  types.
-
-               if True then
-                  Result := Is_Controlled (T)
-                    and then not Is_Generic_Actual_Type (T)
-                    and then Present (Enclosing_Subprogram (T))
-                    and then not Is_Compilation_Unit (Enclosing_Subprogram (T))
-                    and then Ekind (Enclosing_Subprogram (T)) = E_Procedure;
-               else
-                  Result := Is_Controlled (T);
-               end if;
-
-               return Result;
-            end;
-         end;
-      end if;
+      return Is_Limited_View (Typ)
+        and then Ada_Version >= Ada_2005
+        and then not Debug_Flag_Dot_L;
    end Is_Build_In_Place_Result_Type;
 
    ------------------------------
@@ -8623,6 +8571,9 @@ package body Exp_Ch6 is
    --------------------------------
 
    function Is_Build_In_Place_Function (E : Entity_Id) return Boolean is
+      Kind : constant Entity_Kind := Ekind (E);
+      Typ  : constant Entity_Id   := Etype (E);
+
    begin
       --  This function is called from Expand_Subtype_From_Expr during
       --  semantic analysis, even when expansion is off. In those cases
@@ -8632,22 +8583,16 @@ package body Exp_Ch6 is
          return False;
       end if;
 
-      if Ekind (E) in E_Function | E_Generic_Function
-        or else (Ekind (E) = E_Subprogram_Type
-                  and then Etype (E) /= Standard_Void_Type)
-      then
-         --  If the function is imported from a foreign language, we don't do
-         --  build-in-place. Note that Import (Ada) functions can do
-         --  build-in-place. Note that it is OK for a build-in-place function
-         --  to return a type with a foreign convention; the build-in-place
-         --  machinery will ensure there is no copying.
+      --  If the function is imported from a foreign language, we don't do
+      --  build-in-place, whereas Import (Ada) functions can do it. Note also
+      --  that it is OK for a build-in-place function to return a type with a
+      --  foreign convention because the machinery ensures there is no copying.
 
-         return Is_Build_In_Place_Result_Type (Etype (E))
-           and then not (Has_Foreign_Convention (E) and then Is_Imported (E))
-           and then not Debug_Flag_Dot_L;
-      else
-         return False;
-      end if;
+      return (Kind in E_Function | E_Generic_Function
+               or else
+             (Kind = E_Subprogram_Type and then Typ /= Standard_Void_Type))
+        and then Is_Build_In_Place_Result_Type (Typ)
+        and then not (Is_Imported (E) and then Has_Foreign_Convention (E));
    end Is_Build_In_Place_Function;
 
    -------------------------------------

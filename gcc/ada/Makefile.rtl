@@ -114,6 +114,7 @@ GNATRTL_NONTASKING_OBJS= \
   a-cfhama$(objext) \
   a-cfhase$(objext) \
   a-cfinve$(objext) \
+  a-cfinse$(objext) \
   a-cforma$(objext) \
   a-cforse$(objext) \
   a-cgaaso$(objext) \
@@ -1204,10 +1205,8 @@ ifeq ($(strip $(filter-out powerpc% wrs vxworks vxworksspe vxworks7% vxworks7spe
     else
       GCC_SPEC_FILES+=vxworks7-rtp-base-link.spec
     endif
-    GCC_SPEC_FILES+=vxworks7-cert-rtp-link__ppcXX.spec
   else
     GCC_SPEC_FILES+=vxworks-$(ARCH_STR)-link.spec
-    GCC_SPEC_FILES+=vxworks-cert-$(ARCH_STR)-link.spec
     GCC_SPEC_FILES+=vxworks-smp-$(ARCH_STR)-link.spec
   endif
 endif
@@ -1348,10 +1347,8 @@ ifeq ($(strip $(filter-out %86 x86_64 wrs vxworks vxworks7%,$(target_cpu) $(targ
 
   ifeq ($(strip $(filter-out vxworks7%, $(target_os))),)
     GCC_SPEC_FILES+=vxworks7-$(X86CPU)-rtp-base-link.spec
-    GCC_SPEC_FILES+=vxworks7-cert-rtp-link.spec
   else
     GCC_SPEC_FILES+=vxworks-x86-link.spec
-    GCC_SPEC_FILES+=vxworks-cert-x86-link.spec
     GCC_SPEC_FILES+=vxworks-smp-x86-link.spec
   endif
 endif
@@ -1474,9 +1471,6 @@ ifeq ($(strip $(filter-out aarch64 arm% coff wrs vx%,$(target_cpu) $(target_vend
       GCC_SPEC_FILES+=vxworks-arm-link.spec
       GCC_SPEC_FILES+=vxworks-smp-arm-link.spec
     endif
-  endif
-  ifeq ($(strip $(filter-out vxworks7%, $(target_os))),)
-    GCC_SPEC_FILES+=vxworks7-cert-rtp-link.spec
   endif
 endif
 
@@ -2943,6 +2937,7 @@ ADA_EXCLUDE_SRCS =\
   s-linux.ads  s-vxwext.adb s-vxwext.ads s-win32.ads  s-winext.ads \
   s-stchop.ads s-stchop.adb \
   s-strcom.adb s-strcom.ads s-thread.ads \
+  s-qnx.ads \
 
 # ADA_EXCLUDE_SRCS without the sources used by the target
 ADA_EXCLUDE_FILES=$(filter-out \

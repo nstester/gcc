@@ -275,9 +275,9 @@ package body Sem_Util is
       --  with its type set to Natural.
 
       function Innermost_Master_Scope_Depth (N : Node_Id) return Uint;
-      --  Returns the scope depth of the given node's innermost
-      --  enclosing dynamic scope (effectively the accessibility
-      --  level of the innermost enclosing master).
+      --  Returns the scope depth of the given node's innermost enclosing
+      --  scope (effectively the accessibility level of the innermost
+      --  enclosing master).
 
       function Function_Call_Or_Allocator_Level (N : Node_Id) return Node_Id;
       --  Centralized processing of subprogram calls which may appear in
@@ -301,7 +301,7 @@ package body Sem_Util is
       begin
          --  Locate the nearest enclosing node (by traversing Parents)
          --  that Defining_Entity can be applied to, and return the
-         --  depth of that entity's nearest enclosing dynamic scope.
+         --  depth of that entity's nearest enclosing scope.
 
          --  The rules that define what a master are defined in
          --  RM 7.6.1 (3), and include statements and conditions for loops
@@ -311,13 +311,13 @@ package body Sem_Util is
             Ent := Defining_Entity_Or_Empty (Node_Par);
 
             if Present (Ent) then
-               Encl_Scop := Nearest_Dynamic_Scope (Ent);
+               Encl_Scop := Find_Enclosing_Scope (Ent);
 
                --  Ignore transient scopes made during expansion
 
                if Comes_From_Source (Node_Par) then
                   return
-                    Scope_Depth_Default_0 (Encl_Scop) + Master_Lvl_Modifier;
+                    Scope_Depth (Encl_Scop) + Master_Lvl_Modifier;
                end if;
 
             --  For a return statement within a function, return
@@ -798,44 +798,30 @@ package body Sem_Util is
             --  in effect we treat discriminant components as regular
             --  components.
 
-            elsif Nkind (E) = N_Selected_Component
-              and then Ekind (Etype (E))   =  E_Anonymous_Access_Type
-              and then Ekind (Etype (Pre)) /= E_Anonymous_Access_Type
-              and then (not (Nkind (Selector_Name (E)) in N_Has_Entity
-                              and then Ekind (Entity (Selector_Name (E)))
-                                         = E_Discriminant)
+            elsif
+              (Nkind (E) = N_Selected_Component
+                and then Ekind (Etype (E))   =  E_Anonymous_Access_Type
+                and then Ekind (Etype (Pre)) /= E_Anonymous_Access_Type
+                and then (not (Nkind (Selector_Name (E)) in N_Has_Entity
+                                and then Ekind (Entity (Selector_Name (E)))
+                                           = E_Discriminant)
 
-                        --  The alternative accessibility models both treat
-                        --  discriminants as regular components.
+                           --  The alternative accessibility models both treat
+                           --  discriminants as regular components.
 
-                        or else (No_Dynamic_Accessibility_Checks_Enabled (E)
-                                  and then Allow_Alt_Model))
-            then
-               --  When restriction No_Dynamic_Accessibility_Checks is active
-               --  and -gnatd_b set, the level is that of the designated type.
+                           or else (No_Dynamic_Accessibility_Checks_Enabled (E)
+                                     and then Allow_Alt_Model)))
 
-               if Allow_Alt_Model
-                 and then No_Dynamic_Accessibility_Checks_Enabled (E)
-                 and then Debug_Flag_Underscore_B
-               then
-                  return Make_Level_Literal
-                           (Typ_Access_Level (Etype (E)));
-               end if;
+              --  Arrays featuring components of anonymous access components
+              --  get their corresponding level from their containing type's
+              --  declaration.
 
-               --  Otherwise proceed normally
-
-               return Make_Level_Literal
-                        (Typ_Access_Level (Etype (Prefix (E))));
-
-            --  Similar to the previous case - arrays featuring components of
-            --  anonymous access components get their corresponding level from
-            --  their containing type's declaration.
-
-            elsif Nkind (E) = N_Indexed_Component
-              and then Ekind (Etype (E)) = E_Anonymous_Access_Type
-              and then Ekind (Etype (Pre)) in Array_Kind
-              and then Ekind (Component_Type (Base_Type (Etype (Pre))))
-                         = E_Anonymous_Access_Type
+              or else
+                (Nkind (E) = N_Indexed_Component
+                  and then Ekind (Etype (E)) = E_Anonymous_Access_Type
+                  and then Ekind (Etype (Pre)) in Array_Kind
+                  and then Ekind (Component_Type (Base_Type (Etype (Pre))))
+                             = E_Anonymous_Access_Type)
             then
                --  When restriction No_Dynamic_Accessibility_Checks is active
                --  and -gnatd_b set, the level is that of the designated type.
