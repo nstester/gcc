@@ -1090,7 +1090,6 @@ package body Sem_Attr is
 
                else
                   Error_Attr ("% attribute cannot be applied to type", P);
-                  return;
                end if;
             end if;
          end if;
@@ -1429,7 +1428,6 @@ package body Sem_Attr is
 
             else
                Placement_Error;
-               return;
             end if;
 
          --  'Old attribute reference ok in a _Postconditions procedure
@@ -1445,7 +1443,6 @@ package body Sem_Attr is
 
          else
             Placement_Error;
-            return;
          end if;
 
          --  Find the related subprogram subject to the aspect or pragma
@@ -1715,14 +1712,12 @@ package body Sem_Attr is
 
             else
                Placement_Error;
-               return;
             end if;
 
          --  Otherwise the placement of the attribute is illegal
 
          else
             Placement_Error;
-            return;
          end if;
 
          --  Find the related subprogram subject to the aspect or pragma
@@ -3666,7 +3661,6 @@ package body Sem_Attr is
 
          else
             Error_Attr ("invalid entry name", N);
-            return;
          end if;
 
          for J in reverse 0 .. Scope_Stack.Last loop
@@ -3746,11 +3740,11 @@ package body Sem_Attr is
                     Ekind (Entity (P)) /= E_Procedure)
          then
             Error_Attr ("invalid prefix for % attribute", P);
-            Set_Address_Taken (Entity (P));
 
          --  Issue an error if the prefix denotes an eliminated subprogram
 
          else
+            Set_Address_Taken (Entity (P));
             Check_For_Eliminated_Subprogram (P, Entity (P));
          end if;
 
@@ -3945,7 +3939,6 @@ package body Sem_Attr is
                else
                   Error_Attr ("invalid entry family name", P);
                end if;
-               return;
 
             else
                Ent := Entity (Prefix (P));
@@ -3960,7 +3953,6 @@ package body Sem_Attr is
 
          else
             Error_Attr ("invalid entry name", N);
-            return;
          end if;
 
          for J in reverse 0 .. Scope_Stack.Last loop
@@ -4479,7 +4471,6 @@ package body Sem_Attr is
 
          if not Legal or else No (Spec_Id) then
             Error_Attr ("attribute % must apply to entry family", P);
-            return;
          end if;
 
          --  Legality checks
@@ -4756,7 +4747,6 @@ package body Sem_Attr is
                   Error_Attr
                     ("prefix of attribute % cannot reference local entities",
                      Nod);
-                  return Abandon;
                else
                   return OK;
                end if;
@@ -4998,7 +4988,6 @@ package body Sem_Attr is
             else
                Error_Attr
                  ("attribute % cannot appear in body or accept statement", N);
-               exit;
             end if;
          end loop;
 
@@ -5392,7 +5381,6 @@ package body Sem_Attr is
                   Error_Attr
                     ("prefix of attribute % cannot reference local entities",
                      Nod);
-                  return Abandon;
 
                --  Otherwise keep inspecting the prefix
 
@@ -5847,6 +5835,12 @@ package body Sem_Attr is
 
             elsif Present (Over_Id) and then Pref_Id = Over_Id then
                return True;
+
+            --  When a qualified name is used for the prefix, homonyms may come
+            --  before the current function in the homonym chain.
+
+            elsif Has_Homonym (Pref_Id) then
+               return Denote_Same_Function (Homonym (Pref_Id), Spec_Id);
             end if;
 
             --  Otherwise the prefix does not denote the related subprogram
@@ -5898,7 +5892,6 @@ package body Sem_Attr is
 
          elsif not Legal then
             Error_Attr ("prefix of % attribute must be a function", P);
-            return;
          end if;
 
          --  Attribute 'Result is part of a _Postconditions procedure. There is
@@ -11152,43 +11145,10 @@ package body Sem_Attr is
          =>
             --  Note possible modification if we have a variable
 
-            if Is_Variable (P) then
-               declare
-                  PN : constant Node_Id := Parent (N);
-                  Nm : Node_Id;
-
-                  Note : Boolean := True;
-                  --  Skip this for the case of Unrestricted_Access occurring
-                  --  in the context of a Valid check, since this otherwise
-                  --  leads to a missed warning (the Valid check does not
-                  --  really modify!) If this case, Note will be reset to
-                  --  False.
-
-                  --  Skip it as well if the type is an Access_To_Constant,
-                  --  given that no use of the value can modify the prefix.
-
-               begin
-                  if Attr_Id = Attribute_Unrestricted_Access
-                    and then Nkind (PN) = N_Function_Call
-                  then
-                     Nm := Name (PN);
-
-                     if Nkind (Nm) = N_Expanded_Name
-                       and then Chars (Nm) = Name_Valid
-                       and then Nkind (Prefix (Nm)) = N_Identifier
-                       and then Chars (Prefix (Nm)) = Name_Attr_Long_Float
-                     then
-                        Note := False;
-                     end if;
-
-                  elsif Is_Access_Constant (Typ) then
-                     Note := False;
-                  end if;
-
-                  if Note then
-                     Note_Possible_Modification (P, Sure => False);
-                  end if;
-               end;
+            if Is_Variable (P)
+              and then not Is_Access_Constant (Typ)
+            then
+               Note_Possible_Modification (P, Sure => False);
             end if;
 
             --  Case where prefix is an entity name
