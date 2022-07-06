@@ -83,7 +83,48 @@ with Validsw;        use Validsw;
 
 package body Exp_Ch6 is
 
-   --  Suffix for BIP formals
+   --------------------------------
+   -- Function return mechanisms --
+   --------------------------------
+
+   --  This is a summary of the various function return mechanisms implemented
+   --  in GNAT for Ada 2005 and later versions of the language. In the below
+   --  table, the first column must be read as an if expression: if the result
+   --  type of the function is limited, then the return mechanism is and ...;
+   --  elsif the result type is indefinite or large definite, then ...; elsif
+   --  ...; else ... The different mechanisms are implemented either in the
+   --  front end, or in the back end, or partly in both ends, depending on the
+   --  result type.
+
+   --    Result type    |  Return mechanism    |    Front end    |   Back end
+   --    --------------------------------------------------------------------
+
+   --     Limited           Build In Place              All
+
+   --     Indefinite/       Secondary Stack          Needs Fin.       Others
+   --     Large definite
+
+   --     Needs Fin.        Secondary Stack             All
+   --     (BERS False)
+
+   --     Needs Fin.        Invisible Parameter         All            All
+   --     (BERS True)                                 (return)        (call)
+
+   --     By Reference      Invisible Parameter                        All
+
+   --     Others            Primary stack/                             All
+   --                       Registers
+
+   --    Needs Fin.: type needs finalization [RM 7.6(9.1/2-9.6/2)]
+   --    BERS: Opt.Back_End_Return_Slot setting
+
+   --  The table is valid for all calls except for those dispatching on result;
+   --  the latter calls are considered as returning a class-wide type and thus
+   --  always return on the secondary stack, with the help of a small wrapper
+   --  function (thunk) if the original result type is not itself returned on
+   --  the secondary stack as per the above table.
+
+   --  Suffixes for Build-In-Place extra formals
 
    BIP_Alloc_Suffix               : constant String := "BIPalloc";
    BIP_Storage_Pool_Suffix        : constant String := "BIPstoragepool";
@@ -7578,9 +7619,7 @@ package body Exp_Ch6 is
               and then Etype (F) /= Etype (A)
             then
                Append_To (Actuals,
-                 Make_Unchecked_Type_Conversion (Loc,
-                   New_Occurrence_Of (Etype (F), Loc),
-                   New_Copy_Tree (A)));
+                 Unchecked_Convert_To (Etype (F), New_Copy_Tree (A)));
             else
                Append_To (Actuals, New_Copy_Tree (A));
             end if;
