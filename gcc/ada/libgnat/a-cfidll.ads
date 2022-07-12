@@ -2,11 +2,11 @@
 --                                                                          --
 --                         GNAT LIBRARY COMPONENTS                          --
 --                                                                          --
---                 ADA.CONTAINERS.FORMAL_DOUBLY_LINKED_LISTS                --
+--           ADA.CONTAINERS.FORMAL_INDEFINITE_DOUBLY_LINKED_LISTS           --
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2004-2022, Free Software Foundation, Inc.         --
+--          Copyright (C) 2022-2022, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -31,16 +31,15 @@
 
 with Ada.Containers.Functional_Vectors;
 with Ada.Containers.Functional_Maps;
+private with Ada.Finalization;
 
 generic
    type Element_Type is private;
    with function "=" (Left, Right : Element_Type) return Boolean is <>;
 
-package Ada.Containers.Formal_Doubly_Linked_Lists with
-  SPARK_Mode,
-  Annotate => (GNATprove, Always_Return)
+package Ada.Containers.Formal_Indefinite_Doubly_Linked_Lists with
+  SPARK_Mode
 is
-
    --  Contracts in this unit are meant for analysis only, not for run-time
    --  checking.
 
@@ -49,13 +48,12 @@ is
    pragma Assertion_Policy (Contract_Cases => Ignore);
    pragma Annotate (CodePeer, Skip_Analysis);
 
-   type List (Capacity : Count_Type) is private with
+   type List is private with
      Iterable => (First       => First,
                   Next        => Next,
                   Has_Element => Has_Element,
                   Element     => Element),
      Default_Initial_Condition => Is_Empty (List);
-   pragma Preelaborable_Initialization (List);
 
    type Cursor is record
       Node : Count_Type := 0;
@@ -63,11 +61,12 @@ is
 
    No_Element : constant Cursor := Cursor'(Node => 0);
 
-   Empty_List : constant List;
-
    function Length (Container : List) return Count_Type with
+     Global => null;
+
+   function Empty_List return List with
      Global => null,
-     Post   => Length'Result <= Container.Capacity;
+     Post   => Length (Empty_List'Result) = 0;
 
    pragma Unevaluated_Use_Of_Old (Allow);
 
@@ -284,7 +283,7 @@ is
         Post   =>
           not P.Has_Key (Positions'Result, No_Element)
 
-            --  Positions of cursors are smaller than the container's length.
+            --  Positions of cursors are smaller than the container's length
 
             and then
               (for all I of Positions'Result =>
@@ -338,19 +337,13 @@ is
 
    procedure Assign (Target : in out List; Source : List) with
      Global => null,
-     Pre    => Target.Capacity >= Length (Source),
      Post   => Model (Target) = Model (Source);
 
-   function Copy (Source : List; Capacity : Count_Type := 0) return List with
+   function Copy (Source : List) return List with
      Global => null,
-     Pre    => Capacity = 0 or else Capacity >= Source.Capacity,
      Post   =>
        Model (Copy'Result) = Model (Source)
-         and Positions (Copy'Result) = Positions (Source)
-         and (if Capacity = 0 then
-                 Copy'Result.Capacity = Source.Capacity
-              else
-                 Copy'Result.Capacity = Capacity);
+         and Positions (Copy'Result) = Positions (Source);
 
    function Element
      (Container : List;
@@ -402,7 +395,7 @@ is
      Annotate => (GNATprove, At_End_Borrow);
 
    function Constant_Reference
-     (Container : aliased List;
+     (Container : List;
       Position  : Cursor) return not null access constant Element_Type
    with
      Global => null,
@@ -439,7 +432,6 @@ is
 
    procedure Move (Target : in out List; Source : in out List) with
      Global => null,
-     Pre    => Target.Capacity >= Length (Source),
      Post   => Model (Target) = Model (Source'Old) and Length (Source) = 0;
 
    procedure Insert
@@ -449,7 +441,7 @@ is
    with
      Global         => null,
      Pre            =>
-       Length (Container) < Container.Capacity
+       Length (Container) < Count_Type'Last
          and then (Has_Element (Container, Before)
                     or else Before = No_Element),
      Post           => Length (Container) = Length (Container)'Old + 1,
@@ -521,7 +513,7 @@ is
    with
      Global         => null,
      Pre            =>
-       Length (Container) <= Container.Capacity - Count
+       Length (Container) <= Count_Type'Last - Count
          and then (Has_Element (Container, Before)
                     or else Before = No_Element),
      Post           => Length (Container) = Length (Container)'Old + Count,
@@ -598,7 +590,7 @@ is
    with
      Global => null,
      Pre    =>
-       Length (Container) < Container.Capacity
+       Length (Container) < Count_Type'Last
          and then (Has_Element (Container, Before)
                     or else Before = No_Element),
      Post   =>
@@ -654,7 +646,7 @@ is
    with
      Global         => null,
      Pre            =>
-       Length (Container) <= Container.Capacity - Count
+       Length (Container) <= Count_Type'Last - Count
          and then (Has_Element (Container, Before)
                     or else Before = No_Element),
      Post           => Length (Container) = Length (Container)'Old + Count,
@@ -714,7 +706,7 @@ is
 
    procedure Prepend (Container : in out List; New_Item : Element_Type) with
      Global => null,
-     Pre    => Length (Container) < Container.Capacity,
+     Pre    => Length (Container) < Count_Type'Last,
      Post   =>
        Length (Container) = Length (Container)'Old + 1
 
@@ -744,7 +736,7 @@ is
       Count     : Count_Type)
    with
      Global => null,
-     Pre    => Length (Container) <= Container.Capacity - Count,
+     Pre    => Length (Container) <= Count_Type'Last - Count,
      Post   =>
        Length (Container) = Length (Container)'Old + Count
 
@@ -775,7 +767,7 @@ is
 
    procedure Append (Container : in out List; New_Item : Element_Type) with
      Global => null,
-     Pre    => Length (Container) < Container.Capacity,
+     Pre    => Length (Container) < Count_Type'Last,
      Post   =>
        Length (Container) = Length (Container)'Old + 1
 
@@ -810,7 +802,7 @@ is
       Count     : Count_Type)
    with
      Global => null,
-     Pre    => Length (Container) <= Container.Capacity - Count,
+     Pre    => Length (Container) <= Count_Type'Last - Count,
      Post   =>
        Length (Container) = Length (Container)'Old + Count
 
@@ -1073,9 +1065,8 @@ is
    with
      Global         => null,
      Pre            =>
-       Length (Source) <= Target.Capacity - Length (Target)
-         and then (Has_Element (Target, Before)
-                    or else Before = No_Element),
+       Length (Source) <= Count_Type'Last - Length (Target)
+         and then (Has_Element (Target, Before) or else Before = No_Element),
      Post           =>
        Length (Source) = 0
          and Length (Target) = Length (Target)'Old + Length (Source)'Old,
@@ -1174,7 +1165,7 @@ is
      Pre    =>
        (Has_Element (Target, Before) or else Before = No_Element)
          and then Has_Element (Source, Position)
-         and then Length (Target) < Target.Capacity,
+         and then Length (Target) < Count_Type'Last,
      Post   =>
        Length (Target) = Length (Target)'Old + 1
          and Length (Source) = Length (Source)'Old - 1
@@ -1620,7 +1611,7 @@ is
       procedure Merge (Target : in out List; Source : in out List) with
       --  Target and Source should not be aliased
         Global => null,
-        Pre    => Length (Source) <= Target.Capacity - Length (Target),
+        Pre    => Length (Target) <= Count_Type'Last - Length (Source),
         Post   =>
           Length (Target) = Length (Target)'Old + Length (Source)'Old
             and Length (Source) = 0
@@ -1647,25 +1638,33 @@ is
 private
    pragma SPARK_Mode (Off);
 
+   use Ada.Finalization;
+
+   type Element_Access is access all Element_Type;
+
    type Node_Type is record
       Prev    : Count_Type'Base := -1;
-      Next    : Count_Type;
-      Element : aliased Element_Type;
+      Next    : Count_Type := 0;
+      Element : Element_Access := null;
    end record;
+
+   type Node_Access is access all Node_Type;
 
    function "=" (L, R : Node_Type) return Boolean is abstract;
 
    type Node_Array is array (Count_Type range <>) of Node_Type;
    function "=" (L, R : Node_Array) return Boolean is abstract;
 
-   type List (Capacity : Count_Type) is record
+   type Node_Array_Access is access all Node_Array;
+
+   type List is new Controlled with record
       Free   : Count_Type'Base := -1;
       Length : Count_Type := 0;
       First  : Count_Type := 0;
       Last   : Count_Type := 0;
-      Nodes  : Node_Array (1 .. Capacity);
+      Nodes  : Node_Array_Access := null;
    end record;
 
-   Empty_List : constant List := (0, others => <>);
-
-end Ada.Containers.Formal_Doubly_Linked_Lists;
+   overriding procedure Finalize (Container : in out List);
+   overriding procedure Adjust (Container : in out List);
+end Ada.Containers.Formal_Indefinite_Doubly_Linked_Lists;

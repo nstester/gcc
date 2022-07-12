@@ -4868,9 +4868,6 @@ package body Sem_Util is
       --  and post-state. Prag is a [refined] postcondition or a contract-cases
       --  pragma. Result_Seen is set when the pragma mentions attribute 'Result
 
-      function Is_Trivial_Boolean (N : Node_Id) return Boolean;
-      --  Determine whether source node N denotes "True" or "False"
-
       -------------------------------------------
       -- Check_Result_And_Post_State_In_Pragma --
       -------------------------------------------
@@ -5242,20 +5239,6 @@ package body Sem_Util is
             Check_Expression (Expr);
          end if;
       end Check_Result_And_Post_State_In_Pragma;
-
-      ------------------------
-      -- Is_Trivial_Boolean --
-      ------------------------
-
-      function Is_Trivial_Boolean (N : Node_Id) return Boolean is
-      begin
-         return
-           Comes_From_Source (N)
-             and then Is_Entity_Name (N)
-             and then (Entity (N) = Standard_True
-                         or else
-                       Entity (N) = Standard_False);
-      end Is_Trivial_Boolean;
 
       --  Local variables
 
@@ -21501,19 +21484,15 @@ package body Sem_Util is
       Kind : constant Node_Kind := Nkind (N);
 
    begin
-      if Kind = N_Simple_Return_Statement
-           or else
-         Kind = N_Extended_Return_Statement
-           or else
-         Kind = N_Goto_Statement
-           or else
-         Kind = N_Raise_Statement
-           or else
-         Kind = N_Requeue_Statement
+      if Kind in N_Simple_Return_Statement
+               | N_Extended_Return_Statement
+               | N_Goto_Statement
+               | N_Raise_Statement
+               | N_Requeue_Statement
       then
          return True;
 
-      elsif (Kind = N_Exit_Statement or else Kind in N_Raise_xxx_Error)
+      elsif Kind in N_Exit_Statement | N_Raise_xxx_Error
         and then No (Condition (N))
       then
          return True;
@@ -21541,6 +21520,17 @@ package body Sem_Util is
    begin
       return No (U) or else U = Uint_1;
    end Is_True;
+
+   ------------------------
+   -- Is_Trivial_Boolean --
+   ------------------------
+
+   function Is_Trivial_Boolean (N : Node_Id) return Boolean is
+   begin
+      return Comes_From_Source (N)
+        and then Nkind (N) in N_Identifier | N_Expanded_Name
+        and then Entity (N) in Standard_True | Standard_False;
+   end Is_Trivial_Boolean;
 
    --------------------------------------
    -- Is_Unchecked_Conversion_Instance --
@@ -21896,7 +21886,6 @@ package body Sem_Util is
               or else (K = E_Component
                         and then not In_Protected_Function (E))
               or else (Present (Etype (E))
-                        and then Is_Access_Object_Type (Etype (E))
                         and then Is_Access_Variable (Etype (E))
                         and then Is_Dereferenced (N))
               or else K = E_Out_Parameter
@@ -23316,7 +23305,7 @@ package body Sem_Util is
       ------------------------------
 
       function Caller_Known_Size_Record (Typ : Entity_Id) return Boolean is
-         pragma Assert (Typ = Underlying_Type (Typ));
+         pragma Assert (if Present (Typ) then Typ = Underlying_Type (Typ));
 
          function Depends_On_Discriminant (Typ : Entity_Id) return Boolean;
          --  Called for untagged record and protected types. Return True if Typ
@@ -23353,6 +23342,14 @@ package body Sem_Util is
          end Depends_On_Discriminant;
 
       begin
+         --  This is a protected type without Corresponding_Record_Type set,
+         --  typically because expansion is disabled. The safe thing to do is
+         --  to return True, so Needs_Secondary_Stack returns False.
+
+         if No (Typ) then
+            return True;
+         end if;
+
          --  First see if we have a variant part and return False if it depends
          --  on discriminants.
 
@@ -23378,11 +23375,15 @@ package body Sem_Util is
                                 Underlying_Type (Etype (Comp));
 
                begin
-                  if Is_Record_Type (Comp_Type)
-                        or else
-                     Is_Protected_Type (Comp_Type)
-                  then
+                  if Is_Record_Type (Comp_Type) then
                      if not Caller_Known_Size_Record (Comp_Type) then
+                        return False;
+                     end if;
+
+                  elsif Is_Protected_Type (Comp_Type) then
+                     if not Caller_Known_Size_Record
+                              (Corresponding_Record_Type (Comp_Type))
+                     then
                         return False;
                      end if;
 
@@ -23489,7 +23490,7 @@ package body Sem_Util is
    begin
       --  This is a private type which is not completed yet. This can only
       --  happen in a default expression (of a formal parameter or of a
-      --  record component). Do not expand transient scope in this case.
+      --  record component). The safe thing to do is to return False.
 
       if No (Typ) then
          return False;
@@ -23544,12 +23545,17 @@ package body Sem_Util is
       elsif Is_Definite_Subtype (Typ) or else Is_Task_Type (Typ) then
          return Large_Max_Size_Mutable (Typ);
 
-      --  Indefinite (discriminated) record or protected type
+      --  Indefinite (discriminated) record type
 
-      elsif Is_Record_Type (Typ) or else Is_Protected_Type (Typ) then
+      elsif Is_Record_Type (Typ) then
          return not Caller_Known_Size_Record (Typ);
 
-      --  Unconstrained array
+      --  Indefinite (discriminated) protected type
+
+      elsif Is_Protected_Type (Typ) then
+         return not Caller_Known_Size_Record (Corresponding_Record_Type (Typ));
+
+      --  Unconstrained array type
 
       else
          pragma Assert (Is_Array_Type (Typ) and not Is_Definite_Subtype (Typ));

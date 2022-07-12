@@ -4508,7 +4508,16 @@ package body Sem_Ch6 is
             --  This also needs to be done in the case of an ignored Ghost
             --  expression function, where the expander isn't active.
 
-            Set_Is_Frozen (Spec_Id);
+            --  A further complication arises if the expression function is
+            --  a primitive operation of a tagged type: in that case the
+            --  function entity must be frozen before the dispatch table for
+            --  the type is constructed, so it will be frozen like other local
+            --  entities, at the end of the current scope.
+
+            if not Is_Dispatching_Operation (Spec_Id) then
+               Set_Is_Frozen (Spec_Id);
+            end if;
+
             Mask_Types := Mask_Unfrozen_Types (Spec_Id);
 
          elsif not Is_Frozen (Spec_Id)
@@ -7555,6 +7564,8 @@ package body Sem_Ch6 is
       Err  : out Boolean;
       Proc : Entity_Id := Empty)
    is
+      pragma Assert (Mode in 'F' | 'P');
+      pragma Assert (if Mode = 'F' then No (Proc));
       Handler : Node_Id;
 
       procedure Check_Statement_Sequence (L : List_Id);
@@ -7604,15 +7615,13 @@ package body Sem_Ch6 is
 
          --  Local variables
 
-         Raise_Exception_Call : Boolean;
+         Raise_Exception_Call : Boolean := False;
          --  Set True if statement sequence terminated by Raise_Exception call
          --  or a Reraise_Occurrence call.
 
       --  Start of processing for Check_Statement_Sequence
 
       begin
-         Raise_Exception_Call := False;
-
          --  Get last real statement
 
          Last_Stm := Last (L);
@@ -7678,7 +7687,8 @@ package body Sem_Ch6 is
 
          while Nkind (Last_Stm) = N_Pragma
 
-         --  Don't count call to SS_Release (can happen after Raise_Exception)
+           --  Don't count call to SS_Release (can happen after
+           --  Raise_Exception).
 
            or else
              (Nkind (Last_Stm) = N_Procedure_Call_Statement
@@ -7687,7 +7697,7 @@ package body Sem_Ch6 is
                 and then
               Is_RTE (Entity (Name (Last_Stm)), RE_SS_Release))
 
-         --  Don't count exception junk
+           --  Don't count exception junk
 
            or else
              (Nkind (Last_Stm) in
@@ -7695,10 +7705,12 @@ package body Sem_Ch6 is
                and then Exception_Junk (Last_Stm))
            or else Nkind (Last_Stm) in N_Push_xxx_Label | N_Pop_xxx_Label
 
-         --  Inserted code, such as finalization calls, is irrelevant: we only
-         --  need to check original source.
+           --  Inserted code, such as finalization calls, is irrelevant; we
+           --  only need to check original source. If we see a transfer of
+           --  control, we stop.
 
-           or else Is_Rewrite_Insertion (Last_Stm)
+           or else (Is_Rewrite_Insertion (Last_Stm)
+                      and then not Is_Transfer (Last_Stm))
          loop
             Prev (Last_Stm);
          end loop;
