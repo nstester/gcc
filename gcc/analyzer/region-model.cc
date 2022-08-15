@@ -1447,11 +1447,11 @@ public:
 	print_dec (m_out_of_bounds_range.m_size_in_bytes,
 		   num_bytes_past_buf, UNSIGNED);
 	if (m_diag_arg)
-	  inform (rich_loc->get_loc (), "write is %s bytes past the end"
+	  inform (rich_loc->get_loc (), "read is %s bytes past the end"
 					" of %qE", num_bytes_past_buf,
 						    m_diag_arg);
 	else
-	  inform (rich_loc->get_loc (), "write is %s bytes past the end"
+	  inform (rich_loc->get_loc (), "read is %s bytes past the end"
 					"of the region",
 					num_bytes_past_buf);
       }
@@ -1768,8 +1768,7 @@ region_model::on_call_pre (const gcall *call, region_model_context *ctxt,
      duplicates if any of the handling below also looks up the svalues,
      but the deduplication code should deal with that.  */
   if (ctxt)
-    for (unsigned arg_idx = 0; arg_idx < cd.num_args (); arg_idx++)
-      cd.get_arg_svalue (arg_idx);
+    check_call_args (cd);
 
   /* Some of the cases below update the lhs of the call based on the
      return value, but not all.  Provide a default value, which may
@@ -1889,7 +1888,6 @@ region_model::on_call_pre (const gcall *call, region_model_context *ctxt,
 	    /* These stdio builtins have external effects that are out
 	       of scope for the analyzer: we only want to model the effects
 	       on the return value.  */
-	    check_call_args (cd);
 	    break;
 
 	  case BUILT_IN_VA_START:
