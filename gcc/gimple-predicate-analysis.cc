@@ -122,10 +122,10 @@ format_edge_vec (const vec<edge> &ev)
     {
       char es[32];
       const_edge e = ev[i];
-      sprintf (es, "%u", e->src->index);
+      sprintf (es, "%u -> %u", e->src->index, e->dest->index);
       str += es;
       if (i + 1 < n)
-	str += " -> ";
+	str += ", ";
     }
   return str;
 }
@@ -177,28 +177,6 @@ dump_pred_chain (const pred_chain &chain)
 	fputc ('(', dump_file);
       dump_pred_info (chain[j]);
       fputc (')', dump_file);
-    }
-}
-
-/* Dump the first NCHAINS elements of the DEP_CHAINS array into DUMP_FILE.  */
-
-static void
-dump_dep_chains (const auto_vec<edge> dep_chains[], unsigned nchains)
-{
-  if (!dump_file)
-    return;
-
-  for (unsigned i = 0; i != nchains; ++i)
-    {
-      const auto_vec<edge> &v = dep_chains[i];
-      unsigned n = v.length ();
-      for (unsigned j = 0; j != n; ++j)
-	{
-	  fprintf (dump_file, "%u", v[j]->src->index);
-	  if (j + 1 < n)
-	    fprintf (dump_file, " -> ");
-	}
-      fputc ('\n', dump_file);
     }
 }
 
@@ -1696,13 +1674,6 @@ predicate::init_from_control_deps (const vec<edge> *dep_chains,
   if (num_chains == 0)
     return;
 
-  if (num_chains >= MAX_NUM_CHAINS)
-    {
-      if (dump_file)
-	fprintf (dump_file, "MAX_NUM_CHAINS exceeded: %u\n", num_chains);
-      return;
-    }
-
   /* Convert the control dependency chain into a set of predicates.  */
   m_preds.reserve (num_chains);
 
@@ -1940,12 +1911,8 @@ uninit_analysis::init_use_preds (predicate &use_preds, basic_block def_bb,
     }
 
   if (DEBUG_PREDICATE_ANALYZER && dump_file)
-    {
-      fprintf (dump_file, "predicate::predicate (def_bb = %u, use_bb = %u, func_t) "
-	       "initialized from %u dep_chains:\n\t",
-	       def_bb->index, use_bb->index, num_chains);
-      dump_dep_chains (dep_chains, num_chains);
-    }
+    fprintf (dump_file, "init_use_preds (def_bb = %u, use_bb = %u)\n",
+	     def_bb->index, use_bb->index);
 
   /* From the set of edges computed above initialize *THIS as the OR
      condition under which the definition in DEF_BB is used in USE_BB.
