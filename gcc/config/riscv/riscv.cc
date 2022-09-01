@@ -1136,6 +1136,12 @@ riscv_const_insns (rtx x)
     case LABEL_REF:
       return riscv_symbol_insns (riscv_classify_symbol (x));
 
+    /* TODO: In RVV, we get CONST_POLY_INT by using csrr VLENB
+       instruction and several scalar shift or mult instructions,
+       it is so far unknown. We set it to 4 temporarily.  */
+    case CONST_POLY_INT:
+      return 4;
+
     default:
       return 0;
     }
@@ -2506,6 +2512,12 @@ riscv_output_move (rtx dest, rtx src)
 	  case 8:
 	    return "fld\t%0,%1";
 	  }
+    }
+  if (dest_code == REG && GP_REG_P (REGNO (dest)) && src_code == CONST_POLY_INT)
+    {
+      /* We only want a single full vector register VLEN read after reload. */
+      gcc_assert (known_eq (rtx_to_poly_int64 (src), BYTES_PER_RISCV_VECTOR));
+      return "csrr\t%0,vlenb";
     }
   gcc_unreachable ();
 }
@@ -5219,22 +5231,23 @@ riscv_init_machine_status (void)
 static poly_uint16
 riscv_convert_vector_bits (void)
 {
-  /* The runtime invariant is only meaningful when vector is enabled. */
+  /* The runtime invariant is only meaningful when TARGET_VECTOR is enabled. */
   if (!TARGET_VECTOR)
     return 0;
 
-  if (TARGET_VECTOR_ELEN_64 || TARGET_VECTOR_ELEN_FP_64)
+  if (TARGET_MIN_VLEN > 32)
     {
-      /* When targetting Zve64* (ELEN = 64) extensions, we should use 64-bit
-	 chunk size. Runtime invariant: The single indeterminate represent the
+      /* When targetting minimum VLEN > 32, we should use 64-bit chunk size.
+	 Otherwise we can not include SEW = 64bits.
+	 Runtime invariant: The single indeterminate represent the
 	 number of 64-bit chunks in a vector beyond minimum length of 64 bits.
 	 Thus the number of bytes in a vector is 8 + 8 * x1 which is
-	 riscv_vector_chunks * 8 = poly_int (8, 8). */
+	 riscv_vector_chunks * 8 = poly_int (8, 8).  */
       riscv_bytes_per_vector_chunk = 8;
     }
   else
     {
-      /* When targetting Zve32* (ELEN = 32) extensions, we should use 32-bit
+      /* When targetting minimum VLEN = 32, we should use 32-bit
 	 chunk size. Runtime invariant: The single indeterminate represent the
 	 number of 32-bit chunks in a vector beyond minimum length of 32 bits.
 	 Thus the number of bytes in a vector is 4 + 4 * x1 which is
@@ -5424,6 +5437,15 @@ riscv_conditional_register_usage (void)
     {
       for (int regno = FP_REG_FIRST; regno <= FP_REG_LAST; regno++)
 	call_used_regs[regno] = 1;
+    }
+
+  if (!TARGET_VECTOR)
+    {
+      for (int regno = V_REG_FIRST; regno <= V_REG_LAST; regno++)
+	fixed_regs[regno] = call_used_regs[regno] = 1;
+
+      fixed_regs[VTYPE_REGNUM] = call_used_regs[VTYPE_REGNUM] = 1;
+      fixed_regs[VL_REGNUM] = call_used_regs[VL_REGNUM] = 1;
     }
 }
 
