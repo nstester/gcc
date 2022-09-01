@@ -1035,18 +1035,6 @@ compute_control_dep_chain (basic_block dom_bb, const_basic_block dep_bb,
 	fprintf (dump_file, "chain length exceeds 5: %u\n", cur_chain_len);
     }
 
-  for (unsigned i = 0; i < cur_chain_len; i++)
-    {
-      edge e = cur_cd_chain[i];
-      /* Cycle detected.  */
-      if (e->src == dom_bb)
-	{
-	  if (dump_file)
-	    fprintf (dump_file, "cycle detected\n");
-	  return false;
-	}
-    }
-
   if (DEBUG_PREDICATE_ANALYZER && dump_file)
     fprintf (dump_file,
 	     "%*s%s (dom_bb = %u, dep_bb = %u, cd_chains = { %s }, ...)\n",
@@ -1061,7 +1049,7 @@ compute_control_dep_chain (basic_block dom_bb, const_basic_block dep_bb,
   FOR_EACH_EDGE (e, ei, dom_bb->succs)
     {
       int post_dom_check = 0;
-      if (e->flags & (EDGE_FAKE | EDGE_ABNORMAL))
+      if (e->flags & (EDGE_FAKE | EDGE_ABNORMAL | EDGE_DFS_BACK))
 	continue;
 
       basic_block cd_bb = e->dest;
@@ -1110,6 +1098,12 @@ compute_control_dep_chain (basic_block dom_bb, const_basic_block dep_bb,
 	      break;
 	    }
 
+	  /* The post-dominator walk will reach a backedge only
+	     from a forwarder, otherwise it should choose to exit
+	     the SCC.  */
+	  if (single_succ_p (cd_bb)
+	      && single_succ_edge (cd_bb)->flags & EDGE_DFS_BACK)
+	    break;
 	  cd_bb = get_immediate_dominator (CDI_POST_DOMINATORS, cd_bb);
 	  post_dom_check++;
 	  if (cd_bb == EXIT_BLOCK_PTR_FOR_FN (cfun)
@@ -1122,6 +1116,18 @@ compute_control_dep_chain (basic_block dom_bb, const_basic_block dep_bb,
 
   gcc_assert (cur_cd_chain.length () == cur_chain_len);
   return found_cd_chain;
+}
+
+static bool
+compute_control_dep_chain (basic_block dom_bb, const_basic_block dep_bb,
+			   vec<edge> cd_chains[], unsigned *num_chains,
+			   unsigned in_region = 0)
+{
+  auto_vec<edge, MAX_CHAIN_LEN + 1> cur_cd_chain;
+  unsigned num_calls = 0;
+  unsigned depth = 0;
+  return compute_control_dep_chain (dom_bb, dep_bb, cd_chains, num_chains,
+				    cur_cd_chain, &num_calls, in_region, depth);
 }
 
 /* Implemented simplifications:
@@ -1919,13 +1925,10 @@ uninit_analysis::init_use_preds (predicate &use_preds, basic_block def_bb,
      Each DEP_CHAINS element is a series of edges whose conditions
      are logical conjunctions.  Together, the DEP_CHAINS vector is
      used below to initialize an OR expression of the conjunctions.  */
-  unsigned num_calls = 0;
   unsigned num_chains = 0;
   auto_vec<edge> dep_chains[MAX_NUM_CHAINS];
-  auto_vec<edge, MAX_CHAIN_LEN + 1> cur_chain;
 
-  if (!compute_control_dep_chain (cd_root, use_bb, dep_chains, &num_chains,
-				  cur_chain, &num_calls))
+  if (!compute_control_dep_chain (cd_root, use_bb, dep_chains, &num_chains))
     {
       gcc_assert (num_chains == 0);
       simple_control_dep_chain (dep_chains[0], cd_root, use_bb);
@@ -2023,14 +2026,12 @@ uninit_analysis::init_from_phi_def (gphi *phi)
 
   unsigned num_chains = 0;
   auto_vec<edge> dep_chains[MAX_NUM_CHAINS];
-  auto_vec<edge, MAX_CHAIN_LEN + 1> cur_chain;
   for (unsigned i = 0; i < nedges; i++)
     {
       edge e = def_edges[i];
-      unsigned num_calls = 0;
       unsigned prev_nc = num_chains;
       compute_control_dep_chain (cd_root, e->src, dep_chains,
-				 &num_chains, cur_chain, &num_calls, in_region);
+				 &num_chains, in_region);
 
       /* Update the newly added chains with the phi operand edge.  */
       if (EDGE_COUNT (e->src->succs) > 1)
