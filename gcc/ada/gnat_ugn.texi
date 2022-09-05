@@ -15724,6 +15724,22 @@ Do not look for sources in the current directory where @code{gnatbind} was
 invoked, and do not look for ALI files in the directory containing the
 ALI file named in the @code{gnatbind} command line.
 
+@geindex -k (gnatbind)
+
+@item @code{-k}
+
+Disable checking of elaboration flags. When using @code{-n}
+either explicitly or implicitly, @code{-F} is also implied,
+unless @code{-k} is used. This switch should be used with care
+and you should ensure manually that elaboration routines are not called
+twice unintentionally.
+
+@geindex -K (gnatbind)
+
+@item @code{-K}
+
+Give list of linker options specified for link.
+
 @geindex -l (gnatbind)
 
 @item @code{-l}
@@ -19023,15 +19039,12 @@ It is also possible to use @code{GDB} with these traceback addresses to debug
 the program. For example, we can break at a given code location, as reported
 in the stack traceback:
 
-@quotation
-
 @example
 $ gdb -nw stb
 
 (gdb) break *0x401373
 Breakpoint 1 at 0x401373: file stb.adb, line 5.
 @end example
-@end quotation
 
 It is important to note that the stack traceback addresses do not change when
 debug information is included. This is particularly useful because it makes it
@@ -19052,13 +19065,7 @@ is that you need to copy the Load Address output in the traceback ahead of the
 sequence of addresses. And the default mode of @code{gnatsymbolize} is equivalent
 to that of @code{addr2line} with the above switches, so none of them is needed:
 
-@quotation
-
-
-@table @asis
-
-@item ::
-
+@example
 $ gnatmake stb -g -bargs -E
 $ stb
 
@@ -19068,13 +19075,8 @@ Load address: 0x400000
 Call stack traceback locations:
 0x401373 0x40138b 0x40139c 0x401335 0x4011c4 0x4011f1 0x77e892a4
 
-
-@table @asis
-
-@item $ gnatsymbolize –load stb 0x400000 0x401373 0x40138b 0x40139c 0x401335
-
-0x4011c4 0x4011f1 0x77e892a4
-@end table
+$ gnatsymbolize --load stb 0x400000 0x401373 0x40138b 0x40139c 0x401335
+   0x4011c4 0x4011f1 0x77e892a4
 
 0x00401373 Stb.P1 at stb.adb:5
 0x0040138B Stb.P2 at stb.adb:10
@@ -19083,8 +19085,7 @@ Call stack traceback locations:
 0x004011c4 __tmainCRTStartup at ???
 0x004011f1 mainCRTStartup at ???
 0x77e892a4 ??? at ???
-@end table
-@end quotation
+@end example
 
 @subsubheading Tracebacks From Exception Occurrences
 
@@ -29307,8 +29308,8 @@ to permit their use in free software.
 
 @printindex ge
 
-@anchor{cf}@w{                              }
 @anchor{gnat_ugn/gnat_utility_programs switches-related-to-project-files}@w{                              }
+@anchor{cf}@w{                              }
 
 @c %**end of body
 @bye
