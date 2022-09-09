@@ -3346,11 +3346,14 @@ GOMP_OFFLOAD_init_device (int n)
 
 /* Load GCN object-code module described by struct gcn_image_desc in
    TARGET_DATA and return references to kernel descriptors in TARGET_TABLE.
-   If there are any constructors then run them.  */
+   If there are any constructors then run them.  If not NULL, REV_FN_TABLE will
+   contain the on-device addresses of the functions for reverse offload.  To be
+   freed by the caller.  */
 
 int
 GOMP_OFFLOAD_load_image (int ord, unsigned version, const void *target_data,
-			 struct addr_pair **target_table)
+			 struct addr_pair **target_table,
+			 uint64_t **rev_fn_table)
 {
   if (GOMP_VERSION_DEV (version) != GOMP_VERSION_GCN)
     {
@@ -3521,6 +3524,30 @@ GOMP_OFFLOAD_load_image (int ord, unsigned version, const void *target_data,
     kernel_count--;
   if (module->fini_array_func)
     kernel_count--;
+
+  if (rev_fn_table != NULL && kernel_count == 0)
+    *rev_fn_table = NULL;
+  else if (rev_fn_table != NULL)
+    {
+      hsa_status_t status;
+      hsa_executable_symbol_t var_symbol;
+      status = hsa_fns.hsa_executable_get_symbol_fn (agent->executable, NULL,
+						     ".offload_func_table",
+						     agent->id, 0, &var_symbol);
+      if (status != HSA_STATUS_SUCCESS)
+	hsa_fatal ("Could not find symbol for variable in the code object",
+		   status);
+      uint64_t fn_table_addr;
+      status = hsa_fns.hsa_executable_symbol_get_info_fn
+	(var_symbol, HSA_EXECUTABLE_SYMBOL_INFO_VARIABLE_ADDRESS,
+	 &fn_table_addr);
+      if (status != HSA_STATUS_SUCCESS)
+	hsa_fatal ("Could not extract a variable from its symbol", status);
+      *rev_fn_table = GOMP_PLUGIN_malloc (kernel_count * sizeof (uint64_t));
+      GOMP_OFFLOAD_dev2host (agent->device_id, *rev_fn_table,
+			     (void*) fn_table_addr,
+			     kernel_count * sizeof (uint64_t));
+    }
 
   return kernel_count + var_count + other_count;
 }
