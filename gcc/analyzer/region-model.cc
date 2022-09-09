@@ -19,6 +19,7 @@ along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
 #include "config.h"
+#define INCLUDE_MEMORY
 #include "system.h"
 #include "coretypes.h"
 #include "tree.h"
@@ -74,6 +75,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "ssa-iterators.h"
 #include "calls.h"
 #include "is-a.h"
+#include "gcc-rich-location.h"
 
 #if ENABLE_ANALYZER
 
@@ -1968,6 +1970,110 @@ maybe_get_const_fn_result (const call_details &cd)
   return sval;
 }
 
+/* Update this model for an outcome of a call that returns zero.
+   If UNMERGEABLE, then make the result unmergeable, e.g. to prevent
+   the state-merger code from merging success and failure outcomes.  */
+
+void
+region_model::update_for_zero_return (const call_details &cd,
+				      bool unmergeable)
+{
+  if (!cd.get_lhs_type ())
+    return;
+  const svalue *result
+    = m_mgr->get_or_create_int_cst (cd.get_lhs_type (), 0);
+  if (unmergeable)
+    result = m_mgr->get_or_create_unmergeable (result);
+  set_value (cd.get_lhs_region (), result, cd.get_ctxt ());
+}
+
+/* Update this model for an outcome of a call that returns non-zero.  */
+
+void
+region_model::update_for_nonzero_return (const call_details &cd)
+{
+  if (!cd.get_lhs_type ())
+    return;
+  const svalue *zero
+    = m_mgr->get_or_create_int_cst (cd.get_lhs_type (), 0);
+  const svalue *result
+    = get_store_value (cd.get_lhs_region (), cd.get_ctxt ());
+  add_constraint (result, NE_EXPR, zero, cd.get_ctxt ());
+}
+
+/* Subroutine of region_model::maybe_get_copy_bounds.
+   The Linux kernel commonly uses
+     min_t([unsigned] long, VAR, sizeof(T));
+   to set an upper bound on the size of a copy_to_user.
+   Attempt to simplify such sizes by trying to get the upper bound as a
+   constant.
+   Return the simplified svalue if possible, or NULL otherwise.  */
+
+static const svalue *
+maybe_simplify_upper_bound (const svalue *num_bytes_sval,
+			    region_model_manager *mgr)
+{
+  tree type = num_bytes_sval->get_type ();
+  while (const svalue *raw = num_bytes_sval->maybe_undo_cast ())
+    num_bytes_sval = raw;
+  if (const binop_svalue *binop_sval = num_bytes_sval->dyn_cast_binop_svalue ())
+    if (binop_sval->get_op () == MIN_EXPR)
+      if (binop_sval->get_arg1 ()->get_kind () == SK_CONSTANT)
+	{
+	  return mgr->get_or_create_cast (type, binop_sval->get_arg1 ());
+	  /* TODO: we might want to also capture the constraint
+	     when recording the diagnostic, or note that we're using
+	     the upper bound.  */
+	}
+  return NULL;
+}
+
+/* Attempt to get an upper bound for the size of a copy when simulating a
+   copy function.
+
+   NUM_BYTES_SVAL is the symbolic value for the size of the copy.
+   Use it if it's constant, otherwise try to simplify it.  Failing
+   that, use the size of SRC_REG if constant.
+
+   Return a symbolic value for an upper limit on the number of bytes
+   copied, or NULL if no such value could be determined.  */
+
+const svalue *
+region_model::maybe_get_copy_bounds (const region *src_reg,
+				     const svalue *num_bytes_sval)
+{
+  if (num_bytes_sval->maybe_get_constant ())
+    return num_bytes_sval;
+
+  if (const svalue *simplified
+      = maybe_simplify_upper_bound (num_bytes_sval, m_mgr))
+    num_bytes_sval = simplified;
+
+  if (num_bytes_sval->maybe_get_constant ())
+    return num_bytes_sval;
+
+  /* For now, try just guessing the size as the capacity of the
+     base region of the src.
+     This is a hack; we might get too large a value.  */
+  const region *src_base_reg = src_reg->get_base_region ();
+  num_bytes_sval = get_capacity (src_base_reg);
+
+  if (num_bytes_sval->maybe_get_constant ())
+    return num_bytes_sval;
+
+  /* Non-constant: give up. */
+  return NULL;
+}
+
+/* Get any known_function for FNDECL, or NULL if there is none.  */
+
+const known_function *
+region_model::get_known_function (tree fndecl) const
+{
+  known_function_manager *known_fn_mgr = m_mgr->get_known_function_manager ();
+  return known_fn_mgr->get_by_fndecl (fndecl);
+}
+
 /* Update this model for the CALL stmt, using CTXT to report any
    diagnostics - the first half.
 
@@ -2223,6 +2329,11 @@ region_model::on_call_pre (const gcall *call, region_model_context *ctxt,
 	       || is_named_call_p (callee_fndecl, "operator delete []", call, 1))
 	{
 	  /* Handle in "on_call_post".  */
+	}
+      else if (const known_function *kf = get_known_function (callee_fndecl))
+	{
+	  kf->impl_call_pre (cd);
+	  return false;
 	}
       else if (!fndecl_has_gimple_body_p (callee_fndecl)
 	       && (!(callee_fndecl_flags & (ECF_CONST | ECF_PURE)))
@@ -5673,6 +5784,572 @@ void
 region_model::unset_dynamic_extents (const region *reg)
 {
   m_dynamic_extents.remove (reg);
+}
+
+/* Information of the layout of a RECORD_TYPE, capturing it as a vector
+   of items, where each item is either a field or padding.  */
+
+class record_layout
+{
+public:
+  /* An item within a record; either a field, or padding after a field.  */
+  struct item
+  {
+  public:
+    item (const bit_range &br,
+	  tree field,
+	  bool is_padding)
+    : m_bit_range (br),
+      m_field (field),
+      m_is_padding (is_padding)
+    {
+    }
+
+    bit_offset_t get_start_bit_offset () const
+    {
+      return m_bit_range.get_start_bit_offset ();
+    }
+    bit_offset_t get_next_bit_offset () const
+    {
+      return m_bit_range.get_next_bit_offset ();
+    }
+
+    bool contains_p (bit_offset_t offset) const
+    {
+      return m_bit_range.contains_p (offset);
+    }
+
+    void dump_to_pp (pretty_printer *pp) const
+    {
+      if (m_is_padding)
+	pp_printf (pp, "padding after %qD", m_field);
+      else
+	pp_printf (pp, "%qD", m_field);
+      pp_string (pp, ", ");
+      m_bit_range.dump_to_pp (pp);
+    }
+
+    bit_range m_bit_range;
+    tree m_field;
+    bool m_is_padding;
+  };
+
+  record_layout (tree record_type)
+  : m_record_type (record_type)
+  {
+    gcc_assert (TREE_CODE (record_type) == RECORD_TYPE);
+
+    for (tree iter = TYPE_FIELDS (record_type); iter != NULL_TREE;
+	 iter = DECL_CHAIN (iter))
+      {
+	if (TREE_CODE (iter) == FIELD_DECL)
+	  {
+	    int iter_field_offset = int_bit_position (iter);
+	    bit_size_t size_in_bits;
+	    if (!int_size_in_bits (TREE_TYPE (iter), &size_in_bits))
+	      size_in_bits = 0;
+
+	    maybe_pad_to (iter_field_offset);
+
+	    /* Add field.  */
+	    m_items.safe_push (item (bit_range (iter_field_offset,
+						size_in_bits),
+				     iter, false));
+	  }
+      }
+
+    /* Add any trailing padding.  */
+    bit_size_t size_in_bits;
+    if (int_size_in_bits (record_type, &size_in_bits))
+      maybe_pad_to (size_in_bits);
+  }
+
+  void dump_to_pp (pretty_printer *pp) const
+  {
+    unsigned i;
+    item *it;
+    FOR_EACH_VEC_ELT (m_items, i, it)
+      {
+	it->dump_to_pp (pp);
+	pp_newline (pp);
+      }
+  }
+
+  DEBUG_FUNCTION void dump () const
+  {
+    pretty_printer pp;
+    pp_format_decoder (&pp) = default_tree_printer;
+    pp.buffer->stream = stderr;
+    dump_to_pp (&pp);
+    pp_flush (&pp);
+  }
+
+  const record_layout::item *get_item_at (bit_offset_t offset) const
+  {
+    unsigned i;
+    item *it;
+    FOR_EACH_VEC_ELT (m_items, i, it)
+      if (it->contains_p (offset))
+	return it;
+    return NULL;
+  }
+
+private:
+  /* Subroutine of ctor.  Add padding item to NEXT_OFFSET if necessary.  */
+
+  void maybe_pad_to (bit_offset_t next_offset)
+  {
+    if (m_items.length () > 0)
+      {
+	const item &last_item = m_items[m_items.length () - 1];
+	bit_offset_t offset_after_last_item
+	  = last_item.get_next_bit_offset ();
+	if (next_offset > offset_after_last_item)
+	  {
+	    bit_size_t padding_size
+	      = next_offset - offset_after_last_item;
+	    m_items.safe_push (item (bit_range (offset_after_last_item,
+						padding_size),
+				     last_item.m_field, true));
+	  }
+      }
+  }
+
+  tree m_record_type;
+  auto_vec<item> m_items;
+};
+
+/* A subclass of pending_diagnostic for complaining about uninitialized data
+   being copied across a trust boundary to an untrusted output
+   (e.g. copy_to_user infoleaks in the Linux kernel).  */
+
+class exposure_through_uninit_copy
+  : public pending_diagnostic_subclass<exposure_through_uninit_copy>
+{
+public:
+  exposure_through_uninit_copy (const region *src_region,
+				const region *dest_region,
+				const svalue *copied_sval,
+				region_model_manager *mgr)
+  : m_src_region (src_region),
+    m_dest_region (dest_region),
+    m_copied_sval (copied_sval),
+    m_mgr (mgr)
+  {
+    gcc_assert (m_copied_sval->get_kind () == SK_POISONED
+		|| m_copied_sval->get_kind () == SK_COMPOUND);
+  }
+
+  const char *get_kind () const final override
+  {
+    return "exposure_through_uninit_copy";
+  }
+
+  bool operator== (const exposure_through_uninit_copy &other) const
+  {
+    return (m_src_region == other.m_src_region
+	    && m_dest_region == other.m_dest_region
+	    && m_copied_sval == other.m_copied_sval);
+  }
+
+  int get_controlling_option () const final override
+  {
+    return OPT_Wanalyzer_exposure_through_uninit_copy;
+  }
+
+  bool emit (rich_location *rich_loc) final override
+  {
+    diagnostic_metadata m;
+    /* CWE-200: Exposure of Sensitive Information to an Unauthorized Actor.  */
+    m.add_cwe (200);
+    enum memory_space mem_space = get_src_memory_space ();
+    bool warned;
+    switch (mem_space)
+      {
+      default:
+	warned = warning_meta
+	  (rich_loc, m, get_controlling_option (),
+	   "potential exposure of sensitive information"
+	   " by copying uninitialized data across trust boundary");
+	break;
+      case MEMSPACE_STACK:
+	warned = warning_meta
+	  (rich_loc, m, get_controlling_option (),
+	   "potential exposure of sensitive information"
+	   " by copying uninitialized data from stack across trust boundary");
+	break;
+      case MEMSPACE_HEAP:
+	warned = warning_meta
+	  (rich_loc, m, get_controlling_option (),
+	   "potential exposure of sensitive information"
+	   " by copying uninitialized data from heap across trust boundary");
+	break;
+      }
+    if (warned)
+      {
+	location_t loc = rich_loc->get_loc ();
+	inform_number_of_uninit_bits (loc);
+	complain_about_uninit_ranges (loc);
+
+	if (mem_space == MEMSPACE_STACK)
+	  maybe_emit_fixit_hint ();
+      }
+    return warned;
+  }
+
+  label_text describe_final_event (const evdesc::final_event &) final override
+  {
+    enum memory_space mem_space = get_src_memory_space ();
+    switch (mem_space)
+      {
+      default:
+	return label_text::borrow ("uninitialized data copied here");
+
+      case MEMSPACE_STACK:
+	return label_text::borrow ("uninitialized data copied from stack here");
+
+      case MEMSPACE_HEAP:
+	return label_text::borrow ("uninitialized data copied from heap here");
+      }
+  }
+
+  void mark_interesting_stuff (interesting_t *interest) final override
+  {
+    if (m_src_region)
+      interest->add_region_creation (m_src_region);
+  }
+
+private:
+  enum memory_space get_src_memory_space () const
+  {
+    return m_src_region ? m_src_region->get_memory_space () : MEMSPACE_UNKNOWN;
+  }
+
+  bit_size_t calc_num_uninit_bits () const
+  {
+    switch (m_copied_sval->get_kind ())
+      {
+      default:
+	gcc_unreachable ();
+	break;
+      case SK_POISONED:
+	{
+	  const poisoned_svalue *poisoned_sval
+	    = as_a <const poisoned_svalue *> (m_copied_sval);
+	  gcc_assert (poisoned_sval->get_poison_kind () == POISON_KIND_UNINIT);
+
+	  /* Give up if don't have type information.  */
+	  if (m_copied_sval->get_type () == NULL_TREE)
+	    return 0;
+
+	  bit_size_t size_in_bits;
+	  if (int_size_in_bits (m_copied_sval->get_type (), &size_in_bits))
+	    return size_in_bits;
+
+	  /* Give up if we can't get the size of the type.  */
+	  return 0;
+	}
+	break;
+      case SK_COMPOUND:
+	{
+	  const compound_svalue *compound_sval
+	    = as_a <const compound_svalue *> (m_copied_sval);
+	  bit_size_t result = 0;
+	  /* Find keys for uninit svals.  */
+	  for (auto iter : *compound_sval)
+	    {
+	      const svalue *sval = iter.second;
+	      if (const poisoned_svalue *psval
+		  = sval->dyn_cast_poisoned_svalue ())
+		if (psval->get_poison_kind () == POISON_KIND_UNINIT)
+		  {
+		    const binding_key *key = iter.first;
+		    const concrete_binding *ckey
+		      = key->dyn_cast_concrete_binding ();
+		    gcc_assert (ckey);
+		    result += ckey->get_size_in_bits ();
+		  }
+	    }
+	  return result;
+	}
+      }
+  }
+
+  void inform_number_of_uninit_bits (location_t loc) const
+  {
+    bit_size_t num_uninit_bits = calc_num_uninit_bits ();
+    if (num_uninit_bits <= 0)
+      return;
+    if (num_uninit_bits % BITS_PER_UNIT == 0)
+      {
+	/* Express in bytes.  */
+	byte_size_t num_uninit_bytes = num_uninit_bits / BITS_PER_UNIT;
+	if (num_uninit_bytes == 1)
+	  inform (loc, "1 byte is uninitialized");
+	else
+	  inform (loc,
+		  "%wu bytes are uninitialized", num_uninit_bytes.to_uhwi ());
+      }
+    else
+      {
+	/* Express in bits.  */
+	if (num_uninit_bits == 1)
+	  inform (loc, "1 bit is uninitialized");
+	else
+	  inform (loc,
+		  "%wu bits are uninitialized", num_uninit_bits.to_uhwi ());
+      }
+  }
+
+  void complain_about_uninit_ranges (location_t loc) const
+  {
+    if (const compound_svalue *compound_sval
+	= m_copied_sval->dyn_cast_compound_svalue ())
+      {
+	/* Find keys for uninit svals.  */
+	auto_vec<const concrete_binding *> uninit_keys;
+	for (auto iter : *compound_sval)
+	  {
+	    const svalue *sval = iter.second;
+	    if (const poisoned_svalue *psval
+		= sval->dyn_cast_poisoned_svalue ())
+	      if (psval->get_poison_kind () == POISON_KIND_UNINIT)
+		{
+		  const binding_key *key = iter.first;
+		  const concrete_binding *ckey
+		    = key->dyn_cast_concrete_binding ();
+		  gcc_assert (ckey);
+		  uninit_keys.safe_push (ckey);
+		}
+	  }
+	/* Complain about them in sorted order.  */
+	uninit_keys.qsort (concrete_binding::cmp_ptr_ptr);
+
+	std::unique_ptr<record_layout> layout;
+
+	tree type = m_copied_sval->get_type ();
+	if (type && TREE_CODE (type) == RECORD_TYPE)
+	  {
+	    // (std::make_unique is C++14)
+	    layout = std::unique_ptr<record_layout> (new record_layout (type));
+
+	    if (0)
+	      layout->dump ();
+	  }
+
+	unsigned i;
+	const concrete_binding *ckey;
+	FOR_EACH_VEC_ELT (uninit_keys, i, ckey)
+	  {
+	    bit_offset_t start_bit = ckey->get_start_bit_offset ();
+	    bit_offset_t next_bit = ckey->get_next_bit_offset ();
+	    complain_about_uninit_range (loc, start_bit, next_bit,
+					 layout.get ());
+	  }
+      }
+  }
+
+  void complain_about_uninit_range (location_t loc,
+				    bit_offset_t start_bit,
+				    bit_offset_t next_bit,
+				    const record_layout *layout) const
+  {
+    if (layout)
+      {
+	while (start_bit < next_bit)
+	  {
+	    if (const record_layout::item *item
+		  = layout->get_item_at (start_bit))
+	      {
+		gcc_assert (start_bit >= item->get_start_bit_offset ());
+		gcc_assert (start_bit < item->get_next_bit_offset ());
+		if (item->get_start_bit_offset () == start_bit
+		    && item->get_next_bit_offset () <= next_bit)
+		  complain_about_fully_uninit_item (*item);
+		else
+		  complain_about_partially_uninit_item (*item);
+		start_bit = item->get_next_bit_offset ();
+		continue;
+	      }
+	    else
+	      break;
+	  }
+      }
+
+    if (start_bit >= next_bit)
+      return;
+
+    if (start_bit % 8 == 0 && next_bit % 8 == 0)
+      {
+	/* Express in bytes.  */
+	byte_offset_t start_byte = start_bit / 8;
+	byte_offset_t last_byte = (next_bit / 8) - 1;
+	if (last_byte == start_byte)
+	  inform (loc,
+		  "byte %wu is uninitialized",
+		  start_byte.to_uhwi ());
+	else
+	  inform (loc,
+		  "bytes %wu - %wu are uninitialized",
+		  start_byte.to_uhwi (),
+		  last_byte.to_uhwi ());
+      }
+    else
+      {
+	/* Express in bits.  */
+	bit_offset_t last_bit = next_bit - 1;
+	if (last_bit == start_bit)
+	  inform (loc,
+		  "bit %wu is uninitialized",
+		  start_bit.to_uhwi ());
+	else
+	  inform (loc,
+		  "bits %wu - %wu are uninitialized",
+		  start_bit.to_uhwi (),
+		  last_bit.to_uhwi ());
+      }
+  }
+
+  static void
+  complain_about_fully_uninit_item (const record_layout::item &item)
+  {
+    tree field = item.m_field;
+    bit_size_t num_bits = item.m_bit_range.m_size_in_bits;
+    if (item.m_is_padding)
+      {
+	if (num_bits % 8 == 0)
+	  {
+	    /* Express in bytes.  */
+	    byte_size_t num_bytes = num_bits / BITS_PER_UNIT;
+	    if (num_bytes == 1)
+	      inform (DECL_SOURCE_LOCATION (field),
+		      "padding after field %qD is uninitialized (1 byte)",
+		      field);
+	    else
+	      inform (DECL_SOURCE_LOCATION (field),
+		      "padding after field %qD is uninitialized (%wu bytes)",
+		      field, num_bytes.to_uhwi ());
+	  }
+	else
+	  {
+	    /* Express in bits.  */
+	    if (num_bits == 1)
+	      inform (DECL_SOURCE_LOCATION (field),
+		      "padding after field %qD is uninitialized (1 bit)",
+		      field);
+	    else
+	      inform (DECL_SOURCE_LOCATION (field),
+		      "padding after field %qD is uninitialized (%wu bits)",
+		      field, num_bits.to_uhwi ());
+	  }
+      }
+    else
+      {
+	if (num_bits % 8 == 0)
+	  {
+	    /* Express in bytes.  */
+	    byte_size_t num_bytes = num_bits / BITS_PER_UNIT;
+	    if (num_bytes == 1)
+	      inform (DECL_SOURCE_LOCATION (field),
+		      "field %qD is uninitialized (1 byte)", field);
+	    else
+	      inform (DECL_SOURCE_LOCATION (field),
+		      "field %qD is uninitialized (%wu bytes)",
+		      field, num_bytes.to_uhwi ());
+	  }
+	else
+	  {
+	    /* Express in bits.  */
+	    if (num_bits == 1)
+	      inform (DECL_SOURCE_LOCATION (field),
+		      "field %qD is uninitialized (1 bit)", field);
+	    else
+	      inform (DECL_SOURCE_LOCATION (field),
+		      "field %qD is uninitialized (%wu bits)",
+		      field, num_bits.to_uhwi ());
+	  }
+      }
+  }
+
+  static void
+  complain_about_partially_uninit_item (const record_layout::item &item)
+  {
+    tree field = item.m_field;
+    if (item.m_is_padding)
+      inform (DECL_SOURCE_LOCATION (field),
+	      "padding after field %qD is partially uninitialized",
+	      field);
+    else
+      inform (DECL_SOURCE_LOCATION (field),
+	      "field %qD is partially uninitialized",
+	      field);
+    /* TODO: ideally we'd describe what parts are uninitialized.  */
+  }
+
+  void maybe_emit_fixit_hint () const
+  {
+    if (tree decl = m_src_region->maybe_get_decl ())
+      {
+	gcc_rich_location hint_richloc (DECL_SOURCE_LOCATION (decl));
+	hint_richloc.add_fixit_insert_after (" = {0}");
+	inform (&hint_richloc,
+		"suggest forcing zero-initialization by"
+		" providing a %<{0}%> initializer");
+      }
+  }
+
+private:
+  const region *m_src_region;
+  const region *m_dest_region;
+  const svalue *m_copied_sval;
+  region_model_manager *m_mgr;
+};
+
+/* Return true if any part of SVAL is uninitialized.  */
+
+static bool
+contains_uninit_p (const svalue *sval)
+{
+  struct uninit_finder : public visitor
+  {
+  public:
+    uninit_finder () : m_found_uninit (false) {}
+    void visit_poisoned_svalue (const poisoned_svalue *sval)
+    {
+      if (sval->get_poison_kind () == POISON_KIND_UNINIT)
+	m_found_uninit = true;
+    }
+    bool m_found_uninit;
+  };
+
+  uninit_finder v;
+  sval->accept (&v);
+
+  return v.m_found_uninit;
+}
+
+/* Function for use by plugins when simulating writing data through a
+   pointer to an "untrusted" region DST_REG (and thus crossing a security
+   boundary), such as copying data to user space in an OS kernel.
+
+   Check that COPIED_SVAL is fully initialized.  If not, complain about
+   an infoleak to CTXT.
+
+   SRC_REG can be NULL; if non-NULL it is used as a hint in the diagnostic
+   as to where COPIED_SVAL came from.  */
+
+void
+region_model::maybe_complain_about_infoleak (const region *dst_reg,
+					     const svalue *copied_sval,
+					     const region *src_reg,
+					     region_model_context *ctxt)
+{
+  /* Check for exposure.  */
+  if (contains_uninit_p (copied_sval))
+    ctxt->warn (new exposure_through_uninit_copy (src_reg,
+						  dst_reg,
+						  copied_sval,
+						  m_mgr));
 }
 
 /* class noop_region_model_context : public region_model_context.  */
