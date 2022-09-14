@@ -270,7 +270,7 @@ tree_compare (tree_code code, tree op1, tree op2)
 // Set the NAN property.  Adjust the range if appopriate.
 
 void
-frange::set_nan (fp_prop::kind k)
+frange::update_nan (fp_prop::kind k)
 {
   if (k == fp_prop::YES)
     {
@@ -280,7 +280,7 @@ frange::set_nan (fp_prop::kind k)
 	  return;
 	}
       gcc_checking_assert (!undefined_p ());
-      *this = frange_nan (m_type);
+      set_nan (m_type);
       return;
     }
 
@@ -357,19 +357,25 @@ frange::set_signbit (fp_prop::kind k)
 void
 frange::set (tree min, tree max, value_range_kind kind)
 {
-  gcc_checking_assert (TREE_CODE (min) == REAL_CST);
-  gcc_checking_assert (TREE_CODE (max) == REAL_CST);
-
   if (kind == VR_UNDEFINED)
     {
       set_undefined ();
       return;
     }
-
   // Treat VR_ANTI_RANGE and VR_VARYING as varying.
   if (kind != VR_RANGE)
     {
       set_varying (TREE_TYPE (min));
+      return;
+    }
+
+  // Handle NANs.
+  if (real_isnan (TREE_REAL_CST_PTR (min)) || real_isnan (TREE_REAL_CST_PTR (max)))
+    {
+      gcc_checking_assert (real_identical (TREE_REAL_CST_PTR (min),
+					   TREE_REAL_CST_PTR (max)));
+      tree type = TREE_TYPE (min);
+      set_nan (type);
       return;
     }
 
@@ -379,29 +385,19 @@ frange::set (tree min, tree max, value_range_kind kind)
   m_min = *TREE_REAL_CST_PTR (min);
   m_max = *TREE_REAL_CST_PTR (max);
 
-  bool is_nan = (real_isnan (TREE_REAL_CST_PTR (min))
-		 || real_isnan (TREE_REAL_CST_PTR (max)));
-
-  // Ranges with a NAN and a non-NAN endpoint are nonsensical.
-  gcc_checking_assert (!is_nan || operand_equal_p (min, max));
-
-  // Set NAN property if we're absolutely sure.
-  if (is_nan && operand_equal_p (min, max))
-    m_props.nan_set_yes ();
-  else if (!HONOR_NANS (m_type))
-    m_props.nan_set_no ();
-
   // Set SIGNBIT property for positive and negative ranges.
   if (real_less (&m_max, &dconst0))
     m_props.signbit_set_yes ();
   else if (real_less (&dconst0, &m_min))
     m_props.signbit_set_no ();
 
+  if (!HONOR_NANS (m_type))
+    m_props.nan_set_no ();
+
   // Check for swapped ranges.
-  gcc_checking_assert (is_nan || tree_compare (LE_EXPR, min, max));
+  gcc_checking_assert (tree_compare (LE_EXPR, min, max));
 
   normalize_kind ();
-
   if (flag_checking)
     verify_range ();
 }
@@ -479,7 +475,7 @@ frange::union_ (const vrange &v)
       *this = r;
       m_props = save;
       m_props.union_ (r.m_props);
-      set_nan (fp_prop::VARYING);
+      update_nan (fp_prop::VARYING);
       if (flag_checking)
 	verify_range ();
       return true;
@@ -487,7 +483,7 @@ frange::union_ (const vrange &v)
   if (r.known_nan ())
     {
       m_props.union_ (r.m_props);
-      set_nan (fp_prop::VARYING);
+      update_nan (fp_prop::VARYING);
       if (flag_checking)
 	verify_range ();
       return true;
@@ -536,7 +532,7 @@ frange::intersect (const vrange &v)
       if (m_props == r.m_props)
 	return false;
 
-      *this = frange_nan (m_type);
+      set_nan (m_type);
       return true;
     }
   // ?? Perhaps the intersection of a NAN and anything is a NAN ??.
@@ -612,17 +608,17 @@ frange::operator== (const frange &src) const
 bool
 frange::contains_p (tree cst) const
 {
+  gcc_checking_assert (m_kind != VR_ANTI_RANGE);
+  const REAL_VALUE_TYPE *rv = TREE_REAL_CST_PTR (cst);
+
   if (undefined_p ())
     return false;
 
   if (varying_p ())
     return true;
 
-  gcc_checking_assert (m_kind == VR_RANGE);
 
-  const REAL_VALUE_TYPE *rv = TREE_REAL_CST_PTR (cst);
-  if (real_compare (GE_EXPR, rv, &m_min)
-      && real_compare (LE_EXPR, rv, &m_max))
+  if (real_compare (GE_EXPR, rv, &m_min) && real_compare (LE_EXPR, rv, &m_max))
     {
       if (HONOR_SIGNED_ZEROS (m_type) && real_iszero (rv))
 	{
@@ -3639,23 +3635,23 @@ range_tests_nan ()
       r1 = frange_float ("10", "12");
       r0 = r1;
       ASSERT_EQ (r0, r1);
-      r0.set_nan (fp_prop::NO);
+      r0.clear_nan ();
       ASSERT_NE (r0, r1);
-      r0.set_nan (fp_prop::YES);
+      r0.clear_nan ();
       ASSERT_NE (r0, r1);
     }
 
   // NAN ranges are not equal to each other.
-  r0 = frange_nan (float_type_node);
+  r0.set_nan (float_type_node);
   r1 = r0;
   ASSERT_FALSE (r0 == r1);
   ASSERT_FALSE (r0 == r0);
   ASSERT_TRUE (r0 != r0);
 
-  // [5,6] U NAN.
+  // [5,6] U NAN = [5,6] NAN.
   r0 = frange_float ("5", "6");
-  r0.set_nan (fp_prop::NO);
-  r1 = frange_nan (float_type_node);
+  r0.clear_nan ();
+  r1.set_nan (float_type_node);
   r0.union_ (r1);
   real_from_string (&q, "5");
   real_from_string (&r, "6");
@@ -3664,34 +3660,34 @@ range_tests_nan ()
   ASSERT_TRUE (r0.maybe_nan ());
 
   // NAN U NAN = NAN
-  r0 = frange_nan (float_type_node);
-  r1 = frange_nan (float_type_node);
+  r0.set_nan (float_type_node);
+  r1.set_nan (float_type_node);
   r0.union_ (r1);
   ASSERT_TRUE (real_isnan (&r0.lower_bound ()));
   ASSERT_TRUE (real_isnan (&r1.upper_bound ()));
   ASSERT_TRUE (r0.known_nan ());
 
   // [INF, INF] ^ NAN = VARYING
-  r0 = frange_nan (float_type_node);
+  r0.set_nan (float_type_node);
   r1 = frange_float ("+Inf", "+Inf");
   r0.intersect (r1);
   ASSERT_TRUE (r0.varying_p ());
 
   // NAN ^ NAN = NAN
-  r0 = frange_nan (float_type_node);
-  r1 = frange_nan (float_type_node);
+  r0.set_nan (float_type_node);
+  r1.set_nan (float_type_node);
   r0.intersect (r1);
   ASSERT_TRUE (r0.known_nan ());
 
   // VARYING ^ NAN = NAN.
-  r0 = frange_nan (float_type_node);
+  r0.set_nan (float_type_node);
   r1.set_varying (float_type_node);
   r0.intersect (r1);
   ASSERT_TRUE (r0.known_nan ());
 
   // Setting the NAN bit to yes, forces to range to [NAN, NAN].
   r0.set_varying (float_type_node);
-  r0.set_nan (fp_prop::YES);
+  r0.update_nan (fp_prop::YES);
   ASSERT_TRUE (r0.known_nan ());
   ASSERT_TRUE (real_isnan (&r0.lower_bound ()));
   ASSERT_TRUE (real_isnan (&r0.upper_bound ()));
@@ -3741,7 +3737,7 @@ range_tests_signed_zeros ()
   ASSERT_TRUE (r0.zero_p () && !r0.known_signbit (signbit));
 
   // NAN U [5,6] should be [5,6] with no sign info.
-  r0 = frange_nan (float_type_node);
+  r0.set_nan (float_type_node);
   r1 = frange_float ("5", "6");
   r0.union_ (r1);
   real_from_string (&q, "5");
@@ -3767,7 +3763,7 @@ range_tests_signbit ()
   // the signbit property set.
   r0 = frange_float ("-5", "10");
   r0.set_signbit (fp_prop::YES);
-  r0.set_nan (fp_prop::NO);
+  r0.clear_nan ();
   ASSERT_TRUE (r0.known_signbit (signbit) && signbit);
   r1 = frange_float ("-5", "0");
   ASSERT_TRUE (real_identical (&r0.lower_bound (), &r1.lower_bound ()));
@@ -3775,20 +3771,20 @@ range_tests_signbit ()
 
   // Negative numbers should have the SIGNBIT set.
   r0 = frange_float ("-5", "-1");
-  r0.set_nan (fp_prop::NO);
+  r0.clear_nan ();
   ASSERT_TRUE (r0.known_signbit (signbit) && signbit);
   // Positive numbers should have the SIGNBIT clear.
   r0 = frange_float ("1", "10");
-  r0.set_nan (fp_prop::NO);
+  r0.clear_nan ();
   ASSERT_TRUE (r0.known_signbit (signbit) && !signbit);
   // Numbers containing zero should have an unknown SIGNBIT.
   r0 = frange_float ("0", "10");
-  r0.set_nan (fp_prop::NO);
+  r0.clear_nan ();
   ASSERT_TRUE (!r0.known_signbit (signbit));
   // Numbers spanning both positive and negative should have an
   // unknown SIGNBIT.
   r0 = frange_float ("-10", "10");
-  r0.set_nan (fp_prop::NO);
+  r0.clear_nan ();
   ASSERT_TRUE (!r0.known_signbit (signbit));
   r0.set_varying (float_type_node);
   ASSERT_TRUE (!r0.known_signbit (signbit));
@@ -3796,12 +3792,12 @@ range_tests_signbit ()
   // Ignore signbit changes when the sign bit is obviously known from
   // the range.
   r0 = frange_float ("5", "10");
-  r0.set_nan (fp_prop::NO);
+  r0.clear_nan ();
   r0.set_signbit (fp_prop::VARYING);
   ASSERT_TRUE (r0.known_signbit (signbit) && !signbit);
   r0 = frange_float ("-5", "-1");
   r0.set_signbit (fp_prop::NO);
-  r0.set_nan (fp_prop::NO);
+  r0.clear_nan ();
   ASSERT_TRUE (r0.undefined_p ());
 }
 
@@ -3822,7 +3818,7 @@ range_tests_floats ()
   if (r0.maybe_nan ())
     ASSERT_TRUE (r0.varying_p ());
   // ...unless it has some special property...
-  r0.set_nan (fp_prop::NO);
+  r0.clear_nan ();
   ASSERT_FALSE (r0.varying_p ());
 
   // The endpoints of a VARYING are +-INF.
