@@ -265,6 +265,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       typedef _Tp value_type;
       template<typename _Up> allocator(const allocator<_Up>&) { }
     };
+  /// @endcond
 
   /// @} group allocator
 
@@ -277,6 +278,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   // Undefine.
 #undef __allocator_base
+
+  /// @cond undocumented
 
   // To implement Option 3 of DR 431.
   template<typename _Alloc, bool = __is_empty(_Alloc)>
@@ -293,23 +296,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	if (__one != __two)
 	  swap(__one, __two);
       }
-    };
-
-  // Optimize for stateless allocators.
-  template<typename _Alloc, bool = __is_empty(_Alloc)>
-    struct __alloc_neq
-    {
-      static bool
-      _S_do_it(const _Alloc&, const _Alloc&)
-      { return false; }
-    };
-
-  template<typename _Alloc>
-    struct __alloc_neq<_Alloc, false>
-    {
-      static bool
-      _S_do_it(const _Alloc& __one, const _Alloc& __two)
-      { return __one != __two; }
     };
 
 #if __cplusplus >= 201103L
