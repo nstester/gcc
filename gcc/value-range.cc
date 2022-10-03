@@ -1233,10 +1233,7 @@ irange::legacy_equal_p (const irange &other) const
   if (m_kind == VR_UNDEFINED)
     return true;
   if (m_kind == VR_VARYING)
-    {
-      return (range_compatible_p (type (), other.type ())
-	      && vrp_operand_equal_p (m_nonzero_mask, other.m_nonzero_mask));
-    }
+    return range_compatible_p (type (), other.type ());
   return (vrp_operand_equal_p (tree_lower_bound (0),
 			       other.tree_lower_bound (0))
 	  && vrp_operand_equal_p (tree_upper_bound (0),
@@ -1262,6 +1259,9 @@ irange::operator== (const irange &other) const
 
   if (m_num_ranges != other.m_num_ranges)
     return false;
+
+  if (m_num_ranges == 0)
+    return true;
 
   for (unsigned i = 0; i < m_num_ranges; ++i)
     {
@@ -2934,6 +2934,14 @@ irange::set_nonzero_bits (const wide_int_ref &bits)
   // range immediately.
   if (wi::popcount (bits) == 1)
     {
+      // Make sure we don't pessimize the range.
+      tree tbits = wide_int_to_tree (type (), bits);
+      if (!contains_p (tbits))
+	{
+	  set_nonzero_bits (tbits);
+	  return;
+	}
+
       bool has_zero = contains_p (build_zero_cst (type ()));
       set (type (), bits, bits);
       if (has_zero)
@@ -3628,6 +3636,11 @@ range_tests_nonzero_bits ()
   r1.set_nonzero_bits (0xff);
   r0.union_ (r1);
   ASSERT_TRUE (r0.varying_p ());
+
+  // Test that setting a nonzero bit of 1 does not pessimize the range.
+  r0.set_zero (integer_type_node);
+  r0.set_nonzero_bits (1);
+  ASSERT_TRUE (r0.zero_p ());
 }
 
 // Build an frange from string endpoints.
