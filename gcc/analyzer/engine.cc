@@ -25,9 +25,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree.h"
 #include "fold-const.h"
 #include "gcc-rich-location.h"
-#include "alloc-pool.h"
-#include "fibonacci_heap.h"
-#include "shortest-paths.h"
 #include "diagnostic-core.h"
 #include "diagnostic-event-id.h"
 #include "diagnostic-path.h"
@@ -35,10 +32,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "pretty-print.h"
 #include "sbitmap.h"
 #include "bitmap.h"
-#include "tristate.h"
 #include "ordered-hash-map.h"
-#include "selftest.h"
-#include "json.h"
 #include "analyzer/analyzer.h"
 #include "analyzer/analyzer-logging.h"
 #include "analyzer/call-string.h"
@@ -172,6 +166,8 @@ void
 impl_region_model_context::on_unknown_change (const svalue *sval,
 					      bool is_mutable)
 {
+  if (!sval->can_have_associated_state_p ())
+    return;
   for (sm_state_map *smap : m_new_state->m_checker_states)
     smap->on_unknown_change (sval, is_mutable, m_ext_state);
 }

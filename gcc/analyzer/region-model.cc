@@ -39,18 +39,14 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-pretty-print.h"
 #include "diagnostic-color.h"
 #include "diagnostic-metadata.h"
-#include "tristate.h"
 #include "bitmap.h"
 #include "selftest.h"
-#include "function.h"
-#include "json.h"
 #include "analyzer/analyzer.h"
 #include "analyzer/analyzer-logging.h"
 #include "ordered-hash-map.h"
 #include "options.h"
 #include "cgraph.h"
 #include "cfg.h"
-#include "digraph.h"
 #include "analyzer/supergraph.h"
 #include "sbitmap.h"
 #include "analyzer/call-string.h"
@@ -1255,6 +1251,12 @@ region_model::on_stmt_pre (const gimple *stmt,
 					  1))
 	  {
 	    /* This is handled elsewhere.  */
+	  }
+	else if (is_special_named_call_p (call, "__analyzer_get_unknown_ptr",
+					  0))
+	  {
+	    call_details cd (call, this, ctxt);
+	    impl_call_analyzer_get_unknown_ptr (cd);
 	  }
 	else
 	  *out_unknown_side_effects = on_call_pre (call, ctxt,

@@ -26,6 +26,7 @@ along with GCC; see the file COPYING3.  If not see
       (Zhongxing Xu, Ted Kremenek, and Jian Zhang)
      http://lcs.ios.ac.cn/~xuzb/canalyze/memmodel.pdf  */
 
+#include "selftest.h"
 #include "analyzer/svalue.h"
 #include "analyzer/region.h"
 #include "analyzer/known-function-manager.h"
@@ -344,6 +345,7 @@ class region_model
   void impl_call_analyzer_dump_escaped (const gcall *call);
   void impl_call_analyzer_eval (const gcall *call,
 				region_model_context *ctxt);
+  void impl_call_analyzer_get_unknown_ptr (const call_details &cd);
   void impl_call_builtin_expect (const call_details &cd);
   void impl_call_calloc (const call_details &cd);
   bool impl_call_error (const call_details &cd, unsigned min_args,

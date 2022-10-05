@@ -24,7 +24,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-dfa.h"
 #include "diagnostic.h"
 #include "tree-diagnostic.h"
-#include "selftest.h"
 #include "analyzer/analyzer.h"
 #include "analyzer/region-model.h"
 #include "analyzer/call-summary.h"
@@ -298,23 +297,33 @@ call_summary_replay::convert_svalue_from_summary_1 (const svalue *summary_sval)
       {
 	const unaryop_svalue *unaryop_summary_sval
 	  = as_a <const unaryop_svalue *> (summary_sval);
+	const svalue *summary_arg = unaryop_summary_sval->get_arg ();
+	const svalue *caller_arg = convert_svalue_from_summary (summary_arg);
+	if (!caller_arg)
+	  return NULL;
 	region_model_manager *mgr = get_manager ();
-	return mgr->get_or_create_unaryop
-	  (summary_sval->get_type (),
-	   unaryop_summary_sval->get_op (),
-	   convert_svalue_from_summary (unaryop_summary_sval->get_arg ()));
+	return mgr->get_or_create_unaryop (summary_sval->get_type (),
+					   unaryop_summary_sval->get_op (),
+					   caller_arg);
       }
       break;
     case SK_BINOP:
       {
 	const binop_svalue *binop_summary_sval
 	  = as_a <const binop_svalue *> (summary_sval);
+	const svalue *summary_arg0 = binop_summary_sval->get_arg0 ();
+	const svalue *caller_arg0 = convert_svalue_from_summary (summary_arg0);
+	if (!caller_arg0)
+	  return NULL;
+	const svalue *summary_arg1 = binop_summary_sval->get_arg1 ();
+	const svalue *caller_arg1 = convert_svalue_from_summary (summary_arg1);
+	if (!caller_arg1)
+	  return NULL;
 	region_model_manager *mgr = get_manager ();
-	return mgr->get_or_create_binop
-	  (summary_sval->get_type (),
-	   binop_summary_sval->get_op (),
-	   convert_svalue_from_summary (binop_summary_sval->get_arg0 ()),
-	   convert_svalue_from_summary (binop_summary_sval->get_arg1 ()));
+	return mgr->get_or_create_binop (summary_sval->get_type (),
+					 binop_summary_sval->get_op (),
+					 caller_arg0,
+					 caller_arg1);
       }
       break;
     case SK_SUB:
