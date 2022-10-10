@@ -315,7 +315,7 @@ class foperator_identity : public range_operator_float
 {
   using range_operator_float::fold_range;
   using range_operator_float::op1_range;
-
+public:
   bool fold_range (frange &r, tree type ATTRIBUTE_UNUSED,
 		   const frange &op1, const frange &op2 ATTRIBUTE_UNUSED,
 		   relation_kind) const final override
@@ -338,7 +338,7 @@ class foperator_equal : public range_operator_float
   using range_operator_float::fold_range;
   using range_operator_float::op1_range;
   using range_operator_float::op2_range;
-
+public:
   bool fold_range (irange &r, tree type,
 		   const frange &op1, const frange &op2,
 		   relation_kind rel) const final override;
@@ -444,7 +444,7 @@ class foperator_not_equal : public range_operator_float
 {
   using range_operator_float::fold_range;
   using range_operator_float::op1_range;
-
+public:
   bool fold_range (irange &r, tree type,
 		   const frange &op1, const frange &op2,
 		   relation_kind rel) const final override;
@@ -497,14 +497,17 @@ bool
 foperator_not_equal::op1_range (frange &r, tree type,
 				const irange &lhs,
 				const frange &op2,
-				relation_kind) const
+				relation_kind rel) const
 {
   switch (get_bool_state (r, lhs, type))
     {
     case BRS_TRUE:
+      // The TRUE side of op1 != op1 implies op1 is NAN.
+      if (rel == VREL_EQ)
+	r.set_nan (type);
       // If the result is true, the only time we know anything is if
       // OP2 is a constant.
-      if (op2.singleton_p ())
+      else if (op2.singleton_p ())
 	{
 	  // This is correct even if op1 is NAN, because the following
 	  // range would be ~[tmp, tmp] with the NAN property set to
@@ -542,7 +545,7 @@ class foperator_lt : public range_operator_float
   using range_operator_float::fold_range;
   using range_operator_float::op1_range;
   using range_operator_float::op2_range;
-
+public:
   bool fold_range (irange &r, tree type,
 		   const frange &op1, const frange &op2,
 		   relation_kind rel) const final override;
@@ -657,7 +660,7 @@ class foperator_le : public range_operator_float
   using range_operator_float::fold_range;
   using range_operator_float::op1_range;
   using range_operator_float::op2_range;
-
+public:
   bool fold_range (irange &r, tree type,
 		   const frange &op1, const frange &op2,
 		   relation_kind rel) const final override;
@@ -764,7 +767,7 @@ class foperator_gt : public range_operator_float
   using range_operator_float::fold_range;
   using range_operator_float::op1_range;
   using range_operator_float::op2_range;
-
+public:
   bool fold_range (irange &r, tree type,
 		   const frange &op1, const frange &op2,
 		   relation_kind rel) const final override;
@@ -879,7 +882,7 @@ class foperator_ge : public range_operator_float
   using range_operator_float::fold_range;
   using range_operator_float::op1_range;
   using range_operator_float::op2_range;
-
+public:
   bool fold_range (irange &r, tree type,
 		   const frange &op1, const frange &op2,
 		   relation_kind rel) const final override;
@@ -990,7 +993,6 @@ class foperator_unordered : public range_operator_float
   using range_operator_float::fold_range;
   using range_operator_float::op1_range;
   using range_operator_float::op2_range;
-
 public:
   bool fold_range (irange &r, tree type,
 		   const frange &op1, const frange &op2,
@@ -1026,23 +1028,27 @@ bool
 foperator_unordered::op1_range (frange &r, tree type,
 				const irange &lhs,
 				const frange &op2,
-				relation_kind) const
+				relation_kind rel) const
 {
   switch (get_bool_state (r, lhs, type))
     {
     case BRS_TRUE:
+      if (rel == VREL_EQ)
+	r.set_nan (type);
       // Since at least one operand must be NAN, if one of them is
       // not, the other must be.
-      if (!op2.maybe_isnan ())
+      else if (!op2.maybe_isnan ())
 	r.set_nan (type);
       else
 	r.set_varying (type);
       break;
 
     case BRS_FALSE:
+      if (rel == VREL_EQ)
+	r.clear_nan ();
       // A false UNORDERED means both operands are !NAN, so it's
       // impossible for op2 to be a NAN.
-      if (op2.known_isnan ())
+      else if (op2.known_isnan ())
 	r.set_undefined ();
       else
 	{
@@ -1064,7 +1070,6 @@ class foperator_ordered : public range_operator_float
   using range_operator_float::fold_range;
   using range_operator_float::op1_range;
   using range_operator_float::op2_range;
-
 public:
   bool fold_range (irange &r, tree type,
 		   const frange &op1, const frange &op2,
