@@ -23,36 +23,23 @@
 
 namespace riscv_vector {
 
-/* This is for segment instructions.  */
-const unsigned int MAX_TUPLE_SIZE = 8;
-
 /* Enumerates the RVV types, together called
    "vector types" for brevity.  */
 enum vector_type_index
 {
-#define DEF_RVV_TYPE(NAME, ABI_NAME, NCHARS, ARGS...)    \
-  VECTOR_TYPE_##NAME,
+#define DEF_RVV_TYPE(NAME, ABI_NAME, NCHARS, ARGS...) VECTOR_TYPE_##NAME,
 #include "riscv-vector-builtins.def"
   NUM_VECTOR_TYPES
 };
 
-/* RAII class for enabling enough RVV features to define the built-in
-   types and implement the riscv_vector.h pragma.
-
-   Note: According to 'TYPE_MODE' macro implementation, we need set
-   have_regs_of_mode[mode] to be true if we want to get the exact mode
-   from 'TYPE_MODE'. However, have_regs_of_mode has not been set yet in
-   targetm.init_builtins (). We need rvv_switcher to set have_regs_of_mode
-   before targetm.init_builtins () and recover back have_regs_of_mode
-   after targetm.init_builtins ().  */
-class rvv_switcher
+/* Builtin types that are used to register RVV intrinsics.  */
+struct GTY (()) rvv_builtin_types_t
 {
-public:
-  rvv_switcher ();
-  ~rvv_switcher ();
-
-private:
-  bool m_old_have_regs_of_mode[MAX_MACHINE_MODE];
+  tree vector;
+  tree scalar;
+  tree vector_ptr;
+  tree scalar_ptr;
+  tree scalar_const_ptr;
 };
 
 } // end namespace riscv_vector
