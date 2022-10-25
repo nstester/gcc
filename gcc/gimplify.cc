@@ -3568,7 +3568,7 @@ gimplify_call_expr (tree *expr_p, gimple_seq *pre_p, bool want_value)
 	      return GS_OK;
 	    }
 	  /* If not optimizing, ignore the assumptions.  */
-	  if (!optimize)
+	  if (!optimize || seen_error ())
 	    {
 	      *expr_p = NULL_TREE;
 	      return GS_ALL_DONE;
@@ -3584,7 +3584,7 @@ gimplify_call_expr (tree *expr_p, gimple_seq *pre_p, bool want_value)
 	     a separate function easily.  */
 	  tree guard = create_tmp_var (boolean_type_node);
 	  *expr_p = build2 (MODIFY_EXPR, void_type_node, guard,
-			    CALL_EXPR_ARG (*expr_p, 0));
+			    gimple_boolify (CALL_EXPR_ARG (*expr_p, 0)));
 	  *expr_p = build3 (BIND_EXPR, void_type_node, NULL, *expr_p, NULL);
 	  push_gimplify_context ();
 	  gimple_seq body = NULL;
@@ -4270,7 +4270,7 @@ gimple_boolify (tree expr)
     default:
       if (COMPARISON_CLASS_P (expr))
 	{
-	  /* There expressions always prduce boolean results.  */
+	  /* These expressions always produce boolean results.  */
 	  if (TREE_CODE (type) != BOOLEAN_TYPE)
 	    TREE_TYPE (expr) = boolean_type_node;
 	  return expr;
