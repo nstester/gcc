@@ -558,6 +558,12 @@ get_intel_cpu (struct __processor_model *cpu_model,
       cpu_model->__cpu_type = INTEL_COREI7;
       cpu_model->__cpu_subtype = INTEL_COREI7_SAPPHIRERAPIDS;
       break;
+    case 0xaf:
+      /* Sierra Forest.  */
+      cpu = "sierraforest";
+      CHECK___builtin_cpu_is ("sierraforest");
+      cpu_model->__cpu_type = INTEL_SIERRAFOREST;
+      break;
     case 0x17:
     case 0x1d:
       /* Penryn.  */
@@ -831,6 +837,8 @@ get_available_features (struct __processor_model *cpu_model,
       __cpuid_count (7, 1, eax, ebx, ecx, edx);
       if (eax & bit_HRESET)
 	set_feature (FEATURE_HRESET);
+      if (eax & bit_CMPCCXADD)
+	set_feature(FEATURE_CMPCCXADD);
       if (avx_usable)
 	{
 	  if (eax & bit_AVXVNNI)

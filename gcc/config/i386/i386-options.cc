@@ -136,6 +136,7 @@ along with GCC; see the file COPYING3.  If not see
 #define m_GOLDMONT (HOST_WIDE_INT_1U<<PROCESSOR_GOLDMONT)
 #define m_GOLDMONT_PLUS (HOST_WIDE_INT_1U<<PROCESSOR_GOLDMONT_PLUS)
 #define m_TREMONT (HOST_WIDE_INT_1U<<PROCESSOR_TREMONT)
+#define m_SIERRAFOREST (HOST_WIDE_INT_1U<<PROCESSOR_SIERRAFOREST)
 #define m_INTEL (HOST_WIDE_INT_1U<<PROCESSOR_INTEL)
 
 #define m_LUJIAZUI (HOST_WIDE_INT_1U<<PROCESSOR_LUJIAZUI)
@@ -230,7 +231,8 @@ static struct ix86_target_opts isa2_opts[] =
   { "-mavx512fp16",	OPTION_MASK_ISA2_AVX512FP16 },
   { "-mavxifma",	OPTION_MASK_ISA2_AVXIFMA },
   { "-mavxvnniint8",	OPTION_MASK_ISA2_AVXVNNIINT8 },
-  { "-mavxneconvert",   OPTION_MASK_ISA2_AVXNECONVERT }
+  { "-mavxneconvert",   OPTION_MASK_ISA2_AVXNECONVERT },
+  { "-mcmpccxadd",      OPTION_MASK_ISA2_CMPCCXADD }
 };
 static struct ix86_target_opts isa_opts[] =
 {
@@ -747,6 +749,7 @@ static const struct processor_costs *processor_cost_table[] =
   &slm_cost,
   &slm_cost,
   &tremont_cost,
+  &alderlake_cost,
   &slm_cost,
   &slm_cost,
   &skylake_cost,
@@ -1080,6 +1083,7 @@ ix86_valid_target_attribute_inner_p (tree fndecl, tree args, char *p_strings[],
     IX86_ATTR_ISA ("avxifma", OPT_mavxifma),
     IX86_ATTR_ISA ("avxvnniint8", OPT_mavxvnniint8),
     IX86_ATTR_ISA ("avxneconvert", OPT_mavxneconvert),
+    IX86_ATTR_ISA ("cmpccxadd",   OPT_mcmpccxadd),
 
     /* enum options */
     IX86_ATTR_ENUM ("fpmath=",	OPT_mfpmath_),

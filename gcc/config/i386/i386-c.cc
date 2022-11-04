@@ -202,6 +202,10 @@ ix86_target_macros_internal (HOST_WIDE_INT isa_flag,
       def_or_undef (parse_in, "__tremont");
       def_or_undef (parse_in, "__tremont__");
       break;
+    case PROCESSOR_SIERRAFOREST:
+      def_or_undef (parse_in, "__sierraforest");
+      def_or_undef (parse_in, "__sierraforest__");
+      break;
     case PROCESSOR_KNL:
       def_or_undef (parse_in, "__knl");
       def_or_undef (parse_in, "__knl__");
@@ -383,6 +387,9 @@ ix86_target_macros_internal (HOST_WIDE_INT isa_flag,
       break;
     case PROCESSOR_TREMONT:
       def_or_undef (parse_in, "__tune_tremont__");
+      break;
+    case PROCESSOR_SIERRAFOREST:
+      def_or_undef (parse_in, "__tune_sierraforest__");
       break;
     case PROCESSOR_KNL:
       def_or_undef (parse_in, "__tune_knl__");
@@ -646,6 +653,8 @@ ix86_target_macros_internal (HOST_WIDE_INT isa_flag,
     def_or_undef (parse_in, "__AVXVNNIINT8__");
   if (isa_flag2 & OPTION_MASK_ISA2_AVXNECONVERT)
     def_or_undef (parse_in, "__AVXNECONVERT__");
+  if (isa_flag2 & OPTION_MASK_ISA2_CMPCCXADD)
+    def_or_undef (parse_in, "__CMPCCXADD__");
   if (TARGET_IAMCU)
     {
       def_or_undef (parse_in, "__iamcu");
