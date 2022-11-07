@@ -113,6 +113,7 @@ along with GCC; see the file COPYING3.  If not see
 #define OPTION_MASK_ISA2_CMPCCXADD_SET OPTION_MASK_ISA2_CMPCCXADD
 #define OPTION_MASK_ISA2_AMX_FP16_SET OPTION_MASK_ISA2_AMX_FP16
 #define OPTION_MASK_ISA2_PREFETCHI_SET OPTION_MASK_ISA2_PREFETCHI
+#define OPTION_MASK_ISA2_RAOINT_SET OPTION_MASK_ISA2_RAOINT
 
 /* SSE4 includes both SSE4.1 and SSE4.2. -msse4 should be the same
    as -msse4.2.  */
@@ -289,6 +290,7 @@ along with GCC; see the file COPYING3.  If not see
 #define OPTION_MASK_ISA2_CMPCCXADD_UNSET OPTION_MASK_ISA2_CMPCCXADD
 #define OPTION_MASK_ISA2_AMX_FP16_UNSET OPTION_MASK_ISA2_AMX_FP16
 #define OPTION_MASK_ISA2_PREFETCHI_UNSET OPTION_MASK_ISA2_PREFETCHI
+#define OPTION_MASK_ISA2_RAOINT_UNSET OPTION_MASK_ISA2_RAOINT
 
 /* SSE4 includes both SSE4.1 and SSE4.2.  -mno-sse4 should the same
    as -mno-sse4.1. */
@@ -1226,6 +1228,19 @@ ix86_handle_option (struct gcc_options *opts,
 	}
       return true;
 
+    case OPT_mraoint:
+      if (value)
+	{
+	  opts->x_ix86_isa_flags2 |= OPTION_MASK_ISA2_RAOINT_SET;
+	  opts->x_ix86_isa_flags2_explicit |= OPTION_MASK_ISA2_RAOINT_SET;
+	}
+      else
+	{
+	  opts->x_ix86_isa_flags2 &= ~OPTION_MASK_ISA2_RAOINT_UNSET;
+	  opts->x_ix86_isa_flags2_explicit |= OPTION_MASK_ISA2_RAOINT_UNSET;
+	}
+      return true;
+
     case OPT_mfma:
       if (value)
 	{
@@ -1905,6 +1920,7 @@ const char *const processor_names[] =
   "goldmont-plus",
   "tremont",
   "sierraforest",
+  "grandridge",
   "knl",
   "knm",
   "skylake",
@@ -2056,6 +2072,8 @@ const pta processor_alias_table[] =
     M_CPU_TYPE (INTEL_TREMONT), P_PROC_SSE4_2},
   {"sierraforest", PROCESSOR_SIERRAFOREST, CPU_HASWELL, PTA_SIERRAFOREST,
     M_CPU_SUBTYPE (INTEL_SIERRAFOREST), P_PROC_AVX2},
+  {"grandridge", PROCESSOR_GRANDRIDGE, CPU_HASWELL, PTA_GRANDRIDGE,
+    M_CPU_TYPE (INTEL_GRANDRIDGE), P_PROC_AVX2},
   {"knl", PROCESSOR_KNL, CPU_SLM, PTA_KNL,
     M_CPU_TYPE (INTEL_KNL), P_PROC_AVX512F},
   {"knm", PROCESSOR_KNM, CPU_SLM, PTA_KNM,

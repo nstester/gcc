@@ -86,6 +86,7 @@ extern void test_avxneconvert (void)		__attribute__((__target__("avxneconvert"))
 extern void test_cmpccxadd (void)		__attribute__((__target__("cmpccxadd")));
 extern void test_amx_fp16 (void)		__attribute__((__target__("amx-fp16")));
 extern void test_prefetchi (void)               __attribute__((__target__("prefetchi")));
+extern void test_raoint (void)                  __attribute__((__target__("raoint")));
 
 extern void test_no_sgx (void)			__attribute__((__target__("no-sgx")));
 extern void test_no_avx5124fmaps(void)		__attribute__((__target__("no-avx5124fmaps")));
@@ -173,6 +174,7 @@ extern void test_no_avxneconvert (void)		__attribute__((__target__("no-avxneconv
 extern void test_no_cmpccxadd (void)            __attribute__((__target__("no-cmpccxadd")));
 extern void test_no_amx_fp16 (void)		__attribute__((__target__("no-amx-fp16")));
 extern void test_no_prefetchi (void)            __attribute__((__target__("no-prefetchi")));
+extern void test_no_raoint (void)               __attribute__((__target__("no-raoint")));
 
 extern void test_arch_nocona (void)		__attribute__((__target__("arch=nocona")));
 extern void test_arch_core2 (void)		__attribute__((__target__("arch=core2")));
@@ -184,6 +186,7 @@ extern void test_arch_goldmont (void)		__attribute__((__target__("arch=goldmont"
 extern void test_arch_goldmont_plus (void)	__attribute__((__target__("arch=goldmont-plus")));
 extern void test_arch_tremont (void)		__attribute__((__target__("arch=tremont")));
 extern void test_arch_sierraforest (void)       __attribute__((__target__("arch=sierraforest")));
+extern void test_arch_grandridge (void)		__attribute__((__target__("arch=grandridge")));
 extern void test_arch_knl (void)		__attribute__((__target__("arch=knl")));
 extern void test_arch_knm (void)		__attribute__((__target__("arch=knm")));
 extern void test_arch_skylake (void)		__attribute__((__target__("arch=skylake")));

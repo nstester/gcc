@@ -573,6 +573,12 @@ get_intel_cpu (struct __processor_model *cpu_model,
       cpu_model->__cpu_type = INTEL_COREI7;
       cpu_model->__cpu_subtype = INTEL_COREI7_GRANITERAPIDS;
       break;
+    case 0xb6:
+      /* Grand Ridge.  */
+      cpu = "grandridge";
+      CHECK___builtin_cpu_is ("grandridge");
+      cpu_model->__cpu_type = INTEL_GRANDRIDGE;
+      break;
     case 0x17:
     case 0x1d:
       /* Penryn.  */
@@ -850,6 +856,8 @@ get_available_features (struct __processor_model *cpu_model,
 	set_feature(FEATURE_CMPCCXADD);
       if (edx & bit_PREFETCHI)
 	set_feature (FEATURE_PREFETCHI);
+      if (eax & bit_RAOINT)
+	set_feature (FEATURE_RAOINT);
       if (avx_usable)
 	{
 	  if (eax & bit_AVXVNNI)
