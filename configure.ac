@@ -1680,7 +1680,7 @@ Try the --with-gmp, --with-mpfr and/or --with-mpc options to specify
 their locations.  Source code for these libraries can be found at
 their respective hosting sites as well as at
 https://gcc.gnu.org/pub/gcc/infrastructure/.  See also
-https://gcc.gnu.org/onlinedocs/install/prerequisites.html for additional info.  If
+http://gcc.gnu.org/install/prerequisites.html for additional info.  If
 you obtained GMP, MPFR and/or MPC from a vendor distribution package,
 make sure that you have installed both the libraries and the header
 files.  They may be located in separate packages.])
@@ -3525,6 +3525,7 @@ case " $configdirs " in
     test $host = $build && RUNTEST='$$s/$(HOST_SUBDIR)/dejagnu/runtest'
     ;;
 esac
+
 
 # Host tools.
 NCN_STRICT_CHECK_TOOLS(AR, ar)
