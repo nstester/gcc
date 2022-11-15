@@ -5,6 +5,7 @@
 #include <string>
 #include <limits>
 #include <cstdint>
+#include <cstdio>
 #include <testsuite_hooks.h>
 
 void
@@ -232,7 +233,7 @@ test_wchar()
 void
 test_minmax()
 {
-  auto check = []<typename T>(T) {
+  auto check = []<typename T, typename U = std::make_unsigned_t<T>>(T, U = 0) {
     const int digits = std::numeric_limits<T>::digits;
     const std::string zeros(digits, '0');
     const std::string ones(digits, '1');
@@ -240,7 +241,6 @@ test_minmax()
     VERIFY( s == "-1" + zeros );
     s = std::format("{:b}" , std::numeric_limits<T>::max());
     VERIFY( s == ones );
-    using U = std::make_unsigned_t<T>;
     s = std::format("{:0{}b}" , std::numeric_limits<U>::min(), digits + 1);
     VERIFY( s == '0' + zeros );
     s = std::format("{:b}" , std::numeric_limits<U>::max());
@@ -251,7 +251,9 @@ test_minmax()
   check(std::int32_t(0));
   check(std::int64_t(0));
 #ifdef __SIZEOF_INT128__
-  check(__int128(0));
+  // std::make_unsigned_t<__int128> is invalid for strict -std=c++20 mode,
+  // so pass a second argument of the unsigned type.
+  check(__int128(0), (unsigned __int128)(0));
 #endif
 }
 
@@ -289,12 +291,35 @@ test_p1652r1() // printf corner cases in std::format
   VERIFY( s == "3.31" );
 }
 
+template<typename T>
+bool format_float()
+{
+    auto s = std::format("{:#} != {:<+7.3f}", (T)-0.0, (T)0.5);
+    return s == "-0. != +0.500 ";
+}
+
+#if __cplusplus > 202002L
+template<typename T>
+concept formattable = std::formattable<T, char>;
+#else
+template<typename T>
+concept formattable = requires (T t, char* p) { std::to_chars(p, p, t); };
+#endif
+
 void
 test_float128()
 {
 #ifdef __SIZEOF_FLOAT128__
-  auto s = std::format("{:#} != {:<+7.3f}", (__float128)-0.0, (__float128)0.5);
-  VERIFY( s == "-0. != +0.500 " );
+  if constexpr (formattable<__float128>)
+    VERIFY( format_float<__float128>() );
+  else
+    std::puts("Cannot format __float128 on this target");
+#endif
+#if __FLT128_DIG__
+  if constexpr (formattable<_Float128>)
+    VERIFY( format_float<_Float128>() );
+  else
+    std::puts("Cannot format _Float128 on this target");
 #endif
 }
 
