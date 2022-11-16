@@ -394,6 +394,18 @@
   "bext\t%0,%1,%2"
   [(set_attr "type" "bitmanip")])
 
+;; When performing `(a & (1UL << bitno)) ? 0 : -1` the combiner
+;; usually has the `bitno` typed as X-mode (i.e. no further
+;; zero-extension is performed around the bitno).
+(define_insn "*bext<mode>"
+  [(set (match_operand:X 0 "register_operand" "=r")
+	(zero_extract:X (match_operand:X 1 "register_operand" "r")
+			(const_int 1)
+			(match_operand:X 2 "register_operand" "r")))]
+  "TARGET_ZBS"
+  "bext\t%0,%1,%2"
+  [(set_attr "type" "bitmanip")])
+
 (define_insn "*bexti"
   [(set (match_operand:X 0 "register_operand" "=r")
 	(zero_extract:X (match_operand:X 1 "register_operand" "r")
@@ -402,3 +414,18 @@
   "TARGET_ZBS && UINTVAL (operands[2]) < GET_MODE_BITSIZE (<MODE>mode)"
   "bexti\t%0,%1,%2"
   [(set_attr "type" "bitmanip")])
+
+;; Split for "(a & (1 << BIT_NO)) ? 0 : 1":
+;; We avoid reassociating "(~(a >> BIT_NO)) & 1" into "((~a) >> BIT_NO) & 1",
+;; so we don't have to use a temporary.  Instead we extract the bit and then
+;; invert bit 0 ("a ^ 1") only.
+(define_split
+  [(set (match_operand:X 0 "register_operand")
+	(and:X (not:X (lshiftrt:X (match_operand:X 1 "register_operand")
+				  (subreg:QI (match_operand:X 2 "register_operand") 0)))
+	       (const_int 1)))]
+  "TARGET_ZBS"
+  [(set (match_dup 0) (zero_extract:X (match_dup 1)
+				      (const_int 1)
+				      (match_dup 2)))
+   (set (match_dup 0) (xor:X (match_dup 0) (const_int 1)))])
