@@ -52,6 +52,10 @@
 #include <bits/utility.h>      // tuple_size_v
 #include <ext/numeric_traits.h> // __int_traits
 
+#if !__has_builtin(__builtin_toupper)
+# include <cctype>
+#endif
+
 namespace std _GLIBCXX_VISIBILITY(default)
 {
 _GLIBCXX_BEGIN_NAMESPACE_VERSION
@@ -1027,7 +1031,11 @@ namespace __format
 	      __res = to_chars(__start, __end, __u, 16);
 	      if (_M_spec._M_type == _Pres_X)
 		for (auto __p = __start; __p != __res.ptr; ++__p)
+#if __has_builtin(__builtin_toupper)
 		  *__p = __builtin_toupper(*__p);
+#else
+		  *__p = std::toupper(*__p);
+#endif
 	      break;
 	    default:
 	      __builtin_unreachable();
@@ -1235,13 +1243,13 @@ namespace __format
   using __float128_t = long double;
 # define _GLIBCXX_FORMAT_F128 1
 
-#elif __FLT128_DIG__ && defined(__GLIBC_PREREQ) // see floating_to_chars.cc
+#elif __FLT128_DIG__ && defined(_GLIBCXX_HAVE_FLOAT128_MATH)
 
   // Format 128-bit floating-point types using _Float128.
   using __float128_t = _Float128;
 # define _GLIBCXX_FORMAT_F128 2
 
-# if __cplusplus == 202002L || !defined(_GLIBCXX_HAVE_FLOAT128_MATH)
+# if __cplusplus == 202002L
   // These overloads exist in the library, but are not declared for C++20.
   // Make them available as std::__format::to_chars.
   to_chars_result
@@ -2570,7 +2578,7 @@ namespace __format
 #ifdef _GLIBCXX_LONG_DOUBLE_ALT128_COMPAT
     _Arg_next_value_,
     _Arg_f128 = _Arg_ldbl,
-    _Arg_ibm128 = _Args_next_value_,
+    _Arg_ibm128 = _Arg_next_value_,
 #else
     _Arg_f128,
 #endif
@@ -2718,7 +2726,7 @@ namespace __format
     public:
       class handle : public __format::_Arg_value<_Context>::_HandleBase
       {
-	using _Base = __format::_Arg_value<_Context>::_HandleBase;
+	using _Base = typename __format::_Arg_value<_Context>::_HandleBase;
 
 	// Format as const if possible, to reduce instantiations.
 	template<typename _Tp>
@@ -2908,9 +2916,9 @@ namespace __format
 #else
 	  // Don't use _Arg_ldbl for this target, it's ambiguous.
 	  else if constexpr (is_same_v<_Tp, __ibm128>)
-	    return _Arg_ibm128
+	    return _Arg_ibm128;
 	  else if constexpr (is_same_v<_Tp, __ieee128>)
-	    return _Arg_f128
+	    return _Arg_f128;
 #endif
 	  else if constexpr (is_same_v<_Tp, const _CharT*>)
 	    return _Arg_str;
