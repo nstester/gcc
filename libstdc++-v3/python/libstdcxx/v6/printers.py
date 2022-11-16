@@ -166,7 +166,12 @@ def is_member_of_namespace(typ, *namespaces):
     return False
 
 def is_specialization_of(x, template_name):
-    "Test if a type is a given template instantiation."
+    """
+    Test whether a type is a specialization of the named class template.
+    The type can be specified as a string or a gdb.Type object.
+    The template should be the name of a class template as a string,
+    without any 'std' qualification.
+    """
     global _versioned_namespace
     if type(x) is gdb.Type:
         x = x.tag
@@ -1267,9 +1272,34 @@ class StdExpAnyPrinter(SingleObjContainerPrinter):
             mgrname = m.group(1)
             # FIXME need to expand 'std::string' so that gdb.lookup_type works
             if 'std::string' in mgrname:
-                mgrname = re.sub("std::string(?!\w)", str(gdb.lookup_type('std::string').strip_typedefs()), m.group(1))
-
-            mgrtype = gdb.lookup_type(mgrname)
+                # This lookup for std::string might return the __cxx11 version,
+                # but that's not necessarily the one used by the std::any
+                # manager function we're trying to find.
+                strings = {str(gdb.lookup_type('std::string').strip_typedefs())}
+                # So also consider all the other possible std::string types!
+                s = 'basic_string<char, std::char_traits<char>, std::allocator<char> >'
+                quals = ['std::', 'std::__cxx11::', 'std::' + _versioned_namespace]
+                strings |= {q+s for q in quals} # set of unique strings
+                mgrtypes = []
+                for s in strings:
+                    try:
+                        x = re.sub("std::string(?!\w)", s, m.group(1))
+                        # The following lookup might raise gdb.error if the
+                        # manager function was never instantiated for 's' in the
+                        # program, because there will be no such type.
+                        mgrtypes.append(gdb.lookup_type(x))
+                    except gdb.error:
+                        pass
+                if len(mgrtypes) != 1:
+                    # FIXME: this is unlikely in practice, but possible for
+                    # programs that use both old and new string types with
+                    # std::any in a single program. Can we do better?
+                    # Maybe find the address of each type's _S_manage and
+                    # compare to the address stored in _M_manager?
+                    raise ValueError('Cannot uniquely determine std::string type used in std::any')
+                mgrtype = mgrtypes[0]
+            else:
+                mgrtype = gdb.lookup_type(mgrname)
             self.contained_type = mgrtype.template_argument(0)
             valptr = None
             if '::_Manager_internal' in mgrname:
@@ -2071,19 +2101,22 @@ class FilteringTypePrinter(object):
     Args:
         template (str): The class template to recognize.
         name (str): The typedef-name that will be used instead.
-        targ1 (str): The first template argument.
-            If arg1 is provided (not None), match only template specializations
-            with this type as the first template argument,
-            e.g. if template='basic_string<targ1'
+        targ1 (str, optional): The first template argument. Defaults to None.
 
     Checks if a specialization of the class template 'template' is the same type
     as the typedef 'name', and prints it as 'name' instead.
 
     e.g. if an instantiation of std::basic_istream<C, T> is the same type as
     std::istream then print it as std::istream.
+
+    If targ1 is provided (not None), match only template specializations with
+    this type as the first template argument, e.g. if template='basic_string'
+    and targ1='char' then only match 'basic_string<char,...>' and not
+    'basic_string<wchar_t,...>'. This rejects non-matching specializations
+    more quickly, without needing to do GDB type lookups.
     """
 
-    def __init__(self, template, name, targ1):
+    def __init__(self, template, name, targ1 = None):
         self.template = template
         self.name = name
         self.targ1 = targ1
