@@ -1930,6 +1930,8 @@ region_model::update_for_int_cst_return (const call_details &cd,
 {
   if (!cd.get_lhs_type ())
     return;
+  if (TREE_CODE (cd.get_lhs_type ()) != INTEGER_TYPE)
+    return;
   const svalue *result
     = m_mgr->get_or_create_int_cst (cd.get_lhs_type (), retval);
   if (unmergeable)
@@ -1954,6 +1956,8 @@ void
 region_model::update_for_nonzero_return (const call_details &cd)
 {
   if (!cd.get_lhs_type ())
+    return;
+  if (TREE_CODE (cd.get_lhs_type ()) != INTEGER_TYPE)
     return;
   const svalue *zero
     = m_mgr->get_or_create_int_cst (cd.get_lhs_type (), 0);
@@ -4754,6 +4758,7 @@ region_model::get_representative_path_var_1 (const region *reg,
     case RK_CODE:
     case RK_HEAP:
     case RK_STACK:
+    case RK_THREAD_LOCAL:
     case RK_ROOT:
        /* Regions that represent memory spaces are not expressible as trees.  */
       return path_var (NULL_TREE, 0);
@@ -4873,6 +4878,7 @@ region_model::get_representative_path_var_1 (const region *reg,
       }
 
     case RK_VAR_ARG:
+    case RK_ERRNO:
     case RK_UNKNOWN:
       return path_var (NULL_TREE, 0);
     }
