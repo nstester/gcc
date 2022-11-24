@@ -46,9 +46,6 @@ array_bounds_checker::array_bounds_checker (struct function *func,
   /* No-op.  */
 }
 
-// This purposely returns a value_range, not a value_range_equiv, to
-// break the dependency on equivalences for this pass.
-
 const value_range *
 array_bounds_checker::get_value_range (const_tree op, gimple *stmt)
 {
@@ -78,14 +75,7 @@ get_base_decl (tree ref)
       if (gimple_assign_single_p (def))
 	{
 	  base = gimple_assign_rhs1 (def);
-	  if (TREE_CODE (base) != ASSERT_EXPR)
-	    return base;
-
-	  base = TREE_OPERAND (base, 0);
-	  if (TREE_CODE (base) != SSA_NAME)
-	    return base;
-
-	  continue;
+	  return base;
 	}
 
       if (!gimple_nop_p (def))
