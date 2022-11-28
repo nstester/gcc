@@ -15831,11 +15831,11 @@ cp_parser_decl_specifier_seq (cp_parser* parser,
             {
 	      cp_token *next = cp_lexer_peek_token (parser->lexer);
 	      if (next->keyword == RID_BOOL)
-		pedwarn (next->location, 0, "the %<bool%> keyword is not "
-			 "allowed in a C++20 concept definition");
+		permerror (next->location, "the %<bool%> keyword is not "
+			   "allowed in a C++20 concept definition");
 	      else
-		pedwarn (token->location, 0, "C++20 concept definition syntax "
-			 "is %<concept <name> = <expr>%>");
+		error_at (token->location, "C++20 concept definition syntax "
+			  "is %<concept <name> = <expr>%>");
             }
 
 	  /* In C++20 a concept definition is just 'concept name = expr;'
@@ -30737,7 +30737,20 @@ cp_parser_requirement (cp_parser *parser)
   if (cp_lexer_next_token_is (parser->lexer, CPP_OPEN_BRACE))
     return cp_parser_compound_requirement (parser);
   else if (cp_lexer_next_token_is_keyword (parser->lexer, RID_TYPENAME))
-    return cp_parser_type_requirement (parser);
+    {
+      /* It's probably a type-requirement.  */
+      cp_parser_parse_tentatively (parser);
+      tree req = cp_parser_type_requirement (parser);
+      if (cp_parser_parse_definitely (parser))
+	return req;
+      /* No, maybe it's something like typename T::type(); */
+      cp_parser_parse_tentatively (parser);
+      req = cp_parser_simple_requirement (parser);
+      if (cp_parser_parse_definitely (parser))
+	return req;
+      /* Non-tentative for the error.  */
+      return cp_parser_type_requirement (parser);
+    }
   else if (cp_lexer_next_token_is_keyword (parser->lexer, RID_REQUIRES))
     return cp_parser_nested_requirement (parser);
   else
