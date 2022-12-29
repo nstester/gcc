@@ -3322,7 +3322,7 @@ xtensa_expand_prologue (void)
 				  || crtl->calls_eh_return;
 
       /* Check if the function body really needs the stack pointer.  */
-      if (!stack_pointer_needed)
+      if (!stack_pointer_needed && df)
 	for (ref = DF_REG_USE_CHAIN (A1_REG);
 	     ref; ref = DF_REF_NEXT_REG (ref))
 	  if (DF_REF_CLASS (ref) == DF_REF_REGULAR
@@ -4516,7 +4516,7 @@ static bool
 xtensa_return_in_memory (const_tree type, const_tree fntype ATTRIBUTE_UNUSED)
 {
   return ((unsigned HOST_WIDE_INT) int_size_in_bytes (type)
-	  > 4 * UNITS_PER_WORD);
+	  > (unsigned) (GP_RETURN_LAST - GP_RETURN_FIRST + 1) * UNITS_PER_WORD);
 }
 
 /* Worker function for TARGET_FUNCTION_VALUE.  */
