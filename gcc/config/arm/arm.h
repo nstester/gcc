@@ -331,6 +331,12 @@ emission of floating point pcs attributes.  */
 						isa_bit_mve_float) \
 			       && !TARGET_GENERAL_REGS_ONLY)
 
+/* Non-zero if this target supports Armv8.1-M Mainline pointer-signing
+   extension.  */
+#define TARGET_HAVE_PACBTI (arm_arch8_1m_main \
+			    && bitmap_bit_p (arm_active_target.isa, \
+					     isa_bit_pacbti))
+
 /* MVE have few common instructions as VFP, like VLDM alias VPOP, VLDR, VSTM
    alia VPUSH, VSTR and VMOV, VMSR and VMRS.  In the same manner it updates few
    registers such as FPCAR, FPCCR, FPDSCR, FPSCR, MVFR0, MVFR1 and MVFR2.  All
@@ -499,6 +505,10 @@ extern int arm_arch8_3;
 
 /* Nonzero if this chip supports the ARM Architecture 8.4 extensions.  */
 extern int arm_arch8_4;
+
+/* Nonzero if this chip supports the ARM Architecture 8-M Mainline
+   extensions.  */
+extern int arm_arch8m_main;
 
 /* Nonzero if this chip supports the ARM Architecture 8.1-M Mainline
    extensions.  */
