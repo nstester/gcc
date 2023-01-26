@@ -158,7 +158,7 @@ static CONSTEXPR const rvv_arg_type_info scalar_const_ptr_args[]
 
 /* A list of args for void func (scalar_type *, vector_type) function.  */
 static CONSTEXPR const rvv_arg_type_info scalar_ptr_args[]
-  = {rvv_arg_type_info (RVV_BASE_scalar_const_ptr),
+  = {rvv_arg_type_info (RVV_BASE_scalar_ptr),
      rvv_arg_type_info (RVV_BASE_vector), rvv_arg_type_info_end};
 
 /* A list of none preds that will be registered for intrinsic functions.  */
@@ -346,14 +346,15 @@ register_builtin_type (vector_type_index type, tree eltype, machine_mode mode)
 static void
 register_builtin_types ()
 {
-  /* int32_t/uint32_t defined as `long`/`unsigned long` in RV32,
-     but intSI_type_node/unsigned_intSI_type_node is
-     `int` and `unsigned int`, so use long_integer_type_node and
-     long_unsigned_type_node here for type consistent.  */
-  tree int32_type_node
-    = TARGET_64BIT ? intSI_type_node : long_integer_type_node;
-  tree unsigned_int32_type_node
-    = TARGET_64BIT ? unsigned_intSI_type_node : long_unsigned_type_node;
+  /* Get type node from get_typenode_from_name to prevent we have different type
+     node define in different target libraries, e.g. int32_t defined as
+     `long` in RV32/newlib-stdint, but `int` for RV32/glibc-stdint.h.
+     NOTE: uint[16|32|64]_type_node already defined in tree.h.  */
+  tree int8_type_node = get_typenode_from_name (INT8_TYPE);
+  tree uint8_type_node = get_typenode_from_name (UINT8_TYPE);
+  tree int16_type_node = get_typenode_from_name (INT16_TYPE);
+  tree int32_type_node = get_typenode_from_name (INT32_TYPE);
+  tree int64_type_node = get_typenode_from_name (INT64_TYPE);
 
   machine_mode mode;
 #define DEF_RVV_TYPE(NAME, NCHARS, ABI_NAME, SCALAR_TYPE, VECTOR_MODE,         \
@@ -845,15 +846,15 @@ function_expander::add_vundef_operand (machine_mode mode)
 }
 
 /* Add a memory operand with mode MODE and address ADDR.  */
-rtx
-function_expander::add_mem_operand (machine_mode mode, rtx addr)
+void
+function_expander::add_mem_operand (machine_mode mode, unsigned argno)
 {
   gcc_assert (VECTOR_MODE_P (mode));
+  rtx addr = expand_normal (CALL_EXPR_ARG (exp, argno));
   rtx mem = gen_rtx_MEM (mode, memory_address (mode, addr));
   /* The memory is only guaranteed to be element-aligned.  */
   set_mem_align (mem, GET_MODE_ALIGNMENT (GET_MODE_INNER (mode)));
   add_fixed_operand (mem);
-  return mem;
 }
 
 /* Use contiguous load INSN.  */
@@ -878,9 +879,7 @@ function_expander::use_contiguous_load_insn (insn_code icode)
   else
     add_vundef_operand (mode);
 
-  tree addr_arg = CALL_EXPR_ARG (exp, arg_offset++);
-  rtx addr = expand_normal (addr_arg);
-  add_mem_operand (mode, addr);
+  add_mem_operand (mode, arg_offset++);
 
   for (int argno = arg_offset; argno < call_expr_nargs (exp); argno++)
     add_input_operand (argno);
@@ -904,26 +903,16 @@ function_expander::use_contiguous_store_insn (insn_code icode)
   /* Record the offset to get the argument.  */
   int arg_offset = 0;
 
-  int addr_loc = use_real_mask_p (pred) ? 1 : 0;
-  tree addr_arg = CALL_EXPR_ARG (exp, addr_loc);
-  rtx addr = expand_normal (addr_arg);
-  rtx mem = add_mem_operand (mode, addr);
+  add_mem_operand (mode, use_real_mask_p (pred) ? 1 : 0);
 
   if (use_real_mask_p (pred))
     add_input_operand (arg_offset++);
   else
     add_all_one_mask_operand (mask_mode);
 
-  /* To model "+m" constraint, we include memory operand into input.  */
-  add_input_operand (mode, mem);
-
   arg_offset++;
   for (int argno = arg_offset; argno < call_expr_nargs (exp); argno++)
     add_input_operand (argno);
-
-  add_input_operand (Pmode, get_tail_policy_for_pred (pred));
-  add_input_operand (Pmode, get_mask_policy_for_pred (pred));
-  add_input_operand (Pmode, get_avl_type_rtx (avl_type::NONVLMAX));
 
   return generate_insn (icode);
 }
