@@ -8,8 +8,8 @@
 **	vsetivli\tzero,4,e32,m1,tu,ma
 **	vle32\.v\tv[0-9]+,0\([a-x0-9]+\)
 **	vle32\.v\tv[0-9]+,0\([a-x0-9]+\)
-**	vadd\.vv\tv[0-9]+,\s*v[0-9]+,\s*v[0-9]+
-**	vadd\.vv\tv[0-9]+,\s*v[0-9]+,\s*v[0-9]+
+**	vsll\.vi\tv[0-9]+,\s*v[0-9]+,31
+**	vsll\.vi\tv[0-9]+,\s*v[0-9]+,31
 **	vse32\.v\tv[0-9]+,0\([a-x0-9]+\)
 **	ret
 */
@@ -17,8 +17,8 @@ void f1 (void * in, void *out)
 {
     vint32m1_t v = __riscv_vle32_v_i32m1 (in, 4);
     vint32m1_t v2 = __riscv_vle32_v_i32m1_tu (v, in, 4);
-    vint32m1_t v3 = __riscv_vadd_vv_i32m1 (v2, v2, 4);
-    vint32m1_t v4 = __riscv_vadd_vv_i32m1_tu (v3, v2, v2, 4);
+    vint32m1_t v3 = __riscv_vsll_vx_i32m1 (v2, 31, 4);
+    vint32m1_t v4 = __riscv_vsll_vx_i32m1_tu (v3, v2, 31, 4);
     __riscv_vse32_v_i32m1 (out, v4, 4);
 }
 
@@ -26,10 +26,12 @@ void f1 (void * in, void *out)
 ** f2:
 **	vsetvli\t[a-x0-9]+,zero,e8,mf4,ta,ma
 **	vlm.v\tv[0-9]+,0\([a-x0-9]+\)
+**	...
 **	vsetivli\tzero,4,e32,m1,ta,ma
+**	...
 **	vle32.v\tv[0-9]+,0\([a-x0-9]+\),v0.t
-**	vadd\.vv\tv[0-9]+,\s*v[0-9]+,\s*v[0-9]+
-**	vadd\.vv\tv[1-9][0-9]?,\s*v[0-9]+,\s*v[0-9]+,\s*v0.t
+**	vsll\.vx\tv[0-9]+,\s*v[0-9]+,\s*[a-x0-9]+
+**	vsll\.vx\tv[1-9][0-9]?,\s*v[0-9]+,\s*[a-x0-9]+,\s*v0.t
 **	vse32.v\tv[0-9]+,0\([a-x0-9]+\)
 **	ret
 */
@@ -39,8 +41,8 @@ void f2 (void * in, void *out)
     asm volatile ("":::"memory");
     vint32m1_t v = __riscv_vle32_v_i32m1 (in, 4);
     vint32m1_t v2 = __riscv_vle32_v_i32m1_m (mask, in, 4);
-    vint32m1_t v3 = __riscv_vadd_vv_i32m1 (v2, v2, 4);
-    vint32m1_t v4 = __riscv_vadd_vv_i32m1_m (mask, v3, v3, 4);
+    vint32m1_t v3 = __riscv_vsll_vx_i32m1 (v2, 32, 4);
+    vint32m1_t v4 = __riscv_vsll_vx_i32m1_m (mask, v3, 32, 4);
     __riscv_vse32_v_i32m1 (out, v4, 4);
 }
 
@@ -51,8 +53,8 @@ void f2 (void * in, void *out)
 **	vsetivli\tzero,4,e32,m1,tu,mu
 **	vle32\.v\tv[0-9]+,0\([a-x0-9]+\)
 **	vle32.v\tv[0-9]+,0\([a-x0-9]+\),v0.t
-**	vadd\.vv\tv[0-9]+,\s*v[0-9]+,\s*v[0-9]+
-**	vadd\.vv\tv[1-9][0-9]?,\s*v[0-9]+,\s*v[0-9]+,\s*v0.t
+**	vsll\.vi\tv[0-9]+,\s*v[0-9]+,\s*17
+**	vsll\.vi\tv[1-9][0-9]?,\s*v[0-9]+,\s*17,\s*v0.t
 **	vse32.v\tv[0-9]+,0\([a-x0-9]+\)
 **	ret
 */
@@ -62,8 +64,8 @@ void f3 (void * in, void *out)
     asm volatile ("":::"memory");
     vint32m1_t v = __riscv_vle32_v_i32m1 (in, 4);
     vint32m1_t v2 = __riscv_vle32_v_i32m1_tumu (mask, v, in, 4);
-    vint32m1_t v3 = __riscv_vadd_vv_i32m1 (v2, v2, 4);
-    vint32m1_t v4 = __riscv_vadd_vv_i32m1_tumu (mask, v3, v2, v2, 4);
+    vint32m1_t v3 = __riscv_vsll_vx_i32m1 (v2, 17, 4);
+    vint32m1_t v4 = __riscv_vsll_vx_i32m1_tumu (mask, v3, v2, 17, 4);
     __riscv_vse32_v_i32m1 (out, v4, 4);
 }
 
@@ -72,17 +74,17 @@ void f3 (void * in, void *out)
 **	vsetivli\tzero,4,e8,mf8,tu,ma
 **	vle8\.v\tv[0-9]+,0\([a-x0-9]+\)
 **	vle8\.v\tv[0-9]+,0\([a-x0-9]+\)
-**	vadd\.vv\tv[0-9]+,\s*v[0-9]+,\s*v[0-9]+
-**	vadd\.vv\tv[0-9]+,\s*v[0-9]+,\s*v[0-9]+
+**	vsll\.vx\tv[0-9]+,\s*v[0-9]+,\s*[a-x0-9]+
+**	vsll\.vx\tv[0-9]+,\s*v[0-9]+,\s*[a-x0-9]+
 **	vse8\.v\tv[0-9]+,0\([a-x0-9]+\)
 **	ret
 */
-void f4 (void * in, void *out)
+void f4 (void * in, void *out, size_t x)
 {
     vint8mf8_t v = __riscv_vle8_v_i8mf8 (in, 4);
     vint8mf8_t v2 = __riscv_vle8_v_i8mf8_tu (v, in, 4);
-    vint8mf8_t v3 = __riscv_vadd_vv_i8mf8 (v2, v2, 4);
-    vint8mf8_t v4 = __riscv_vadd_vv_i8mf8_tu (v3, v2, v2, 4);
+    vint8mf8_t v3 = __riscv_vsll_vx_i8mf8 (v2, x, 4);
+    vint8mf8_t v4 = __riscv_vsll_vx_i8mf8_tu (v3, v2, x, 4);
     __riscv_vse8_v_i8mf8 (out, v4, 4);
 }
 
@@ -92,8 +94,8 @@ void f4 (void * in, void *out)
 **	vlm.v\tv[0-9]+,0\([a-x0-9]+\)
 **	vsetivli\tzero,4,e8,mf8,ta,ma
 **	vle8.v\tv[0-9]+,0\([a-x0-9]+\),v0.t
-**	vadd\.vv\tv[0-9]+,\s*v[0-9]+,\s*v[0-9]+
-**	vadd\.vv\tv[1-9][0-9]?,\s*v[0-9]+,\s*v[0-9]+,\s*v0.t
+**	vsll\.vi\tv[0-9]+,\s*v[0-9]+,\s*5
+**	vsll\.vi\tv[1-9][0-9]?,\s*v[0-9]+,\s*5,\s*v0.t
 **	vse8.v\tv[0-9]+,0\([a-x0-9]+\)
 **	ret
 */
@@ -103,8 +105,8 @@ void f5 (void * in, void *out)
     asm volatile ("":::"memory");
     vint8mf8_t v = __riscv_vle8_v_i8mf8 (in, 4);
     vint8mf8_t v2 = __riscv_vle8_v_i8mf8_m (mask, in, 4);
-    vint8mf8_t v3 = __riscv_vadd_vv_i8mf8 (v2, v2, 4);
-    vint8mf8_t v4 = __riscv_vadd_vv_i8mf8_m (mask, v3, v3, 4);
+    vint8mf8_t v3 = __riscv_vsll_vx_i8mf8 (v2, 5, 4);
+    vint8mf8_t v4 = __riscv_vsll_vx_i8mf8_m (mask, v3, 5, 4);
     __riscv_vse8_v_i8mf8 (out, v4, 4);
 }
 
@@ -115,18 +117,18 @@ void f5 (void * in, void *out)
 **	vsetivli\tzero,4,e8,mf8,tu,mu
 **	vle8\.v\tv[0-9]+,0\([a-x0-9]+\)
 **	vle8.v\tv[0-9]+,0\([a-x0-9]+\),v0.t
-**	vadd\.vv\tv[0-9]+,\s*v[0-9]+,\s*v[0-9]+
-**	vadd\.vv\tv[1-9][0-9]?,\s*v[0-9]+,\s*v[0-9]+,\s*v0.t
+**	vsll\.vx\tv[0-9]+,\s*v[0-9]+,\s*[a-x0-9]+
+**	vsll\.vx\tv[1-9][0-9]?,\s*v[0-9]+,\s*[a-x0-9]+,\s*v0.t
 **	vse8.v\tv[0-9]+,0\([a-x0-9]+\)
 **	ret
 */
-void f6 (void * in, void *out)
+void f6 (void * in, void *out, size_t x)
 {
     vbool64_t mask = *(vbool64_t*)in;
     asm volatile ("":::"memory");
     vint8mf8_t v = __riscv_vle8_v_i8mf8 (in, 4);
     vint8mf8_t v2 = __riscv_vle8_v_i8mf8_tumu (mask, v, in, 4);
-    vint8mf8_t v3 = __riscv_vadd_vv_i8mf8 (v2, v2, 4);
-    vint8mf8_t v4 = __riscv_vadd_vv_i8mf8_tumu (mask, v3, v2, v2, 4);
+    vint8mf8_t v3 = __riscv_vsll_vx_i8mf8 (v2, x, 4);
+    vint8mf8_t v4 = __riscv_vsll_vx_i8mf8_tumu (mask, v3, v2, x, 4);
     __riscv_vse8_v_i8mf8 (out, v4, 4);
 }
