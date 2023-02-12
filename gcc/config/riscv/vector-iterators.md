@@ -28,6 +28,11 @@
   ;; It's used to specify ordered/unorderd operation.
   UNSPEC_ORDERED
   UNSPEC_UNORDERED
+
+  ;; vmulh/vmulhu/vmulhsu
+  UNSPEC_VMULHS
+  UNSPEC_VMULHU
+  UNSPEC_VMULHSU
 ])
 
 (define_mode_iterator V [
@@ -55,6 +60,14 @@
   (VNx4DI "TARGET_MIN_VLEN > 32") (VNx8DI "TARGET_MIN_VLEN > 32")
 ])
 
+(define_mode_iterator VFULLI [
+  VNx1QI VNx2QI VNx4QI VNx8QI VNx16QI VNx32QI (VNx64QI "TARGET_MIN_VLEN > 32")
+  VNx1HI VNx2HI VNx4HI VNx8HI VNx16HI (VNx32HI "TARGET_MIN_VLEN > 32")
+  VNx1SI VNx2SI VNx4SI VNx8SI (VNx16SI "TARGET_MIN_VLEN > 32")
+  (VNx1DI "TARGET_FULL_V") (VNx2DI "TARGET_FULL_V")
+  (VNx4DI "TARGET_FULL_V") (VNx8DI "TARGET_FULL_V")
+])
+
 (define_mode_iterator VI_QHS [
   VNx1QI VNx2QI VNx4QI VNx8QI VNx16QI VNx32QI (VNx64QI "TARGET_MIN_VLEN > 32")
   VNx1HI VNx2HI VNx4HI VNx8HI VNx16HI (VNx32HI "TARGET_MIN_VLEN > 32")
@@ -64,6 +77,11 @@
 (define_mode_iterator VI_D [
   (VNx1DI "TARGET_MIN_VLEN > 32") (VNx2DI "TARGET_MIN_VLEN > 32")
   (VNx4DI "TARGET_MIN_VLEN > 32") (VNx8DI "TARGET_MIN_VLEN > 32")
+])
+
+(define_mode_iterator VFULLI_D [
+  (VNx1DI "TARGET_FULL_V") (VNx2DI "TARGET_FULL_V")
+  (VNx4DI "TARGET_FULL_V") (VNx8DI "TARGET_FULL_V")
 ])
 
 (define_mode_iterator VNX1_QHSD [
@@ -238,9 +256,13 @@
 
 (define_int_iterator ORDER [UNSPEC_ORDERED UNSPEC_UNORDERED])
 
+(define_int_iterator VMULH [UNSPEC_VMULHS UNSPEC_VMULHU UNSPEC_VMULHSU])
+
 (define_int_attr order [
   (UNSPEC_ORDERED "o") (UNSPEC_UNORDERED "u")
 ])
+
+(define_int_attr v_su [(UNSPEC_VMULHS "") (UNSPEC_VMULHU "u") (UNSPEC_VMULHSU "su")])
 
 (define_code_iterator any_int_binop [plus minus and ior xor ashift ashiftrt lshiftrt
   smax umax smin umin mult div udiv mod umod
@@ -257,6 +279,9 @@
 (define_code_iterator any_sat_int_binop [ss_plus ss_minus us_plus us_minus])
 (define_code_iterator sat_int_plus_binop [ss_plus us_plus])
 (define_code_iterator sat_int_minus_binop [ss_minus us_minus])
+
+(define_code_iterator any_widen_binop [plus minus mult])
+(define_code_iterator plus_minus [plus minus])
 
 (define_code_attr binop_rhs1_predicate [
 			(plus "register_operand")
@@ -368,6 +393,11 @@
 			(us_plus "vsalu")
 			(ss_minus "vsalu")
 			(us_minus "vsalu")])
+
+(define_code_attr widen_binop_insn_type [
+			(plus "walu")
+			(minus "walu")
+			(mult "wmul")])
 
 ;; <binop_vi_variant_insn> expands to the insn name of binop matching constraint rhs1 is immediate.
 ;; minus is negated as vadd and ss_minus is negated as vsadd, others remain <insn>.

@@ -62,6 +62,9 @@ extern const function_base *const vmax;
 extern const function_base *const vminu;
 extern const function_base *const vmaxu;
 extern const function_base *const vmul;
+extern const function_base *const vmulh;
+extern const function_base *const vmulhu;
+extern const function_base *const vmulhsu;
 extern const function_base *const vdiv;
 extern const function_base *const vrem;
 extern const function_base *const vdivu;
@@ -70,10 +73,20 @@ extern const function_base *const vneg;
 extern const function_base *const vnot;
 extern const function_base *const vsext;
 extern const function_base *const vzext;
+extern const function_base *const vwadd;
+extern const function_base *const vwsub;
+extern const function_base *const vwmul;
+extern const function_base *const vwaddu;
+extern const function_base *const vwsubu;
+extern const function_base *const vwmulu;
+extern const function_base *const vwmulsu;
+extern const function_base *const vwcvt_x;
+extern const function_base *const vwcvtu_x;
 extern const function_base *const vsadd;
 extern const function_base *const vssub;
 extern const function_base *const vsaddu;
 extern const function_base *const vssubu;
+
 }
 
 } // end namespace riscv_vector

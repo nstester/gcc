@@ -218,6 +218,84 @@ public:
   }
 };
 
+/* Implements vmulh/vmulhu/vmulhsu.  */
+template<int UNSPEC>
+class vmulh : public function_base
+{
+public:
+  rtx expand (function_expander &e) const override
+  {
+    switch (e.op_info->op)
+      {
+      case OP_TYPE_vx:
+	return e.use_exact_insn (
+	  code_for_pred_mulh_scalar (UNSPEC, e.vector_mode ()));
+      case OP_TYPE_vv:
+	return e.use_exact_insn (
+	  code_for_pred_mulh (UNSPEC, e.vector_mode ()));
+      default:
+	gcc_unreachable ();
+      }
+  }
+};
+
+/* Implements vwadd/vwsub/vwmul.  */
+template<rtx_code CODE1, rtx_code CODE2>
+class widen_binop : public function_base
+{
+public:
+  rtx expand (function_expander &e) const override
+  {
+    switch (e.op_info->op)
+      {
+      case OP_TYPE_vv:
+	return e.use_exact_insn (
+	  code_for_pred_dual_widen (CODE1, CODE2, e.vector_mode ()));
+      case OP_TYPE_vx:
+	return e.use_exact_insn (
+	  code_for_pred_dual_widen_scalar (CODE1, CODE2, e.vector_mode ()));
+      case OP_TYPE_wv:
+	return e.use_exact_insn (
+	  code_for_pred_single_widen (CODE1, CODE2, e.vector_mode ()));
+      case OP_TYPE_wx:
+	return e.use_exact_insn (
+	  code_for_pred_single_widen_scalar (CODE1, CODE2, e.vector_mode ()));
+      default:
+	gcc_unreachable ();
+      }
+  }
+};
+
+/* Implements vwmulsu.  */
+class vwmulsu : public function_base
+{
+public:
+  rtx expand (function_expander &e) const override
+  {
+    switch (e.op_info->op)
+      {
+      case OP_TYPE_vv:
+	return e.use_exact_insn (code_for_pred_widen_mulsu (e.vector_mode ()));
+      case OP_TYPE_vx:
+	return e.use_exact_insn (
+	  code_for_pred_widen_mulsu_scalar (e.vector_mode ()));
+      default:
+	gcc_unreachable ();
+      }
+  }
+};
+
+/* Implements vwcvt.  */
+template<rtx_code CODE>
+class vwcvt : public function_base
+{
+public:
+  rtx expand (function_expander &e) const override
+  {
+    return e.use_exact_insn (code_for_pred (CODE, e.vector_mode ()));
+  }
+};
+
 static CONSTEXPR const vsetvl<false> vsetvl_obj;
 static CONSTEXPR const vsetvl<true> vsetvlmax_obj;
 static CONSTEXPR const loadstore<false, LST_UNIT_STRIDE, false> vle_obj;
@@ -256,6 +334,9 @@ static CONSTEXPR const binop<SMAX> vmax_obj;
 static CONSTEXPR const binop<UMIN> vminu_obj;
 static CONSTEXPR const binop<UMAX> vmaxu_obj;
 static CONSTEXPR const binop<MULT> vmul_obj;
+static CONSTEXPR const vmulh<UNSPEC_VMULHS> vmulh_obj;
+static CONSTEXPR const vmulh<UNSPEC_VMULHU> vmulhu_obj;
+static CONSTEXPR const vmulh<UNSPEC_VMULHSU> vmulhsu_obj;
 static CONSTEXPR const binop<DIV> vdiv_obj;
 static CONSTEXPR const binop<MOD> vrem_obj;
 static CONSTEXPR const binop<UDIV> vdivu_obj;
@@ -264,6 +345,15 @@ static CONSTEXPR const unop<NEG> vneg_obj;
 static CONSTEXPR const unop<NOT> vnot_obj;
 static CONSTEXPR const ext<SIGN_EXTEND> vsext_obj;
 static CONSTEXPR const ext<ZERO_EXTEND> vzext_obj;
+static CONSTEXPR const widen_binop<PLUS, SIGN_EXTEND>vwadd_obj;
+static CONSTEXPR const widen_binop<MINUS, SIGN_EXTEND>vwsub_obj;
+static CONSTEXPR const widen_binop<MULT, SIGN_EXTEND>vwmul_obj;
+static CONSTEXPR const widen_binop<PLUS, ZERO_EXTEND>vwaddu_obj;
+static CONSTEXPR const widen_binop<MINUS, ZERO_EXTEND>vwsubu_obj;
+static CONSTEXPR const widen_binop<MULT, ZERO_EXTEND>vwmulu_obj;
+static CONSTEXPR const vwmulsu vwmulsu_obj;
+static CONSTEXPR const vwcvt<SIGN_EXTEND> vwcvt_x_obj;
+static CONSTEXPR const vwcvt<ZERO_EXTEND> vwcvtu_x_obj;
 static CONSTEXPR const binop<SS_PLUS> vsadd_obj;
 static CONSTEXPR const binop<SS_MINUS> vssub_obj;
 static CONSTEXPR const binop<US_PLUS> vsaddu_obj;
@@ -312,6 +402,9 @@ BASE (vmax)
 BASE (vminu)
 BASE (vmaxu)
 BASE (vmul)
+BASE (vmulh)
+BASE (vmulhu)
+BASE (vmulhsu)
 BASE (vdiv)
 BASE (vrem)
 BASE (vdivu)
@@ -320,6 +413,15 @@ BASE (vneg)
 BASE (vnot)
 BASE (vsext)
 BASE (vzext)
+BASE (vwadd)
+BASE (vwsub)
+BASE (vwmul)
+BASE (vwaddu)
+BASE (vwsubu)
+BASE (vwmulu)
+BASE (vwmulsu)
+BASE (vwcvt_x)
+BASE (vwcvtu_x)
 BASE (vsadd)
 BASE (vssub)
 BASE (vsaddu)
