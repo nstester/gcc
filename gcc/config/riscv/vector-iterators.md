@@ -36,6 +36,9 @@
 
   UNSPEC_VADC
   UNSPEC_VSBC
+  UNSPEC_VMADC
+  UNSPEC_VMSBC
+  UNSPEC_OVERFLOW
 ])
 
 (define_mode_iterator V [
@@ -285,6 +288,9 @@
 
 (define_code_iterator any_widen_binop [plus minus mult])
 (define_code_iterator plus_minus [plus minus])
+
+(define_code_attr macc_nmsac [(plus "macc") (minus "nmsac")])
+(define_code_attr madd_nmsub [(plus "madd") (minus "nmsub")])
 
 (define_code_attr binop_rhs1_predicate [
 			(plus "register_operand")
