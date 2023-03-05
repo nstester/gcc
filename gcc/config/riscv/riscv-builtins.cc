@@ -42,6 +42,8 @@ along with GCC; see the file COPYING3.  If not see
 /* Macros to create an enumeration identifier for a function prototype.  */
 #define RISCV_FTYPE_NAME0(A) RISCV_##A##_FTYPE
 #define RISCV_FTYPE_NAME1(A, B) RISCV_##A##_FTYPE_##B
+#define RISCV_FTYPE_NAME2(A, B, C) RISCV_##A##_FTYPE_##B##_##C
+#define RISCV_FTYPE_NAME3(A, B, C, D) RISCV_##A##_FTYPE_##B##_##C##_##D
 
 /* Classifies the prototype of a built-in function.  */
 enum riscv_function_type {
@@ -98,6 +100,23 @@ AVAIL (zero32,  TARGET_ZICBOZ && !TARGET_64BIT)
 AVAIL (zero64,  TARGET_ZICBOZ && TARGET_64BIT)
 AVAIL (prefetchi32, TARGET_ZICBOP && !TARGET_64BIT)
 AVAIL (prefetchi64, TARGET_ZICBOP && TARGET_64BIT)
+AVAIL (crypto_zbkb32, TARGET_ZBKB && !TARGET_64BIT)
+AVAIL (crypto_zbkb64, TARGET_ZBKB && TARGET_64BIT)
+AVAIL (crypto_zbkc32, TARGET_ZBKC && !TARGET_64BIT)
+AVAIL (crypto_zbkc64, TARGET_ZBKC && TARGET_64BIT)
+AVAIL (crypto_zbkx32, TARGET_ZBKX && !TARGET_64BIT)
+AVAIL (crypto_zbkx64, TARGET_ZBKX && TARGET_64BIT)
+AVAIL (crypto_zknd32, TARGET_ZKND && !TARGET_64BIT)
+AVAIL (crypto_zknd64, TARGET_ZKND && TARGET_64BIT)
+AVAIL (crypto_zkne32, TARGET_ZKNE && !TARGET_64BIT)
+AVAIL (crypto_zkne64, TARGET_ZKNE && TARGET_64BIT)
+AVAIL (crypto_zkne_or_zknd, (TARGET_ZKNE || TARGET_ZKND) && TARGET_64BIT)
+AVAIL (crypto_zknh32, TARGET_ZKNH && !TARGET_64BIT)
+AVAIL (crypto_zknh64, TARGET_ZKNH && TARGET_64BIT)
+AVAIL (crypto_zksh32, TARGET_ZKSH && !TARGET_64BIT)
+AVAIL (crypto_zksh64, TARGET_ZKSH && TARGET_64BIT)
+AVAIL (crypto_zksed32, TARGET_ZKSED && !TARGET_64BIT)
+AVAIL (crypto_zksed64, TARGET_ZKSED && TARGET_64BIT)
 AVAIL (always,     (!0))
 
 /* Construct a riscv_builtin_description from the given arguments.
@@ -132,6 +151,8 @@ AVAIL (always,     (!0))
 /* Argument types.  */
 #define RISCV_ATYPE_VOID void_type_node
 #define RISCV_ATYPE_USI unsigned_intSI_type_node
+#define RISCV_ATYPE_QI intQI_type_node
+#define RISCV_ATYPE_HI intHI_type_node
 #define RISCV_ATYPE_SI intSI_type_node
 #define RISCV_ATYPE_DI intDI_type_node
 #define RISCV_ATYPE_VOID_PTR ptr_type_node
@@ -142,9 +163,14 @@ AVAIL (always,     (!0))
   RISCV_ATYPE_##A
 #define RISCV_FTYPE_ATYPES1(A, B) \
   RISCV_ATYPE_##A, RISCV_ATYPE_##B
+#define RISCV_FTYPE_ATYPES2(A, B, C) \
+  RISCV_ATYPE_##A, RISCV_ATYPE_##B, RISCV_ATYPE_##C
+#define RISCV_FTYPE_ATYPES3(A, B, C, D) \
+  RISCV_ATYPE_##A, RISCV_ATYPE_##B, RISCV_ATYPE_##C, RISCV_ATYPE_##D
 
 static const struct riscv_builtin_description riscv_builtins[] = {
   #include "riscv-cmo.def"
+  #include "riscv-scalar-crypto.def"
 
   DIRECT_BUILTIN (frflags, RISCV_USI_FTYPE, hard_float),
   DIRECT_NO_TARGET_BUILTIN (fsflags, RISCV_VOID_FTYPE_USI, hard_float),
