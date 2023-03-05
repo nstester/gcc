@@ -363,9 +363,9 @@
 (define_insn "<bitmanip_optab><mode>3"
   [(set (match_operand:X 0 "register_operand" "=r")
         (bitmanip_minmax:X (match_operand:X 1 "register_operand" "r")
-			   (match_operand:X 2 "register_operand" "r")))]
+			   (match_operand:X 2 "reg_or_0_operand" "rJ")))]
   "TARGET_ZBB"
-  "<bitmanip_insn>\t%0,%1,%2"
+  "<bitmanip_insn>\t%0,%1,%z2"
   [(set_attr "type" "bitmanip")])
 
 ;; Optimize the common case of a SImode min/max against a constant
@@ -442,7 +442,7 @@
 	(ior:DI (sign_extend:DI (match_operand:SI 1 "register_operand" "r"))
 		(match_operand 2 "single_bit_mask_operand" "i")))]
   "TARGET_ZBS && TARGET_64BIT
-   && !partial_subreg_p (operands[2])"
+   && !partial_subreg_p (operands[1])"
   "bseti\t%0,%1,%S2"
   [(set_attr "type" "bitmanip")])
 
