@@ -117,6 +117,113 @@ gcc_attribute_p (Dsymbol *decl)
   return false;
 }
 
+/* Return the DECL_RESULT for the function declaration DECL, create it if it
+   doesn't already exist.  */
+
+static tree
+get_fndecl_result (FuncDeclaration *decl)
+{
+  tree fndecl = get_symbol_decl (decl);
+  tree resdecl = DECL_RESULT (fndecl);
+
+  if (resdecl != NULL_TREE)
+    return resdecl;
+
+  resdecl = build_decl (make_location_t (decl->loc), RESULT_DECL,
+			NULL_TREE, TREE_TYPE (TREE_TYPE (fndecl)));
+
+  DECL_ARTIFICIAL (resdecl) = 1;
+  DECL_IGNORED_P (resdecl) = 1;
+  DECL_CONTEXT (resdecl) = fndecl;
+  DECL_RESULT (fndecl) = resdecl;
+  return resdecl;
+}
+
+/* Return the list of PARAM_DECLs for the function declaration DECL, create it
+   if it doesn't already exist.  */
+
+static tree
+get_fndecl_arguments (FuncDeclaration *decl)
+{
+  tree fndecl = get_symbol_decl (decl);
+  tree param_list = DECL_ARGUMENTS (fndecl);
+
+  if (param_list != NULL_TREE)
+    return param_list;
+
+  if (decl->fbody)
+    {
+      /* Handle special arguments first.  */
+
+      /* `this' parameter:
+	 For nested functions, D still generates a vthis, but it
+	 should not be referenced in any expression.  */
+      if (decl->vthis)
+	{
+	  tree parm_decl = get_symbol_decl (decl->vthis);
+	  DECL_ARTIFICIAL (parm_decl) = 1;
+	  TREE_READONLY (parm_decl) = 1;
+
+	  if (decl->vthis->type == Type::tvoidptr)
+	    {
+	      /* Replace generic pointer with back-end closure type
+		 (this wins for gdb).  */
+	      tree frame_type = FRAMEINFO_TYPE (get_frameinfo (decl));
+	      gcc_assert (frame_type != NULL_TREE);
+	      TREE_TYPE (parm_decl) = build_pointer_type (frame_type);
+	    }
+
+	  param_list = chainon (param_list, parm_decl);
+	}
+
+      /* `_arguments' parameter.  */
+      if (decl->v_arguments)
+	{
+	  tree parm_decl = get_symbol_decl (decl->v_arguments);
+	  param_list = chainon (param_list, parm_decl);
+	}
+
+      /* Now add on formal function parameters.  */
+      size_t n_parameters = decl->parameters ? decl->parameters->length : 0;
+
+      for (size_t i = 0; i < n_parameters; i++)
+	{
+	  VarDeclaration *param = (*decl->parameters)[i];
+	  tree parm_decl = get_symbol_decl (param);
+
+	  /* Type `noreturn` is a terminator, as no other arguments can possibly
+	     be evaluated after it.  */
+	  if (TREE_TYPE (parm_decl) == noreturn_type_node)
+	    break;
+
+	  /* Chain them in the correct order.  */
+	  param_list = chainon (param_list, parm_decl);
+	}
+    }
+  else
+    {
+      /* Build parameters from the function type.  */
+      tree fntype = TREE_TYPE (fndecl);
+
+      for (tree t = TYPE_ARG_TYPES (fntype); t; t = TREE_CHAIN (t))
+	{
+	  if (t == void_list_node)
+	    break;
+
+	  tree param = build_decl (DECL_SOURCE_LOCATION (fndecl),
+				   PARM_DECL, NULL_TREE, TREE_VALUE (t));
+	  DECL_ARG_TYPE (param) = TREE_TYPE (param);
+	  DECL_ARTIFICIAL (param) = 1;
+	  DECL_IGNORED_P (param) = 1;
+	  DECL_CONTEXT (param) = fndecl;
+	  param_list = chainon (param_list, param);
+	}
+    }
+
+  DECL_ARGUMENTS (fndecl) = param_list;
+  return param_list;
+}
+
 /* Implements the visitor interface to lower all Declaration AST classes
    emitted from the D Front-end to GCC trees.
    All visit methods accept one parameter D, which holds the frontend AST
@@ -861,66 +968,17 @@ public:
       message ("function  %s", d->toPrettyChars ());
 
     tree old_context = start_function (d);
+    tree param_list = get_fndecl_arguments (d);
 
-    tree parm_decl = NULL_TREE;
-    tree param_list = NULL_TREE;
-
-    /* Special arguments...  */
-
-    /* `this' parameter:
-       For nested functions, D still generates a vthis, but it
-       should not be referenced in any expression.  */
-    if (d->vthis)
-      {
-	parm_decl = get_symbol_decl (d->vthis);
-	DECL_ARTIFICIAL (parm_decl) = 1;
-	TREE_READONLY (parm_decl) = 1;
-
-	if (d->vthis->type == Type::tvoidptr)
-	  {
-	    /* Replace generic pointer with back-end closure type
-	       (this wins for gdb).  */
-	    tree frame_type = FRAMEINFO_TYPE (get_frameinfo (d));
-	    gcc_assert (frame_type != NULL_TREE);
-	    TREE_TYPE (parm_decl) = build_pointer_type (frame_type);
-	  }
-
-	param_list = chainon (param_list, parm_decl);
-	d_function_chain->static_chain = parm_decl;
-      }
-
-    /* _arguments parameter.  */
-    if (d->v_arguments)
-      {
-	parm_decl = get_symbol_decl (d->v_arguments);
-	param_list = chainon (param_list, parm_decl);
-      }
-
-    /* formal function parameters.  */
-    const size_t n_parameters = d->parameters ? d->parameters->length : 0;
-
-    for (size_t i = 0; i < n_parameters; i++)
-      {
-	VarDeclaration *param = (*d->parameters)[i];
-
-	parm_decl = get_symbol_decl (param);
-
-	/* Type `noreturn` is a terminator, as no other arguments can possibly
-	   be evaluated after it.  */
-	if (TREE_TYPE (parm_decl) == noreturn_type_node)
-	  break;
-
-	/* Chain them in the correct order.  */
-	param_list = chainon (param_list, parm_decl);
-      }
-
-    DECL_ARGUMENTS (fndecl) = param_list;
     DECL_IN_UNITTEST_CONDITION_P (fndecl) = this->in_version_unittest_;
     rest_of_decl_compilation (fndecl, 1, 0);
 
     /* If this is a member function that nested (possibly indirectly) in another
        function, construct an expession for this member function's static chain
        by going through parent link of nested classes.  */
+    if (d->vthis)
+      d_function_chain->static_chain = get_symbol_decl (d->vthis);
+
     if (d->isThis ())
       {
 	AggregateDeclaration *ad = d->isThis ();
@@ -935,7 +993,7 @@ public:
 	    ad = pd->isAggregateDeclaration ();
 	    if (ad == NULL)
 	      {
-		cfun->language->static_chain = this_tree;
+		d_function_chain->static_chain = this_tree;
 		break;
 	      }
 	  }
@@ -996,7 +1054,7 @@ public:
 	var = build_address (var);
 
 	tree init = build_call_expr (builtin_decl_explicit (BUILT_IN_VA_START),
-				     2, var, parm_decl);
+				     2, var, tree_last (param_list));
 	declare_local_var (d->v_argptr);
 	add_stmt (init);
 
@@ -1800,6 +1858,7 @@ finish_thunk (tree thunk, tree function)
 
   TREE_ADDRESSABLE (function) = 1;
   TREE_USED (function) = 1;
+  DECL_EXTERNAL (thunk) = 0;
 
   if (flag_syntax_only)
     {
@@ -1871,43 +1930,14 @@ make_thunk (FuncDeclaration *decl, int offset)
 
   if (!DECL_ARGUMENTS (function) || !DECL_RESULT (function))
     {
-      /* Compile the function body before generating the thunk, this is done
-	 even if the decl is external to the current module.  */
-      if (decl->fbody)
-	build_decl_tree (decl);
-      else
-	{
-	  /* Build parameters for functions that are not being compiled,
-	     so that they can be correctly cloned in finish_thunk.  */
-	  tree fntype = TREE_TYPE (function);
-	  tree params = NULL_TREE;
+      /* Build parameters for functions that are not being compiled,
+	 so that they can be correctly cloned in finish_thunk.  */
+      tree function = get_symbol_decl (decl);
+      DECL_ARGUMENTS (function) = get_fndecl_arguments (decl);
 
-	  for (tree t = TYPE_ARG_TYPES (fntype); t; t = TREE_CHAIN (t))
-	    {
-	      if (t == void_list_node)
-		break;
-
-	      tree param = build_decl (DECL_SOURCE_LOCATION (function),
-				       PARM_DECL, NULL_TREE, TREE_VALUE (t));
-	      DECL_ARG_TYPE (param) = TREE_TYPE (param);
-	      DECL_ARTIFICIAL (param) = 1;
-	      DECL_IGNORED_P (param) = 1;
-	      DECL_CONTEXT (param) = function;
-	      params = chainon (params, param);
-	    }
-
-	  DECL_ARGUMENTS (function) = params;
-
-	  /* Also build the result decl, which is needed when force creating
-	     the thunk in gimple inside cgraph_node::expand_thunk.  */
-	  tree resdecl = build_decl (DECL_SOURCE_LOCATION (function),
-				     RESULT_DECL, NULL_TREE,
-				     TREE_TYPE (fntype));
-	  DECL_ARTIFICIAL (resdecl) = 1;
-	  DECL_IGNORED_P (resdecl) = 1;
-	  DECL_CONTEXT (resdecl) = function;
-	  DECL_RESULT (function) = resdecl;
-	}
+      /* Also build the result decl, which is needed when force creating
+	 the thunk in gimple inside cgraph_node::expand_thunk.  */
+      DECL_RESULT (function) = get_fndecl_result (decl);
     }
 
   /* Don't build the thunk if the compilation step failed.  */
@@ -1933,11 +1963,10 @@ make_thunk (FuncDeclaration *decl, int offset)
 
   DECL_CONTEXT (thunk) = d_decl_context (decl);
 
-  /* Thunks inherit the public access of the function they are targeting.
-     Thunks are connected to the definitions of the functions, so thunks are
-     not produced for external functions.  */
+  /* Thunks inherit the public access of the function they are targeting.  */
   TREE_PUBLIC (thunk) = TREE_PUBLIC (function);
-  DECL_EXTERNAL (thunk) = DECL_EXTERNAL (function);
+  /* The thunk has not been defined -- yet.  */
+  DECL_EXTERNAL (thunk) = 1;
 
   /* Thunks are always addressable.  */
   TREE_ADDRESSABLE (thunk) = 1;
@@ -1977,6 +2006,8 @@ make_thunk (FuncDeclaration *decl, int offset)
   if (decl->resolvedLinkage () != LINK::cpp)
     free (CONST_CAST (char *, ident));
 
+  /* Thunks are connected to the definitions of the functions, so thunks are
+     not produced for external functions.  */
   if (!DECL_EXTERNAL (function))
     finish_thunk (thunk, function);
 
@@ -2018,14 +2049,8 @@ start_function (FuncDeclaration *fd)
   /* Let GCC know the current scope is this function.  */
   current_function_decl = fndecl;
 
-  tree restype = TREE_TYPE (TREE_TYPE (fndecl));
-  tree resdecl = build_decl (make_location_t (fd->loc), RESULT_DECL,
-			     NULL_TREE, restype);
-
-  DECL_RESULT (fndecl) = resdecl;
-  DECL_CONTEXT (resdecl) = fndecl;
-  DECL_ARTIFICIAL (resdecl) = 1;
-  DECL_IGNORED_P (resdecl) = 1;
+  /* Build the result decl before calling allocate_struct_function.  */
+  DECL_RESULT (fndecl) = get_fndecl_result (fd);
 
   /* Initialize the RTL code for the function.  */
   allocate_struct_function (fndecl, false);
@@ -2091,6 +2116,10 @@ finish_function (tree old_context)
     }
 
   DECL_SAVED_TREE (fndecl) = bind;
+
+  /* Finish any forward referenced thunks for the function.  */
+  for (tree t = DECL_LANG_THUNKS (fndecl); t; t = DECL_CHAIN (t))
+    finish_thunk (t, fndecl);
 
   if (!errorcount && !global.errors)
     {
