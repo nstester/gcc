@@ -471,6 +471,8 @@ push_inline_template_parms_recursive (tree parmlist, int levels)
   current_template_parms
     = tree_cons (size_int (current_template_depth + 1),
 		 parms, current_template_parms);
+  TEMPLATE_PARMS_CONSTRAINTS (current_template_parms)
+    = TEMPLATE_PARMS_CONSTRAINTS (parmlist);
   TEMPLATE_PARMS_FOR_INLINE (current_template_parms) = 1;
 
   begin_scope (TREE_VEC_LENGTH (parms) ? sk_template_parms : sk_template_spec,
@@ -6134,6 +6136,30 @@ push_template_decl (tree decl, bool is_friend)
 	  DECL_INTERFACE_KNOWN (decl) = 1;
 	  return error_mark_node;
 	}
+
+      /* Check that the constraints for each enclosing template scope are
+	 consistent with the original declarations.  */
+      if (flag_concepts)
+	{
+	  tree decl_parms = DECL_TEMPLATE_PARMS (tmpl);
+	  tree scope_parms = current_template_parms;
+	  if (PRIMARY_TEMPLATE_P (tmpl))
+	    {
+	      decl_parms = TREE_CHAIN (decl_parms);
+	      scope_parms = TREE_CHAIN (scope_parms);
+	    }
+	  while (decl_parms)
+	    {
+	      if (!template_requirements_equivalent_p (decl_parms, scope_parms))
+		{
+		  error ("redeclaration of %qD with different constraints",
+			 TPARMS_PRIMARY_TEMPLATE (TREE_VALUE (decl_parms)));
+		  break;
+		}
+	      decl_parms = TREE_CHAIN (decl_parms);
+	      scope_parms = TREE_CHAIN (scope_parms);
+	    }
+	}
     }
 
   gcc_checking_assert (!tmpl || DECL_TEMPLATE_RESULT (tmpl) == decl);
@@ -6377,7 +6403,7 @@ redeclare_class_template (tree type, tree parms, tree cons)
   if (!cp_tree_equal (req1, req2))
     {
       auto_diagnostic_group d;
-      error_at (input_location, "redeclaration %q#D with different "
+      error_at (input_location, "redeclaration of %q#D with different "
                                 "constraints", tmpl);
       inform (DECL_SOURCE_LOCATION (tmpl),
               "original declaration appeared here");
@@ -11564,7 +11590,11 @@ tsubst_friend_class (tree friend_tmpl, tree args)
 						 tf_warning_or_error);
           location_t saved_input_location = input_location;
           input_location = DECL_SOURCE_LOCATION (friend_tmpl);
-          tree cons = get_constraints (tmpl);
+	  tree cons = get_constraints (friend_tmpl);
+	  ++processing_template_decl;
+	  cons = tsubst_constraint_info (cons, args, tf_warning_or_error,
+					 DECL_FRIEND_CONTEXT (friend_tmpl));
+	  --processing_template_decl;
           redeclare_class_template (TREE_TYPE (tmpl), parms, cons);
           input_location = saved_input_location;
 	}
