@@ -7798,11 +7798,8 @@ coerce_template_template_parm (tree parm,
 	 template <template <template <class> class> class TT>
 	 class C;  */
       {
-	tree parmparm = DECL_TEMPLATE_PARMS (parm);
-	tree argparm = DECL_TEMPLATE_PARMS (arg);
-
 	if (!coerce_template_template_parms
-	    (parmparm, argparm, complain, in_decl, outer_args))
+	    (parm, arg, complain, in_decl, outer_args))
 	  return 0;
       }
       /* Fall through.  */
@@ -8050,21 +8047,19 @@ unify_bound_ttp_args (tree tparms, tree targs, tree parm, tree& arg,
   return 0;
 }
 
-/* Return 1 if PARM_PARMS and ARG_PARMS matches using rule for
-   template template parameters.  Both PARM_PARMS and ARG_PARMS are
-   vectors of TREE_LIST nodes containing TYPE_DECL, TEMPLATE_DECL
-   or PARM_DECL.
+/* Return 1 if PARM_TMPL and ARG_TMPL match using rule for
+   template template parameters.
 
    Consider the example:
      template <class T> class A;
      template<template <class U> class TT> class B;
 
-   For B<A>, PARM_PARMS are the parameters to TT, while ARG_PARMS are
-   the parameters to A, and OUTER_ARGS contains A.  */
+   For B<A>, PARM_TMPL is TT, while ARG_TMPL is A,
+   and OUTER_ARGS contains A.  */
 
 static int
-coerce_template_template_parms (tree parm_parms_full,
-				tree arg_parms_full,
+coerce_template_template_parms (tree parm_tmpl,
+				tree arg_tmpl,
 				tsubst_flags_t complain,
 				tree in_decl,
 				tree outer_args)
@@ -8073,7 +8068,8 @@ coerce_template_template_parms (tree parm_parms_full,
   tree parm, arg;
   int variadic_p = 0;
 
-  tree parm_parms = INNERMOST_TEMPLATE_PARMS (parm_parms_full);
+  tree parm_parms = INNERMOST_TEMPLATE_PARMS (DECL_TEMPLATE_PARMS (parm_tmpl));
+  tree arg_parms_full = DECL_TEMPLATE_PARMS (arg_tmpl);
   tree arg_parms = INNERMOST_TEMPLATE_PARMS (arg_parms_full);
 
   gcc_assert (TREE_CODE (parm_parms) == TREE_VEC);
@@ -8114,22 +8110,24 @@ coerce_template_template_parms (tree parm_parms_full,
 
       tree pargs = template_parms_level_to_args (parm_parms);
 
-      /* PARM, and thus the context in which we are passing ARG to it, may be
-	 at a deeper level than ARG; when trying to coerce to ARG_PARMS, we
-	 want to provide the right number of levels, so we reduce the number of
-	 levels in OUTER_ARGS before prepending them.  This is most important
-	 when ARG is a namespace-scope template, as in alias-decl-ttp2.C.
+      /* PARM and ARG might be at different template depths, and we want to
+	 pass the right additional levels of args when coercing PARGS to
+	 ARG_PARMS in case we need to do any substitution into non-type
+	 template parameter types.
 
-	 ARG might also be deeper than PARM (ttp23).  In that case, we include
-	 all of OUTER_ARGS.  The missing levels seem potentially problematic,
-	 but I can't come up with a testcase that breaks.  */
-      if (int arg_outer_levs = TMPL_PARMS_DEPTH (arg_parms_full) - 1)
-	{
-	  auto x = make_temp_override (TREE_VEC_LENGTH (outer_args));
-	  if (TMPL_ARGS_DEPTH (outer_args) > arg_outer_levs)
-	    TREE_VEC_LENGTH (outer_args) = arg_outer_levs;
-	  pargs = add_to_template_args (outer_args, pargs);
-	}
+	 OUTER_ARGS are not the right outer levels in this case, as they are
+	 the args we're building up for PARM, and for the coercion we want the
+	 args for ARG.  If DECL_CONTEXT isn't set for a template template
+	 parameter, we can assume that it's in the current scope.  In that case
+	 we might end up adding more levels than needed, but that shouldn't be
+	 a problem; any args we need to refer to are at the right level.  */
+      tree ctx = DECL_CONTEXT (arg_tmpl);
+      if (!ctx && DECL_TEMPLATE_TEMPLATE_PARM_P (arg_tmpl))
+	ctx = current_scope ();
+      tree scope_args = NULL_TREE;
+      if (tree tinfo = get_template_info (ctx))
+	scope_args = TI_ARGS (tinfo);
+      pargs = add_to_template_args (scope_args, pargs);
 
       pargs = coerce_template_parms (arg_parms, pargs, NULL_TREE, tf_none);
       if (pargs != error_mark_node)
@@ -8254,8 +8252,6 @@ template_template_parm_bindings_ok_p (tree tparms, tree targs)
 
 	  for (idx = 0; idx < len; ++idx)
 	    {
-	      tree targ_parms = NULL_TREE;
-
 	      if (packed_args)
 		/* Extract the next argument from the argument
 		   pack.  */
@@ -8267,18 +8263,16 @@ template_template_parm_bindings_ok_p (tree tparms, tree targs)
 
 	      /* Extract the template parameters from the template
 		 argument.  */
-	      if (TREE_CODE (targ) == TEMPLATE_DECL)
-		targ_parms = DECL_TEMPLATE_PARMS (targ);
-	      else if (TREE_CODE (targ) == TEMPLATE_TEMPLATE_PARM)
-		targ_parms = DECL_TEMPLATE_PARMS (TYPE_NAME (targ));
+	      if (TREE_CODE (targ) == TEMPLATE_TEMPLATE_PARM)
+		targ = TYPE_NAME (targ);
 
 	      /* Verify that we can coerce the template template
 		 parameters from the template argument to the template
 		 parameter.  This requires an exact match.  */
-	      if (targ_parms
+	      if (TREE_CODE (targ) == TEMPLATE_DECL
 		  && !coerce_template_template_parms
-		       (DECL_TEMPLATE_PARMS (tparm),
-			targ_parms,
+		       (tparm,
+			targ,
 			tf_none,
 			tparm,
 			targs))
@@ -8571,15 +8565,11 @@ convert_template_argument (tree parm,
 	    val = orig_arg;
 	  else
 	    {
-	      tree parmparm = DECL_TEMPLATE_PARMS (parm);
-	      tree argparm;
-
 	      /* Strip alias templates that are equivalent to another
 		 template.  */
 	      arg = get_underlying_template (arg);
-	      argparm = DECL_TEMPLATE_PARMS (arg);
 
-	      if (coerce_template_template_parms (parmparm, argparm,
+	      if (coerce_template_template_parms (parm, arg,
 						  complain, in_decl,
 						  args))
 		{
