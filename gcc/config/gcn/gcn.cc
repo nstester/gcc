@@ -492,6 +492,15 @@ gcn_class_max_nregs (reg_class_t rclass, machine_mode mode)
     }
   else if (rclass == VCC_CONDITIONAL_REG && mode == BImode)
     return 2;
+
+  /* Vector modes in SGPRs are not supposed to happen (disallowed by
+     gcn_hard_regno_mode_ok), but there are some patterns that have an "Sv"
+     constraint and are used by splitters, post-reload.
+     This ensures that we don't accidentally mark the following 63 scalar
+     registers as "live".  */
+  if (rclass == SGPR_REGS && VECTOR_MODE_P (mode))
+    return CEIL (GET_MODE_SIZE (GET_MODE_INNER (mode)), 4);
+
   return CEIL (GET_MODE_SIZE (mode), 4);
 }
 
@@ -1421,6 +1430,24 @@ CODE_FOR_OP (reload_out)
 
 #undef CODE_FOR_OP
 #undef CODE_FOR
+
+/* Return true if OP is a PARALLEL of CONST_INTs that form a linear
+   series with step STEP.  */
+
+bool
+gcn_stepped_zero_int_parallel_p (rtx op, int step)
+{
+  if (GET_CODE (op) != PARALLEL || !CONST_INT_P (XVECEXP (op, 0, 0)))
+    return false;
+
+  unsigned HOST_WIDE_INT base = 0;
+  for (int i = 0; i < XVECLEN (op, 0); ++i)
+    if (!CONST_INT_P (XVECEXP (op, 0, i))
+	|| UINTVAL (XVECEXP (op, 0, i)) != base + i * step)
+      return false;
+
+  return true;
+}
 
 /* }}}  */
 /* {{{ Addresses, pointers and moves.  */
@@ -3221,6 +3248,10 @@ move_callee_saved_registers (rtx sp, machine_function *offsets,
       emit_insn (move_vectors);
       emit_insn (move_scalars);
     }
+
+  /* This happens when a new register becomes "live" after reload.
+     Check your splitters!  */
+  gcc_assert (offset <= offsets->callee_saves);
 }
 
 /* Generate prologue.  Called from gen_prologue during pro_and_epilogue pass.
