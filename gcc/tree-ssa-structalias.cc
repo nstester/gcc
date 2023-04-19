@@ -1632,8 +1632,9 @@ topo_visit (constraint_graph_t graph, struct topo_info *ti,
   if (graph->succs[n])
     EXECUTE_IF_SET_IN_BITMAP (graph->succs[n], 0, j, bi)
       {
-	if (!bitmap_bit_p (ti->visited, j))
-	  topo_visit (graph, ti, j);
+	unsigned k = find (j);
+	if (!bitmap_bit_p (ti->visited, k))
+	  topo_visit (graph, ti, k);
       }
 
   ti->topo_order.safe_push (n);
@@ -1705,7 +1706,7 @@ do_sd_constraint (constraint_graph_t graph, constraint_t c,
 	    flag |= bitmap_ior_into (sol, get_varinfo (t)->solution);
 	  /* Merging the solution from ESCAPED needlessly increases
 	     the set.  Use ESCAPED as representative instead.  */
-	  else if (v->id == escaped_id)
+	  else if (t == find (escaped_id))
 	    flag |= bitmap_set_bit (sol, escaped_id);
 	  else if (v->may_have_pointers
 		   && add_graph_edge (graph, lhs, t))
@@ -1723,10 +1724,7 @@ do_sd_constraint (constraint_graph_t graph, constraint_t c,
 done:
   /* If the LHS solution changed, mark the var as changed.  */
   if (flag)
-    {
-      get_varinfo (lhs)->solution = sol;
-      bitmap_set_bit (changed, lhs);
-    }
+    bitmap_set_bit (changed, lhs);
 }
 
 /* Process a constraint C that represents *(x + off) = y using DELTA
@@ -2875,19 +2873,22 @@ solve_graph (constraint_graph_t graph)
 			}
 		      /* Don't try to propagate to ourselves.  */
 		      if (to == i)
-			continue;
-
-		      bitmap tmp = get_varinfo (to)->solution;
-		      bool flag = false;
-
-		      /* If we propagate from ESCAPED use ESCAPED as
-		         placeholder.  */
+			{
+			  to_remove = j;
+			  continue;
+			}
+		      /* Early node unification can lead to edges from
+			 escaped - remove them.  */
 		      if (i == eff_escaped_id)
-			flag = bitmap_set_bit (tmp, escaped_id);
-		      else
-			flag = bitmap_ior_into (tmp, pts);
+			{
+			  to_remove = j;
+			  if (bitmap_set_bit (get_varinfo (to)->solution,
+					      escaped_id))
+			    bitmap_set_bit (changed, to);
+			  continue;
+			}
 
-		      if (flag)
+		      if (bitmap_ior_into (get_varinfo (to)->solution, pts))
 			bitmap_set_bit (changed, to);
 		    }
 		  if (to_remove != ~0U)
