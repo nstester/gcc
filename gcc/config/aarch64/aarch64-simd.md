@@ -899,47 +899,114 @@
   [(set_attr "type" "neon_abd<q>")]
 )
 
-
-(define_insn "aarch64_<sur>abdl<mode>"
+(define_insn "aarch64_<su>abdl<mode>"
   [(set (match_operand:<VWIDE> 0 "register_operand" "=w")
-	(unspec:<VWIDE> [(match_operand:VD_BHSI 1 "register_operand" "w")
-			 (match_operand:VD_BHSI 2 "register_operand" "w")]
-	ABDL))]
+	(zero_extend:<VWIDE>
+	  (minus:VD_BHSI
+	    (USMAX:VD_BHSI
+	      (match_operand:VD_BHSI 1 "register_operand" "w")
+	      (match_operand:VD_BHSI 2 "register_operand" "w"))
+	    (<max_opp>:VD_BHSI
+	      (match_dup 1)
+	      (match_dup 2)))))]
   "TARGET_SIMD"
-  "<sur>abdl\t%0.<Vwtype>, %1.<Vtype>, %2.<Vtype>"
+  "<su>abdl\t%0.<Vwtype>, %1.<Vtype>, %2.<Vtype>"
   [(set_attr "type" "neon_abd<q>")]
 )
 
-(define_insn "aarch64_<sur>abdl2<mode>"
+(define_insn "aarch64_<su>abdl2<mode>_insn"
   [(set (match_operand:<VDBLW> 0 "register_operand" "=w")
-	(unspec:<VDBLW> [(match_operand:VQW 1 "register_operand" "w")
-			 (match_operand:VQW 2 "register_operand" "w")]
-	ABDL2))]
+	(zero_extend:<VDBLW>
+	  (minus:<VHALF>
+	    (USMAX:<VHALF>
+	      (vec_select:<VHALF>
+		(match_operand:VQW 1 "register_operand" "w")
+		(match_operand:VQW 3 "vect_par_cnst_hi_half" ""))
+	      (vec_select:<VHALF>
+		(match_operand:VQW 2 "register_operand" "w")
+		(match_dup 3)))
+	    (<max_opp>:<VHALF>
+	      (vec_select:<VHALF>
+		(match_dup 1)
+		(match_dup 3))
+	      (vec_select:<VHALF>
+		(match_dup 2)
+		(match_dup 3))))))]
+
   "TARGET_SIMD"
-  "<sur>abdl2\t%0.<Vwtype>, %1.<Vtype>, %2.<Vtype>"
+  "<su>abdl2\t%0.<Vwtype>, %1.<Vtype>, %2.<Vtype>"
   [(set_attr "type" "neon_abd<q>")]
 )
 
-(define_insn "aarch64_<sur>abal<mode>"
-  [(set (match_operand:<VWIDE> 0 "register_operand" "=w")
-	(unspec:<VWIDE> [(match_operand:VD_BHSI 2 "register_operand" "w")
-			  (match_operand:VD_BHSI 3 "register_operand" "w")
-			 (match_operand:<VWIDE> 1 "register_operand" "0")]
-	ABAL))]
+(define_expand "aarch64_<su>abdl2<mode>"
+  [(match_operand:<VDBLW> 0 "register_operand")
+   (USMAX:VQW
+     (match_operand:VQW 1 "register_operand")
+     (match_operand:VQW 2 "register_operand"))]
   "TARGET_SIMD"
-  "<sur>abal\t%0.<Vwtype>, %2.<Vtype>, %3.<Vtype>"
+  {
+    rtx hi = aarch64_simd_vect_par_cnst_half (<MODE>mode, <nunits>, true);
+    emit_insn (gen_aarch64_<su>abdl2<mode>_insn (operands[0], operands[1],
+						 operands[2], hi));
+    DONE;
+  }
+)
+
+(define_insn "aarch64_<su>abal<mode>"
+  [(set (match_operand:<VWIDE> 0 "register_operand" "=w")
+	(plus:<VWIDE>
+	  (zero_extend:<VWIDE>
+	    (minus:VD_BHSI
+	      (USMAX:VD_BHSI
+		(match_operand:VD_BHSI 2 "register_operand" "w")
+		(match_operand:VD_BHSI 3 "register_operand" "w"))
+	      (<max_opp>:VD_BHSI
+		(match_dup 2)
+		(match_dup 3))))
+	  (match_operand:<VWIDE> 1 "register_operand" "0")))]
+  "TARGET_SIMD"
+  "<su>abal\t%0.<Vwtype>, %2.<Vtype>, %3.<Vtype>"
   [(set_attr "type" "neon_arith_acc<q>")]
 )
 
-(define_insn "aarch64_<sur>abal2<mode>"
-  [(set (match_operand:<VWIDE> 0 "register_operand" "=w")
-	(unspec:<VWIDE> [(match_operand:VQW 2 "register_operand" "w")
-			  (match_operand:VQW 3 "register_operand" "w")
-			 (match_operand:<VWIDE> 1 "register_operand" "0")]
-	ABAL2))]
+(define_insn "aarch64_<su>abal2<mode>_insn"
+  [(set (match_operand:<VDBLW> 0 "register_operand" "=w")
+	(plus:<VDBLW>
+	  (zero_extend:<VDBLW>
+	    (minus:<VHALF>
+	      (USMAX:<VHALF>
+		(vec_select:<VHALF>
+		  (match_operand:VQW 2 "register_operand" "w")
+		  (match_operand:VQW 4 "vect_par_cnst_hi_half" ""))
+		(vec_select:<VHALF>
+		  (match_operand:VQW 3 "register_operand" "w")
+		  (match_dup 4)))
+	      (<max_opp>:<VHALF>
+		(vec_select:<VHALF>
+		  (match_dup 2)
+		  (match_dup 4))
+		(vec_select:<VHALF>
+		  (match_dup 3)
+		  (match_dup 4)))))
+	  (match_operand:<VDBLW> 1 "register_operand" "0")))]
   "TARGET_SIMD"
-  "<sur>abal2\t%0.<Vwtype>, %2.<Vtype>, %3.<Vtype>"
+  "<su>abal2\t%0.<Vwtype>, %2.<Vtype>, %3.<Vtype>"
   [(set_attr "type" "neon_arith_acc<q>")]
+)
+
+(define_expand "aarch64_<su>abal2<mode>"
+  [(match_operand:<VDBLW> 0 "register_operand")
+   (match_operand:<VDBLW> 1 "register_operand")
+   (USMAX:VQW
+     (match_operand:VQW 2 "register_operand")
+     (match_operand:VQW 3 "register_operand"))]
+  "TARGET_SIMD"
+  {
+    rtx hi = aarch64_simd_vect_par_cnst_half (<MODE>mode, <nunits>, true);
+    emit_insn (gen_aarch64_<su>abal2<mode>_insn (operands[0], operands[1],
+						 operands[2], operands[3], hi));
+    DONE;
+  }
 )
 
 (define_insn "aarch64_<sur>adalp<mode>"
@@ -972,10 +1039,10 @@
 ;; but for TARGET_DOTPROD still emits a UDOT as the absolute difference is
 ;; unsigned.
 
-(define_expand "<sur>sadv16qi"
+(define_expand "<su>sadv16qi"
   [(use (match_operand:V4SI 0 "register_operand"))
-   (unspec:V16QI [(use (match_operand:V16QI 1 "register_operand"))
-		  (use (match_operand:V16QI 2 "register_operand"))] ABAL)
+   (USMAX:V16QI (match_operand:V16QI 1 "register_operand")
+		(match_operand:V16QI 2 "register_operand"))
    (use (match_operand:V4SI 3 "register_operand"))]
   "TARGET_SIMD"
   {
@@ -983,18 +1050,18 @@
       {
 	rtx ones = force_reg (V16QImode, CONST1_RTX (V16QImode));
 	rtx abd = gen_reg_rtx (V16QImode);
-	emit_insn (gen_aarch64_<sur>abdv16qi (abd, operands[1], operands[2]));
+	emit_insn (gen_aarch64_<su>abdv16qi (abd, operands[1], operands[2]));
 	emit_insn (gen_udot_prodv16qi (operands[0], abd, ones, operands[3]));
 	DONE;
       }
     rtx reduc = gen_reg_rtx (V8HImode);
-    emit_insn (gen_aarch64_<sur>abdl2v16qi (reduc, operands[1],
+    emit_insn (gen_aarch64_<su>abdl2v16qi (reduc, operands[1],
 					    operands[2]));
-    emit_insn (gen_aarch64_<sur>abalv8qi (reduc, reduc,
-					  gen_lowpart (V8QImode, operands[1]),
-					  gen_lowpart (V8QImode,
-						       operands[2])));
-    emit_insn (gen_aarch64_<sur>adalpv8hi (operands[3], operands[3], reduc));
+    emit_insn (gen_aarch64_<su>abalv8qi (reduc, reduc,
+					 gen_lowpart (V8QImode, operands[1]),
+					 gen_lowpart (V8QImode,
+						      operands[2])));
+    emit_insn (gen_aarch64_<su>adalpv8hi (operands[3], operands[3], reduc));
     emit_move_insn (operands[0], operands[3]);
     DONE;
   }
@@ -3519,6 +3586,22 @@
  "TARGET_SIMD"
  "<su>addl<vp>\\t%<Vwstype>0<Vwsuf>, %1.<Vtype>"
   [(set_attr "type" "neon_reduc_add<q>")]
+)
+
+;; Zero-extending version of the above.  As these intrinsics produce a scalar
+;; value that may be used by further intrinsics we want to avoid moving the
+;; result into GP regs to do a zero-extension that ADDLV/ADDLP gives for free.
+
+(define_insn "*aarch64_<su>addlv<VDQV_L:mode>_ze<GPI:mode>"
+ [(set (match_operand:GPI 0 "register_operand" "=w")
+       (zero_extend:GPI
+	(unspec:<VWIDE_S>
+	  [(match_operand:VDQV_L 1 "register_operand" "w")]
+	    USADDLV)))]
+ "TARGET_SIMD
+  && (GET_MODE_SIZE (<GPI:MODE>mode) > GET_MODE_SIZE (<VWIDE_S>mode))"
+ "<su>addl<VDQV_L:vp>\\t%<VDQV_L:Vwstype>0<VDQV_L:Vwsuf>, %1.<VDQV_L:Vtype>"
+  [(set_attr "type" "neon_reduc_add<VDQV_L:q>")]
 )
 
 (define_insn "aarch64_<su>addlp<mode>"
