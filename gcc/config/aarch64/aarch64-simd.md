@@ -423,7 +423,7 @@
    (set_attr "length" "4")]
 )
 
-(define_insn "orn<mode>3"
+(define_insn "orn<mode>3<vczle><vczbe>"
  [(set (match_operand:VDQ_I 0 "register_operand" "=w")
        (ior:VDQ_I (not:VDQ_I (match_operand:VDQ_I 1 "register_operand" "w"))
 		(match_operand:VDQ_I 2 "register_operand" "w")))]
@@ -432,7 +432,7 @@
   [(set_attr "type" "neon_logic<q>")]
 )
 
-(define_insn "bic<mode>3"
+(define_insn "bic<mode>3<vczle><vczbe>"
  [(set (match_operand:VDQ_I 0 "register_operand" "=w")
        (and:VDQ_I (not:VDQ_I (match_operand:VDQ_I 1 "register_operand" "w"))
 		(match_operand:VDQ_I 2 "register_operand" "w")))]
@@ -1671,7 +1671,7 @@
 )
 
 ;; Max/Min operations.
-(define_insn "<su><maxmin><mode>3"
+(define_insn "<su><maxmin><mode>3<vczle><vczbe>"
  [(set (match_operand:VDQ_BHSI 0 "register_operand" "=w")
        (MAXMIN:VDQ_BHSI (match_operand:VDQ_BHSI 1 "register_operand" "w")
 		    (match_operand:VDQ_BHSI 2 "register_operand" "w")))]
@@ -2865,6 +2865,27 @@
  "TARGET_SIMD"
  "fdiv\\t%0.<Vtype>, %1.<Vtype>, %2.<Vtype>"
   [(set_attr "type" "neon_fp_div_<stype><q>")]
+)
+
+;; SVE has vector integer divisions, unlike Advanced SIMD.
+;; We can use it with Advanced SIMD modes to expose the V2DI and V4SI
+;; optabs to the midend.
+(define_expand "<su_optab>div<mode>3"
+  [(set (match_operand:VQDIV 0 "register_operand")
+	(ANY_DIV:VQDIV
+	  (match_operand:VQDIV 1 "register_operand")
+	  (match_operand:VQDIV 2 "register_operand")))]
+  "TARGET_SVE"
+  {
+    machine_mode sve_mode
+      = aarch64_full_sve_mode (GET_MODE_INNER (<MODE>mode)).require ();
+    rtx sve_op0 = simplify_gen_subreg (sve_mode, operands[0], <MODE>mode, 0);
+    rtx sve_op1 = simplify_gen_subreg (sve_mode, operands[1], <MODE>mode, 0);
+    rtx sve_op2 = simplify_gen_subreg (sve_mode, operands[2], <MODE>mode, 0);
+
+    emit_insn (gen_<su_optab>div<vnx>3 (sve_op0, sve_op1, sve_op2));
+    DONE;
+  }
 )
 
 (define_insn "neg<mode>2"
