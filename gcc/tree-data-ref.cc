@@ -646,7 +646,8 @@ compute_distributive_range (tree type, value_range &op0_range,
   if (!op.fold_range (wide_range, ssizetype, op0_range, op1_range))
     wide_range.set_varying (ssizetype);;
   flag_wrapv = saved_flag_wrapv;
-  if (wide_range.num_pairs () != 1 || !range_int_cst_p (&wide_range))
+  if (wide_range.num_pairs () != 1
+      || wide_range.varying_p () || wide_range.undefined_p ())
     return false;
 
   wide_int lb = wide_range.lower_bound ();
@@ -6351,7 +6352,7 @@ dr_step_indicator (struct data_reference *dr, int useful_min)
       value_range vr;
       if (TREE_CODE (step) != SSA_NAME
 	  || !get_range_query (cfun)->range_of_expr (vr, step)
-	  || vr.kind () != VR_RANGE)
+	  || vr.undefined_p ())
 	{
 	  step_min = wi::to_wide (TYPE_MIN_VALUE (type));
 	  step_max = wi::to_wide (TYPE_MAX_VALUE (type));
