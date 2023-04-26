@@ -12086,7 +12086,8 @@ instantiate_class_template (tree type)
     return error_mark_node;
 
   if (COMPLETE_OR_OPEN_TYPE_P (type)
-      || uses_template_parms (type))
+      || (uses_template_parms (type)
+	  && !TYPE_FUNCTION_SCOPE_P (type)))
     return type;
 
   /* Figure out which template is being instantiated.  */
@@ -19356,10 +19357,7 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
     case TAG_DEFN:
       tmp = tsubst (TREE_TYPE (t), args, complain, NULL_TREE);
-      if (dependent_type_p (tmp))
-	/* This is a partial instantiation, try again when full.  */
-	add_stmt (build_min (TAG_DEFN, tmp));
-      else if (CLASS_TYPE_P (tmp))
+      if (CLASS_TYPE_P (tmp))
 	{
 	  /* Local classes are not independent templates; they are
 	     instantiated along with their containing function.  And this
@@ -19368,6 +19366,12 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	  /* Closures are handled by the LAMBDA_EXPR.  */
 	  gcc_assert (!LAMBDA_TYPE_P (TREE_TYPE (t)));
 	  complete_type (tmp);
+	  if (dependent_type_p (tmp))
+	    {
+	      /* This is a partial instantiation, try again when full.  */
+	      add_stmt (build_min (TAG_DEFN, tmp));
+	      break;
+	    }
 	  tree save_ccp = current_class_ptr;
 	  tree save_ccr = current_class_ref;
 	  for (tree fld = TYPE_FIELDS (tmp); fld; fld = DECL_CHAIN (fld))
@@ -26458,6 +26462,11 @@ regenerate_decl_from_template (tree decl, tree tmpl, tree args)
       int args_depth;
       int parms_depth;
 
+      /* Don't bother with this for unique friends that can't be redeclared and
+	 might change type if regenerated (PR69836).  */
+      if (DECL_UNIQUE_FRIEND_P (decl))
+	goto done;
+
       /* Use the source location of the definition.  */
       DECL_SOURCE_LOCATION (decl) = DECL_SOURCE_LOCATION (tmpl);
 
@@ -26528,6 +26537,7 @@ regenerate_decl_from_template (tree decl, tree tmpl, tree args)
   else
     gcc_unreachable ();
 
+ done:
   pop_access_scope (decl);
 }
 
