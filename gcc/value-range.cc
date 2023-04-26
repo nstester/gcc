@@ -914,19 +914,58 @@ irange::operator= (const irange &src)
   return *this;
 }
 
-// Return TRUE if range is a multi-range that can be represented as a
-// VR_ANTI_RANGE.
-
-bool
-irange::maybe_anti_range () const
+value_range_kind
+get_legacy_range (const irange &r, tree &min, tree &max)
 {
-  tree ttype = type ();
-  unsigned int precision = TYPE_PRECISION (ttype);
-  signop sign = TYPE_SIGN (ttype);
-  return (num_pairs () > 1
-	  && precision > 1
-	  && lower_bound () == wi::min_value (precision, sign)
-	  && upper_bound () == wi::max_value (precision, sign));
+  value_range_kind old_kind = r.kind ();
+  tree old_min = r.min ();
+  tree old_max = r.max ();
+
+  if (r.undefined_p ())
+    {
+      min = NULL_TREE;
+      max = NULL_TREE;
+      gcc_checking_assert (old_kind == VR_UNDEFINED);
+      return VR_UNDEFINED;
+    }
+
+  tree type = r.type ();
+  if (r.varying_p ())
+    {
+      min = wide_int_to_tree (type, r.lower_bound ());
+      max = wide_int_to_tree (type, r.upper_bound ());
+      gcc_checking_assert (old_kind == VR_VARYING);
+      gcc_checking_assert (vrp_operand_equal_p (old_min, min));
+      gcc_checking_assert (vrp_operand_equal_p (old_max, max));
+      return VR_VARYING;
+    }
+
+  unsigned int precision = TYPE_PRECISION (type);
+  signop sign = TYPE_SIGN (type);
+  if (r.num_pairs () > 1
+      && precision > 1
+      && r.lower_bound () == wi::min_value (precision, sign)
+      && r.upper_bound () == wi::max_value (precision, sign))
+    {
+      int_range<3> inv (r);
+      inv.invert ();
+      min = wide_int_to_tree (type, inv.lower_bound (0));
+      max = wide_int_to_tree (type, inv.upper_bound (0));
+      if (r.legacy_mode_p ())
+	{
+	  gcc_checking_assert (old_kind == VR_ANTI_RANGE);
+	  gcc_checking_assert (vrp_operand_equal_p (old_min, min));
+	  gcc_checking_assert (vrp_operand_equal_p (old_max, max));
+	}
+      return VR_ANTI_RANGE;
+    }
+
+  min = wide_int_to_tree (type, r.lower_bound ());
+  max = wide_int_to_tree (type, r.upper_bound ());
+  gcc_checking_assert (old_kind == VR_RANGE);
+  gcc_checking_assert (vrp_operand_equal_p (old_min, min));
+  gcc_checking_assert (vrp_operand_equal_p (old_max, max));
+  return VR_RANGE;
 }
 
 void
@@ -945,7 +984,6 @@ irange::copy_legacy_to_multi_range (const irange &src)
       else
 	{
 	  value_range cst (src);
-	  cst.normalize_symbolics ();
 	  gcc_checking_assert (cst.varying_p () || cst.kind () == VR_RANGE);
 	  set (cst.min (), cst.max ());
 	}
@@ -969,13 +1007,9 @@ irange::copy_to_legacy (const irange &src)
       return;
     }
   // Copy multi-range to legacy.
-  if (src.maybe_anti_range ())
-    {
-      int_range<3> r (src);
-      r.invert ();
-      // Use tree variants to save on tree -> wi -> tree conversions.
-      set (r.tree_lower_bound (0), r.tree_upper_bound (0), VR_ANTI_RANGE);
-    }
+  tree min, max;
+  if (get_legacy_range (src, min, max) == VR_ANTI_RANGE)
+    set (min, max, VR_ANTI_RANGE);
   else
     set (src.tree_lower_bound (), src.tree_upper_bound ());
 }
@@ -1153,17 +1187,10 @@ irange::set (tree min, tree max, value_range_kind kind)
 	}
       return;
     }
-  // Nothing to canonicalize for symbolic ranges.
-  if (TREE_CODE (min) != INTEGER_CST
-      || TREE_CODE (max) != INTEGER_CST)
-    {
-      m_kind = kind;
-      m_base[0] = min;
-      m_base[1] = max;
-      m_num_ranges = 1;
-      m_nonzero_mask = NULL;
-      return;
-    }
+
+  // Symbolics are not allowed in an irange.
+  gcc_checking_assert (TREE_CODE (min) == INTEGER_CST
+		       && TREE_CODE (max) == INTEGER_CST);
 
   swap_out_of_order_endpoints (min, max, kind);
   if (kind == VR_VARYING)
@@ -1264,12 +1291,6 @@ wide_int
 irange::legacy_lower_bound (unsigned pair) const
 {
   gcc_checking_assert (legacy_mode_p ());
-  if (symbolic_p ())
-    {
-      value_range numeric_range (*this);
-      numeric_range.normalize_symbolics ();
-      return numeric_range.legacy_lower_bound (pair);
-    }
   gcc_checking_assert (m_num_ranges > 0);
   gcc_checking_assert (pair + 1 <= num_pairs ());
   if (m_kind == VR_ANTI_RANGE)
@@ -1291,12 +1312,6 @@ wide_int
 irange::legacy_upper_bound (unsigned pair) const
 {
   gcc_checking_assert (legacy_mode_p ());
-  if (symbolic_p ())
-    {
-      value_range numeric_range (*this);
-      numeric_range.normalize_symbolics ();
-      return numeric_range.legacy_upper_bound (pair);
-    }
   gcc_checking_assert (m_num_ranges > 0);
   gcc_checking_assert (pair + 1 <= num_pairs ());
   if (m_kind == VR_ANTI_RANGE)
@@ -1369,26 +1384,6 @@ irange::operator== (const irange &other) const
   widest_int nz2 = widest_int::from (other.get_nonzero_bits (),
 				     TYPE_SIGN (other.type ()));
   return nz1 == nz2;
-}
-
-/* Return TRUE if this is a symbolic range.  */
-
-bool
-irange::symbolic_p () const
-{
-  return (m_num_ranges > 0
-	  && (!is_gimple_min_invariant (min ())
-	      || !is_gimple_min_invariant (max ())));
-}
-
-/* Return TRUE if this is a constant range.  */
-
-bool
-irange::constant_p () const
-{
-  return (m_num_ranges > 0
-	  && TREE_CODE (min ()) == INTEGER_CST
-	  && TREE_CODE (max ()) == INTEGER_CST);
 }
 
 /* If range is a singleton, place it in RESULT and return TRUE.
@@ -1475,14 +1470,6 @@ irange::value_inside_range (tree val) const
     return !!cmp2;
 }
 
-/* Return TRUE if it is possible that range contains VAL.  */
-
-bool
-irange::may_contain_p (tree val) const
-{
-  return value_inside_range (val) != 0;
-}
-
 /* Return TRUE if range contains INTEGER_CST.  */
 /* Return 1 if VAL is inside value range.
 	  0 if VAL is not inside value range.
@@ -1500,12 +1487,6 @@ irange::contains_p (tree cst) const
   if (legacy_mode_p ())
     {
       gcc_checking_assert (TREE_CODE (cst) == INTEGER_CST);
-      if (symbolic_p ())
-	{
-	  value_range numeric_range (*this);
-	  numeric_range.normalize_symbolics ();
-	  return numeric_range.contains_p (cst);
-	}
       return value_inside_range (cst) == 1;
     }
 
@@ -1530,86 +1511,6 @@ irange::contains_p (tree cst) const
     }
 
   return false;
-}
-
-
-/* Normalize addresses into constants.  */
-
-void
-irange::normalize_addresses ()
-{
-  if (undefined_p ())
-    return;
-
-  if (!POINTER_TYPE_P (type ()) || range_has_numeric_bounds_p (this))
-    return;
-
-  if (!range_includes_zero_p (this))
-    {
-      gcc_checking_assert (TREE_CODE (min ()) == ADDR_EXPR
-			   || TREE_CODE (max ()) == ADDR_EXPR);
-      set_nonzero (type ());
-      return;
-    }
-  set_varying (type ());
-}
-
-/* Normalize symbolics and addresses into constants.  */
-
-void
-irange::normalize_symbolics ()
-{
-  if (varying_p () || undefined_p ())
-    return;
-
-  tree ttype = type ();
-  bool min_symbolic = !is_gimple_min_invariant (min ());
-  bool max_symbolic = !is_gimple_min_invariant (max ());
-  if (!min_symbolic && !max_symbolic)
-    {
-      normalize_addresses ();
-      return;
-    }
-
-  // [SYM, SYM] -> VARYING
-  if (min_symbolic && max_symbolic)
-    {
-      set_varying (ttype);
-      return;
-    }
-  if (kind () == VR_RANGE)
-    {
-      // [SYM, NUM] -> [-MIN, NUM]
-      if (min_symbolic)
-	{
-	  set (vrp_val_min (ttype), max ());
-	  return;
-	}
-      // [NUM, SYM] -> [NUM, +MAX]
-      set (min (), vrp_val_max (ttype));
-      return;
-    }
-  gcc_checking_assert (kind () == VR_ANTI_RANGE);
-  // ~[SYM, NUM] -> [NUM + 1, +MAX]
-  if (min_symbolic)
-    {
-      if (!vrp_val_is_max (max ()))
-	{
-	  tree n = wide_int_to_tree (ttype, wi::to_wide (max ()) + 1);
-	  set (n, vrp_val_max (ttype));
-	  return;
-	}
-      set_varying (ttype);
-      return;
-    }
-  // ~[NUM, SYM] -> [-MIN, NUM - 1]
-  if (!vrp_val_is_min (min ()))
-    {
-      tree n = wide_int_to_tree (ttype, wi::to_wide (min ()) - 1);
-      set (vrp_val_min (ttype), n);
-      return;
-    }
-  set_varying (ttype);
 }
 
 /* Intersect the two value-ranges { *VR0TYPE, *VR0MIN, *VR0MAX } and
@@ -2959,10 +2860,6 @@ irange::invert ()
 wide_int
 irange::get_nonzero_bits_from_range () const
 {
-  // For legacy symbolics.
-  if (!constant_p ())
-    return wi::shwi (-1, TYPE_PRECISION (type ()));
-
   wide_int min = lower_bound ();
   wide_int max = upper_bound ();
   wide_int xorv = min ^ max;
@@ -3194,18 +3091,20 @@ ranges_from_anti_range (const value_range *ar,
   /* As a future improvement, we could handle ~[0, A] as: [-INF, -1] U
      [A+1, +INF].  Not sure if this helps in practice, though.  */
 
-  if (ar->kind () != VR_ANTI_RANGE
-      || TREE_CODE (ar->min ()) != INTEGER_CST
-      || TREE_CODE (ar->max ()) != INTEGER_CST
+  tree ar_min, ar_max;
+  value_range_kind kind = get_legacy_range (*ar, ar_min, ar_max);
+  if (kind != VR_ANTI_RANGE
+      || TREE_CODE (ar_min) != INTEGER_CST
+      || TREE_CODE (ar_max) != INTEGER_CST
       || !vrp_val_min (type)
       || !vrp_val_max (type))
     return false;
 
-  if (tree_int_cst_lt (vrp_val_min (type), ar->min ()))
+  if (tree_int_cst_lt (vrp_val_min (type), ar_min))
     vr0->set (vrp_val_min (type),
-	      wide_int_to_tree (type, wi::to_wide (ar->min ()) - 1));
-  if (tree_int_cst_lt (ar->max (), vrp_val_max (type)))
-    vr1->set (wide_int_to_tree (type, wi::to_wide (ar->max ()) + 1),
+	      wide_int_to_tree (type, wi::to_wide (ar_min) - 1));
+  if (tree_int_cst_lt (ar_max, vrp_val_max (type)))
+    vr1->set (wide_int_to_tree (type, wi::to_wide (ar_max) + 1),
 	      vrp_val_max (type));
   if (vr0->undefined_p ())
     {
@@ -3532,21 +3431,6 @@ range_tests_legacy ()
   big.union_ (int_range<1> (INT (80), vrp_val_max (integer_type_node)));
   small = big;
   ASSERT_TRUE (small == int_range<1> (INT (21), INT (21), VR_ANTI_RANGE));
-
-  // Copying a legacy symbolic to an int_range should normalize the
-  // symbolic at copy time.
-  {
-    tree ssa = make_ssa_name (integer_type_node);
-    value_range legacy_range (ssa, INT (25));
-    int_range<2> copy = legacy_range;
-    ASSERT_TRUE (copy == int_range<2>  (vrp_val_min (integer_type_node),
-					INT (25)));
-
-    // Test that copying ~[abc_23, abc_23] to a multi-range yields varying.
-    legacy_range = value_range (ssa, ssa, VR_ANTI_RANGE);
-    copy = legacy_range;
-    ASSERT_TRUE (copy.varying_p ());
-  }
 
   // VARYING of different sizes should not be equal.
   tree big_type = build_nonstandard_integer_type (32, 1);
