@@ -669,7 +669,22 @@ function_instance::has_inactive_argument () const
   if (pred != PRED_m)
     return false;
 
-  if (base == functions::vorrq && mode_suffix_id == MODE_n)
+  if (mode_suffix_id == MODE_r
+      || (base == functions::vorrq && mode_suffix_id == MODE_n)
+      || (base == functions::vqrshlq && mode_suffix_id == MODE_n)
+      || base == functions::vqrshrnbq
+      || base == functions::vqrshrntq
+      || base == functions::vqrshrunbq
+      || base == functions::vqrshruntq
+      || base == functions::vqshrnbq
+      || base == functions::vqshrntq
+      || base == functions::vqshrunbq
+      || base == functions::vqshruntq
+      || (base == functions::vrshlq && mode_suffix_id == MODE_n)
+      || base == functions::vrshrnbq
+      || base == functions::vrshrntq
+      || base == functions::vshrnbq
+      || base == functions::vshrntq)
     return false;
 
   return true;
@@ -1520,7 +1535,10 @@ finish_opt_n_resolution (unsigned int argno, unsigned int first_argno,
 {
   if (inferred_type == NUM_TYPE_SUFFIXES)
     inferred_type = first_type;
-  tree scalar_form = lookup_form (MODE_n, inferred_type);
+  mode_suffix_index scalar_mode = MODE_n;
+  if (mode_suffix_id == MODE_r)
+    scalar_mode = MODE_r;
+  tree scalar_form = lookup_form (scalar_mode, inferred_type);
 
   /* Allow the final argument to be scalar, if an _n form exists.  */
   if (scalar_argument_p (argno))

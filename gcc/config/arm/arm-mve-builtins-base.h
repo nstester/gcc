@@ -23,21 +23,43 @@
 namespace arm_mve {
 namespace functions {
 
+extern const function_base *const vabdq;
 extern const function_base *const vaddq;
 extern const function_base *const vandq;
 extern const function_base *const vcreateq;
 extern const function_base *const veorq;
 extern const function_base *const vhaddq;
 extern const function_base *const vhsubq;
+extern const function_base *const vmaxq;
+extern const function_base *const vminq;
 extern const function_base *const vmulhq;
 extern const function_base *const vmulq;
 extern const function_base *const vorrq;
 extern const function_base *const vqaddq;
 extern const function_base *const vqdmulhq;
+extern const function_base *const vqrdmulhq;
+extern const function_base *const vqrshlq;
+extern const function_base *const vqrshrnbq;
+extern const function_base *const vqrshrntq;
+extern const function_base *const vqrshrunbq;
+extern const function_base *const vqrshruntq;
+extern const function_base *const vqshlq;
+extern const function_base *const vqshrnbq;
+extern const function_base *const vqshrntq;
+extern const function_base *const vqshrunbq;
+extern const function_base *const vqshruntq;
 extern const function_base *const vqsubq;
 extern const function_base *const vreinterpretq;
 extern const function_base *const vrhaddq;
 extern const function_base *const vrmulhq;
+extern const function_base *const vrshlq;
+extern const function_base *const vrshrnbq;
+extern const function_base *const vrshrntq;
+extern const function_base *const vrshrq;
+extern const function_base *const vshlq;
+extern const function_base *const vshrnbq;
+extern const function_base *const vshrntq;
+extern const function_base *const vshrq;
 extern const function_base *const vsubq;
 extern const function_base *const vuninitializedq;
 

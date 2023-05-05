@@ -365,6 +365,42 @@ struct binary_def : public overloaded_base<0>
 };
 SHAPE (binary)
 
+/* <T0>_t vfoo[_n_t0](<T0>_t, const int)
+
+   Shape for vector shift right operations that take a vector first
+   argument and an integer, and produce a vector.
+
+   Check that 'imm' is in the [1..#bits] range.
+
+   Example: vrshrq.
+   int8x16_t [__arm_]vrshrq[_n_s8](int8x16_t a, const int imm)
+   int8x16_t [__arm_]vrshrq_m[_n_s8](int8x16_t inactive, int8x16_t a, const int imm, mve_pred16_t p)
+   int8x16_t [__arm_]vrshrq_x[_n_s8](int8x16_t a, const int imm, mve_pred16_t p)  */
+struct binary_rshift_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_n, preserve_user_namespace);
+    build_all (b, "v0,v0,ss32", group, MODE_n, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    return r.resolve_uniform (1, 1);
+  }
+
+  bool
+  check (function_checker &c) const override
+  {
+    unsigned int bits = c.type_suffix (0).element_bits;
+    return c.require_immediate_range (1, 1, bits);
+  }
+};
+SHAPE (binary_rshift)
+
 /* <T0>_t vfoo[_t0](<T0>_t, <T0>_t)
    <T0>_t vfoo[_n_t0](<T0>_t, <S0>_t)
 
@@ -457,6 +493,260 @@ struct binary_orrq_def : public overloaded_base<0>
   }
 };
 SHAPE (binary_orrq)
+
+/* <T0>_t vfoo[t0](<T0>_t, <T0>_t)
+   <T0>_t vfoo[_n_t0](<T0>_t, int32_t)
+
+   Shape for rounding shift left operations.
+
+   Example: vrshlq.
+   int8x16_t [__arm_]vrshlq[_n_s8](int8x16_t a, int32_t b)
+   int8x16_t [__arm_]vrshlq_m_n[_s8](int8x16_t a, int32_t b, mve_pred16_t p)
+   int8x16_t [__arm_]vrshlq[_s8](int8x16_t a, int8x16_t b)
+   int8x16_t [__arm_]vrshlq_m[_s8](int8x16_t inactive, int8x16_t a, int8x16_t b, mve_pred16_t p)
+   int8x16_t [__arm_]vrshlq_x[_s8](int8x16_t a, int8x16_t b, mve_pred16_t p)  */
+struct binary_round_lshift_def : public overloaded_base<0>
+{
+  bool
+  explicit_mode_suffix_p (enum predication_index pred, enum mode_suffix_index mode) const override
+  {
+    return ((mode == MODE_n)
+	    && (pred == PRED_m));
+  }
+
+  bool
+  skip_overload_p (enum predication_index pred, enum mode_suffix_index mode) const override
+  {
+    switch (mode)
+      {
+      case MODE_none:
+	return false;
+
+	/* For MODE_n, share the overloaded instance with MODE_none, except for PRED_m.  */
+      case MODE_n:
+	return pred != PRED_m;
+
+      default:
+	gcc_unreachable ();
+      }
+  }
+
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    b.add_overloaded_functions (group, MODE_n, preserve_user_namespace);
+    build_all (b, "v0,v0,vs0", group, MODE_none, preserve_user_namespace);
+    build_all (b, "v0,v0,ss32", group, MODE_n, preserve_user_namespace, false, preds_m_or_none);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    unsigned int i, nargs;
+    type_suffix_index type;
+    if (!r.check_gp_argument (2, i, nargs)
+	|| (type = r.infer_vector_type (0)) == NUM_TYPE_SUFFIXES)
+      return error_mark_node;
+
+    return r.finish_opt_n_resolution (i, 0, type, TYPE_signed);
+  }
+};
+SHAPE (binary_round_lshift)
+
+/* <T0>_t vfoo[_t0](<T0>_t, <T0>_t)
+   <T0>_t vfoo_n[_t0](<T0>_t, const int)
+
+   i.e. the standard shape for left shift operations that operate on
+   vector types.
+
+   For the MODE_n versions, check that 'imm' is in the [0..#bits-1] range.
+
+   Example: vshlq.
+   int8x16_t [__arm_]vshlq[_s8](int8x16_t a, int8x16_t b)
+   int8x16_t [__arm_]vshlq_m[_s8](int8x16_t inactive, int8x16_t a, int8x16_t b, mve_pred16_t p)
+   int8x16_t [__arm_]vshlq_x[_s8](int8x16_t a, int8x16_t b, mve_pred16_t p)
+   int8x16_t [__arm_]vshlq_n[_s8](int8x16_t a, const int imm)
+   int8x16_t [__arm_]vshlq_m_n[_s8](int8x16_t inactive, int8x16_t a, const int imm, mve_pred16_t p)
+   int8x16_t [__arm_]vshlq_x_n[_s8](int8x16_t a, const int imm, mve_pred16_t p)  */
+struct binary_lshift_def : public overloaded_base<0>
+{
+  bool
+  explicit_mode_suffix_p (enum predication_index, enum mode_suffix_index) const override
+  {
+    return true;
+  }
+
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    b.add_overloaded_functions (group, MODE_n, preserve_user_namespace);
+    build_all (b, "v0,v0,vs0", group, MODE_none, preserve_user_namespace);
+    build_all (b, "v0,v0,ss32", group, MODE_n, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    unsigned int i, nargs;
+    type_suffix_index type;
+    if (!r.check_gp_argument (2, i, nargs)
+	|| (type = r.infer_vector_type (0)) == NUM_TYPE_SUFFIXES)
+      return error_mark_node;
+
+    return r.finish_opt_n_resolution (i, 0, type, TYPE_signed);
+  }
+
+  bool
+  check (function_checker &c) const override
+  {
+    if (c.mode_suffix_id != MODE_n)
+      return true;
+
+    unsigned int bits = c.type_suffix (0).element_bits;
+    return c.require_immediate_range (1, 0, bits - 1);
+  }
+};
+SHAPE (binary_lshift)
+
+/* Used with the above form, but only for the MODE_r case which does
+   not always support the same set of predicates as MODE_none and
+   MODE_n.  For vqshlq they are the same, but for vshlq they are not.
+
+   <T0>_t vfoo_r[_t0](<T0>_t, int32_t)
+
+   i.e. the standard shape for shift operations that operate on
+   vector types.
+   Example: vshlq.
+   int8x16_t [__arm_]vshlq_r[_s8](int8x16_t a, int32_t b)
+   int8x16_t [__arm_]vshlq_m_r[_s8](int8x16_t a, int32_t b, mve_pred16_t p)  */
+struct binary_lshift_r_def : public overloaded_base<0>
+{
+  bool
+  explicit_mode_suffix_p (enum predication_index, enum mode_suffix_index) const override
+  {
+    return true;
+  }
+
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_r, preserve_user_namespace);
+    build_all (b, "v0,v0,ss32", group, MODE_r, preserve_user_namespace, false, preds_m_or_none);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    unsigned int i, nargs;
+    type_suffix_index type;
+    if (!r.check_gp_argument (2, i, nargs)
+	|| (type = r.infer_vector_type (0)) == NUM_TYPE_SUFFIXES)
+      return error_mark_node;
+
+    return r.finish_opt_n_resolution (i, 0, type, TYPE_signed);
+  }
+};
+SHAPE (binary_lshift_r)
+
+/* <T0:half>_t vfoo[_n_t0](<T0:half>_t, <T0>_t, const int)
+
+   Narrowing right shifts.
+   Check that 'imm' is in the [1..#bits/2] range.
+
+   Example: vqrshrnbq.
+   int8x16_t [__arm_]vqrshrnbq[_n_s16](int8x16_t a, int16x8_t b, const int imm)
+   int8x16_t [__arm_]vqrshrnbq_m[_n_s16](int8x16_t a, int16x8_t b, const int imm, mve_pred16_t p)  */
+struct binary_rshift_narrow_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_n, preserve_user_namespace);
+    build_all (b, "vh0,vh0,v0,ss32", group, MODE_n, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    unsigned int i, nargs;
+    type_suffix_index type;
+    if (!r.check_gp_argument (3, i, nargs)
+	|| (type = r.infer_vector_type (1)) == NUM_TYPE_SUFFIXES
+	|| !r.require_integer_immediate (i))
+      return error_mark_node;
+
+    type_suffix_index narrow_suffix
+      = find_type_suffix (type_suffixes[type].tclass,
+			  type_suffixes[type].element_bits / 2);
+
+    if (!r.require_matching_vector_type (0, narrow_suffix))
+      return error_mark_node;
+
+    return r.resolve_to (r.mode_suffix_id, type);
+  }
+
+  bool
+  check (function_checker &c) const override
+  {
+    unsigned int bits = c.type_suffix (0).element_bits;
+    return c.require_immediate_range (2, 1, bits / 2);
+  }
+};
+SHAPE (binary_rshift_narrow)
+
+/* <uT0:half>_t vfoo[_n_t0](<uT0:half>_t, <T0>_t, const int)
+
+   Vector saturating rounding shift right and narrow.
+   Check that 'imm' is in the [1..#bits/2] range.
+
+   Example: vqshrunbq.
+   uint8x16_t [__arm_]vqshrunbq[_n_s16](uint8x16_t a, int16x8_t b, const int imm)
+   uint8x16_t [__arm_]vqshrunbq_m[_n_s16](uint8x16_t a, int16x8_t b, const int imm, mve_pred16_t p)  */
+struct binary_rshift_narrow_unsigned_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_n, preserve_user_namespace);
+    build_all (b, "vhu0,vhu0,v0,ss32", group, MODE_n, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    unsigned int i, nargs;
+    type_suffix_index type;
+    if (!r.check_gp_argument (3, i, nargs)
+	|| (type = r.infer_vector_type (1)) == NUM_TYPE_SUFFIXES
+	|| !r.require_integer_immediate (i))
+      return error_mark_node;
+
+    type_suffix_index narrow_suffix
+      = find_type_suffix (TYPE_unsigned,
+			  type_suffixes[type].element_bits / 2);
+
+    if (!r.require_matching_vector_type (0, narrow_suffix))
+      return error_mark_node;
+
+    return r.resolve_to (r.mode_suffix_id, type);
+  }
+
+  bool
+  check (function_checker &c) const override
+  {
+    unsigned int bits = c.type_suffix (0).element_bits;
+    return c.require_immediate_range (2, 1, bits / 2);
+  }
+
+};
+SHAPE (binary_rshift_narrow_unsigned)
 
 /* <T0>xN_t vfoo[_t0](uint64_t, uint64_t)
 
