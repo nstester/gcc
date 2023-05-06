@@ -209,7 +209,7 @@
 (define_code_iterator plusumin [plus umin])
 
 ;; For opsplit1.
-(define_code_iterator splitop [and])
+(define_code_iterator splitop [and plus])
 
 ;; The addsubbo and nd code-attributes form a hack.  We need to output
 ;; "addu.b", "subu.b" but "bound.b" (no "u"-suffix) which means we'd
@@ -2944,8 +2944,50 @@
   operands[4] = GEN_INT (trunc_int_for_mode (INTVAL (operands[1]), QImode));
 })
 
+;; Somewhat similar to andqu, but a different range and expansion,
+;; intended to feed the output into opsplit1 with AND:
+;;  move.d 0x7ffff,$r10
+;;  and.d $r11,$r10
+;; into:
+;;  move.d $r11,$r10
+;;  and.d 0x7ffff,$r10
+;; which opsplit1/AND will change into:
+;;  move.d $r11,$r10 (unaffected by opsplit1/AND; shown only for context)
+;;  lslq 13,$r10
+;;  lsrq 13,$r10
+;; thereby winning in space, but in time only if the 0x7ffff happened to
+;; be unaligned in the code.
+(define_peephole2 ; movandsplit1
+  [(parallel
+    [(set (match_operand 0 "register_operand")
+	  (match_operand 1 "const_int_operand"))
+     (clobber (reg:CC CRIS_CC0_REGNUM))])
+   (parallel
+    [(set (match_operand 2 "register_operand")
+	  (and (match_operand 3 "register_operand")
+	       (match_operand 4 "register_operand")))
+     (clobber (reg:CC CRIS_CC0_REGNUM))])]
+  "REGNO (operands[0]) == REGNO (operands[2])
+   && REGNO (operands[0]) == REGNO (operands[3])
+   && cris_splittable_constant_p (INTVAL (operands[1]), AND,
+				  GET_MODE (operands[2]),
+				  optimize_function_for_speed_p (cfun))"
+  [(parallel
+    [(set (match_dup 2) (match_dup 4))
+     (clobber (reg:CC CRIS_CC0_REGNUM))])
+   (parallel
+    [(set (match_dup 2) (match_dup 5))
+     (clobber (reg:CC CRIS_CC0_REGNUM))])]
+{
+  operands[5] = gen_rtx_AND (GET_MODE (operands[2]), operands[2], operands[1]);
+})
+
 ;; Large (read: non-quick) numbers can sometimes be AND:ed by other means.
 ;; Testcase: gcc.target/cris/peep2-andsplit1.c
+;; 
+;; Another case is add<ext> N,rx with -126..-64,64..126: it has the same
+;; size and execution time as two addq or subq, but addq and subq can fill
+;; a delay-slot.
 (define_peephole2 ; opsplit1
   [(parallel
     [(set (match_operand 0 "register_operand")
