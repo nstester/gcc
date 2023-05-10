@@ -55,10 +55,8 @@ static void show_typespec (gfc_typespec *);
 static void show_ref (gfc_ref *);
 static void show_attr (symbol_attribute *, const char *);
 
-/* Allow dumping of an expression in the debugger.  */
-void gfc_debug_expr (gfc_expr *);
-
-void debug (symbol_attribute *attr)
+DEBUG_FUNCTION void
+debug (symbol_attribute *attr)
 {
   FILE *tmp = dumpfile;
   dumpfile = stderr;
@@ -67,7 +65,8 @@ void debug (symbol_attribute *attr)
   dumpfile = tmp;
 }
 
-void debug (gfc_formal_arglist *formal)
+DEBUG_FUNCTION void
+debug (gfc_formal_arglist *formal)
 {
   FILE *tmp = dumpfile;
   dumpfile = stderr;
@@ -80,12 +79,14 @@ void debug (gfc_formal_arglist *formal)
   dumpfile = tmp;
 }
 
-void debug (symbol_attribute attr)
+DEBUG_FUNCTION void
+debug (symbol_attribute attr)
 {
   debug (&attr);
 }
 
-void debug (gfc_expr *e)
+DEBUG_FUNCTION void
+debug (gfc_expr *e)
 {
   FILE *tmp = dumpfile;
   dumpfile = stderr;
@@ -102,7 +103,8 @@ void debug (gfc_expr *e)
   dumpfile = tmp;
 }
 
-void debug (gfc_typespec *ts)
+DEBUG_FUNCTION void
+debug (gfc_typespec *ts)
 {
   FILE *tmp = dumpfile;
   dumpfile = stderr;
@@ -111,12 +113,14 @@ void debug (gfc_typespec *ts)
   dumpfile = tmp;
 }
 
-void debug (gfc_typespec ts)
+DEBUG_FUNCTION void
+debug (gfc_typespec ts)
 {
   debug (&ts);
 }
 
-void debug (gfc_ref *p)
+DEBUG_FUNCTION void
+debug (gfc_ref *p)
 {
   FILE *tmp = dumpfile;
   dumpfile = stderr;
@@ -125,7 +129,17 @@ void debug (gfc_ref *p)
   dumpfile = tmp;
 }
 
-void
+DEBUG_FUNCTION void
+debug (gfc_namespace *ns)
+{
+  FILE *tmp = dumpfile;
+  dumpfile = stderr;
+  show_namespace (ns);
+  fputc ('\n', dumpfile);
+  dumpfile = tmp;
+}
+
+DEBUG_FUNCTION void
 gfc_debug_expr (gfc_expr *e)
 {
   FILE *tmp = dumpfile;
@@ -136,9 +150,8 @@ gfc_debug_expr (gfc_expr *e)
 }
 
 /* Allow for dumping of a piece of code in the debugger.  */
-void gfc_debug_code (gfc_code *c);
 
-void
+DEBUG_FUNCTION void
 gfc_debug_code (gfc_code *c)
 {
   FILE *tmp = dumpfile;
@@ -148,7 +161,8 @@ gfc_debug_code (gfc_code *c)
   dumpfile = tmp;
 }
 
-void debug (gfc_symbol *sym)
+DEBUG_FUNCTION void
+debug (gfc_symbol *sym)
 {
   FILE *tmp = dumpfile;
   dumpfile = stderr;
@@ -758,12 +772,13 @@ show_expr (gfc_expr *p)
 static void
 show_attr (symbol_attribute *attr, const char * module)
 {
+  fputc ('(', dumpfile);
   if (attr->flavor != FL_UNKNOWN)
     {
       if (attr->flavor == FL_DERIVED && attr->pdt_template)
-	fputs (" (PDT-TEMPLATE", dumpfile);
+	fputs ("PDT-TEMPLATE ", dumpfile);
       else
-    fprintf (dumpfile, "(%s ", gfc_code2string (flavors, attr->flavor));
+	fprintf (dumpfile, "%s ", gfc_code2string (flavors, attr->flavor));
     }
   if (attr->access != ACCESS_UNKNOWN)
     fprintf (dumpfile, "%s ", gfc_code2string (access_types, attr->access));
@@ -2503,7 +2518,7 @@ show_code_node (int level, gfc_code *c)
     case EXEC_SYNC_MEMORY:
       fputs ("SYNC MEMORY ", dumpfile);
       if (c->expr2 != NULL)
- 	{
+	{
 	  fputs (" stat=", dumpfile);
 	  show_expr (c->expr2);
 	}
@@ -4021,7 +4036,8 @@ gfc_dump_global_symbols (FILE *f)
 
 /* Show an array ref.  */
 
-void debug (gfc_array_ref *ar)
+DEBUG_FUNCTION void
+debug (gfc_array_ref *ar)
 {
   FILE *tmp = dumpfile;
   dumpfile = stderr;
