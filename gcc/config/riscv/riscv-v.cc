@@ -53,7 +53,7 @@ namespace riscv_vector {
 template <int MAX_OPERANDS> class insn_expander
 {
 public:
-  insn_expander () : m_opno (0) {}
+  insn_expander () : m_opno (0), has_dest(false) {}
   void add_output_operand (rtx x, machine_mode mode)
   {
     create_output_operand (&m_ops[m_opno++], x, mode);
@@ -84,6 +84,41 @@ public:
     add_input_operand (gen_int_mode (type, Pmode), Pmode);
   }
 
+  void set_dest_and_mask (rtx mask, rtx dest, machine_mode mask_mode)
+  {
+    dest_mode = GET_MODE (dest);
+    has_dest = true;
+
+    add_output_operand (dest, dest_mode);
+
+    if (mask)
+      add_input_operand (mask, GET_MODE (mask));
+    else
+      add_all_one_mask_operand (mask_mode);
+
+    add_vundef_operand (dest_mode);
+  }
+
+  void set_len_and_policy (rtx len, bool force_vlmax = false)
+    {
+      bool vlmax_p = force_vlmax;
+      gcc_assert (has_dest);
+
+      if (!len)
+	{
+	  vlmax_p = true;
+	  len = gen_reg_rtx (Pmode);
+	  emit_vlmax_vsetvl (dest_mode, len);
+	}
+
+      add_input_operand (len, Pmode);
+
+      if (GET_MODE_CLASS (dest_mode) != MODE_VECTOR_BOOL)
+	add_policy_operand (get_prefer_tail_policy (), get_prefer_mask_policy ());
+
+      add_avl_type_operand (vlmax_p ? avl_type::VLMAX : avl_type::NONVLMAX);
+    }
+
   void expand (enum insn_code icode, bool temporary_volatile_p = false)
   {
     if (temporary_volatile_p)
@@ -97,6 +132,8 @@ public:
 
 private:
   int m_opno;
+  bool has_dest;
+  machine_mode dest_mode;
   expand_operand m_ops[MAX_OPERANDS];
 };
 
@@ -192,105 +229,108 @@ autovec_use_vlmax_p (void)
 /* Emit an RVV unmask && vl mov from SRC to DEST.  */
 static void
 emit_pred_op (unsigned icode, rtx mask, rtx dest, rtx src, rtx len,
-	      machine_mode mask_mode, bool vlmax_p)
+	      machine_mode mask_mode, bool force_vlmax = false)
 {
   insn_expander<8> e;
-  machine_mode mode = GET_MODE (dest);
-
-  e.add_output_operand (dest, mode);
-
-  if (mask)
-    e.add_input_operand (mask, GET_MODE (mask));
-  else
-    e.add_all_one_mask_operand (mask_mode);
-
-  e.add_vundef_operand (mode);
+  e.set_dest_and_mask (mask, dest, mask_mode);
 
   e.add_input_operand (src, GET_MODE (src));
 
-  if (len)
-    e.add_input_operand (len, Pmode);
-  else
-    {
-      rtx vlmax = gen_reg_rtx (Pmode);
-      emit_vlmax_vsetvl (mode, vlmax);
-      e.add_input_operand (vlmax, Pmode);
-    }
-
-  if (GET_MODE_CLASS (mode) != MODE_VECTOR_BOOL)
-    e.add_policy_operand (get_prefer_tail_policy (), get_prefer_mask_policy ());
-
-  if (vlmax_p)
-    e.add_avl_type_operand (avl_type::VLMAX);
-  else
-    e.add_avl_type_operand (avl_type::NONVLMAX);
+  e.set_len_and_policy (len, force_vlmax);
 
   e.expand ((enum insn_code) icode, MEM_P (dest) || MEM_P (src));
 }
 
+/* Emit an RVV binop.  If one of SRC1 and SRC2 is a scalar operand, its mode is
+   specified using SCALAR_MODE.  */
+static void
+emit_pred_binop (unsigned icode, rtx mask, rtx dest, rtx src1, rtx src2,
+		 rtx len, machine_mode mask_mode,
+		 machine_mode scalar_mode = VOIDmode)
+{
+  insn_expander<9> e;
+  e.set_dest_and_mask (mask, dest, mask_mode);
+
+  gcc_assert (VECTOR_MODE_P (GET_MODE (src1))
+	      || VECTOR_MODE_P (GET_MODE (src2)));
+
+  if (VECTOR_MODE_P (GET_MODE (src1)))
+    e.add_input_operand (src1, GET_MODE (src1));
+  else
+    e.add_input_operand (src1, scalar_mode);
+
+  if (VECTOR_MODE_P (GET_MODE (src2)))
+    e.add_input_operand (src2, GET_MODE (src2));
+  else
+    e.add_input_operand (src2, scalar_mode);
+
+  e.set_len_and_policy (len);
+
+  e.expand ((enum insn_code) icode, MEM_P (dest) || MEM_P (src1) || MEM_P (src2));
+}
+
+/* The RISC-V vsetvli pass uses "known vlmax" operations for optimization.
+   Whether or not an instruction actually is a vlmax operation is not
+   recognizable from the length operand alone but the avl_type operand
+   is used instead.  In general, there are two cases:
+
+    - Emit a vlmax operation by passing a NULL length.  Here we emit
+      a vsetvli with vlmax configuration and set the avl_type to VLMAX.
+    - Emit an operation that uses the existing (last-set) length and
+      set the avl_type to NONVLMAX.
+
+    Sometimes we also need to set the VLMAX avl_type to an operation that
+    already uses a given length register.  This can happen during or after
+    register allocation when we are not allowed to create a new register.
+    For that case we also allow to set the avl_type to VLMAX.
+*/
+
+/* This function emits a VLMAX vsetvli followed by the actual operation.  */
 void
 emit_vlmax_op (unsigned icode, rtx dest, rtx src, machine_mode mask_mode)
 {
-  emit_pred_op (icode, NULL_RTX, dest, src, NULL_RTX, mask_mode, true);
+  emit_pred_op (icode, NULL_RTX, dest, src, NULL_RTX, mask_mode);
+}
+
+/* This function emits an operation with a given LEN that is determined
+   by a previously emitted VLMAX vsetvli.  */
+void
+emit_len_op (unsigned icode, rtx dest, rtx src, rtx len,
+	     machine_mode mask_mode)
+{
+  emit_pred_op (icode, NULL_RTX, dest, src, len, mask_mode);
+}
+
+/* This function emits an operation with a given LEN that is known to be
+   a preceding VLMAX.  It also sets the VLMAX flag which allows further
+   optimization in the vsetvli pass.  */
+void
+emit_vlmax_reg_op (unsigned icode, rtx dest, rtx src, rtx len,
+		   machine_mode mask_mode)
+{
+  emit_pred_op (icode, NULL_RTX, dest, src, len, mask_mode,
+		/* Force VLMAX */ true);
 }
 
 void
-emit_vlmax_op (unsigned icode, rtx dest, rtx src, rtx len,
-	       machine_mode mask_mode)
+emit_len_binop (unsigned icode, rtx dest, rtx src1, rtx src2, rtx len,
+		machine_mode mask_mode, machine_mode scalar_mode)
 {
-  emit_pred_op (icode, NULL_RTX, dest, src, len, mask_mode, true);
-}
-
-void
-emit_nonvlmax_op (unsigned icode, rtx dest, rtx src, rtx len,
-		  machine_mode mask_mode)
-{
-  emit_pred_op (icode, NULL_RTX, dest, src, len, mask_mode, false);
-}
-
-/* Emit binary operations.  */
-
-static void
-emit_binop (unsigned icode, rtx *ops, machine_mode mask_mode,
-	    machine_mode scalar_mode)
-{
-  insn_expander<9> e;
-  machine_mode mode = GET_MODE (ops[0]);
-  e.add_output_operand (ops[0], mode);
-  e.add_all_one_mask_operand (mask_mode);
-  e.add_vundef_operand (mode);
-  if (VECTOR_MODE_P (GET_MODE (ops[1])))
-    e.add_input_operand (ops[1], GET_MODE (ops[1]));
-  else
-    e.add_input_operand (ops[1], scalar_mode);
-  if (VECTOR_MODE_P (GET_MODE (ops[2])))
-    e.add_input_operand (ops[2], GET_MODE (ops[2]));
-  else
-    e.add_input_operand (ops[2], scalar_mode);
-  rtx vlmax = gen_reg_rtx (Pmode);
-  emit_vlmax_vsetvl (mode, vlmax);
-  e.add_input_operand (vlmax, Pmode);
-  e.add_policy_operand (get_prefer_tail_policy (), get_prefer_mask_policy ());
-  e.add_avl_type_operand (avl_type::VLMAX);
-  e.expand ((enum insn_code) icode, false);
+  emit_pred_binop (icode, NULL_RTX, dest, src1, src2, len,
+		   mask_mode, scalar_mode);
 }
 
 /* Emit vid.v instruction.  */
 
 static void
-emit_index_op (rtx target, machine_mode mask_mode)
+emit_index_op (rtx dest, machine_mode mask_mode)
 {
   insn_expander<7> e;
-  machine_mode mode = GET_MODE (target);
-  e.add_output_operand (target, mode);
-  e.add_all_one_mask_operand (mask_mode);
-  e.add_vundef_operand (mode);
-  rtx vlmax = gen_reg_rtx (Pmode);
-  emit_vlmax_vsetvl (mode, vlmax);
-  e.add_input_operand (vlmax, Pmode);
-  e.add_policy_operand (get_prefer_tail_policy (), get_prefer_mask_policy ());
-  e.add_avl_type_operand (avl_type::VLMAX);
-  e.expand (code_for_pred_series (mode), false);
+  e.set_dest_and_mask (NULL, dest, mask_mode);
+
+  e.set_len_and_policy (NULL, true);
+
+  e.expand (code_for_pred_series (GET_MODE (dest)), false);
 }
 
 /* Expand series const vector.  */
@@ -324,15 +364,15 @@ expand_vec_series (rtx dest, rtx base, rtx step)
 	  /* Emit logical left shift operation.  */
 	  int shift = exact_log2 (INTVAL (step));
 	  rtx shift_amount = gen_int_mode (shift, Pmode);
-	  rtx ops[3] = {step_adj, vid, shift_amount};
 	  insn_code icode = code_for_pred_scalar (ASHIFT, mode);
-	  emit_binop (icode, ops, mask_mode, Pmode);
+	  emit_len_binop (icode, step_adj, vid, shift_amount,
+			  NULL, mask_mode, Pmode);
 	}
       else
 	{
-	  rtx ops[3] = {step_adj, vid, step};
 	  insn_code icode = code_for_pred_scalar (MULT, mode);
-	  emit_binop (icode, ops, mask_mode, inner_mode);
+	  emit_len_binop (icode, step_adj, vid, step,
+			  NULL, mask_mode, inner_mode);
 	}
     }
 
@@ -346,9 +386,9 @@ expand_vec_series (rtx dest, rtx base, rtx step)
   else
     {
       rtx result = gen_reg_rtx (mode);
-      rtx ops[3] = {result, step_adj, base};
       insn_code icode = code_for_pred_scalar (PLUS, mode);
-      emit_binop (icode, ops, mask_mode, inner_mode);
+      emit_len_binop (icode, result, step_adj, base,
+			   NULL, mask_mode, inner_mode);
       emit_move_insn (dest, result);
     }
 }
@@ -719,8 +759,8 @@ sew64_scalar_helper (rtx *operands, rtx *scalar_op, rtx vl,
     *scalar_op = force_reg (scalar_mode, *scalar_op);
 
   rtx tmp = gen_reg_rtx (vector_mode);
-  riscv_vector::emit_nonvlmax_op (code_for_pred_broadcast (vector_mode), tmp,
-				  *scalar_op, vl, mask_mode);
+  riscv_vector::emit_len_op (code_for_pred_broadcast (vector_mode), tmp,
+			     *scalar_op, vl, mask_mode);
   emit_vector_func (operands, tmp);
 
   return true;
@@ -1026,7 +1066,7 @@ expand_tuple_move (machine_mode mask_mode, rtx *ops)
 	      rtx mem = gen_rtx_MEM (subpart_mode, ops[3]);
 
 	      if (fractional_p)
-		emit_vlmax_op (code_for_pred_mov (subpart_mode), subreg, mem,
+		emit_vlmax_reg_op (code_for_pred_mov (subpart_mode), subreg, mem,
 			       ops[4], mask_mode);
 	      else
 		emit_move_insn (subreg, mem);
@@ -1048,7 +1088,7 @@ expand_tuple_move (machine_mode mask_mode, rtx *ops)
 	      rtx mem = gen_rtx_MEM (subpart_mode, ops[3]);
 
 	      if (fractional_p)
-		emit_vlmax_op (code_for_pred_mov (subpart_mode), mem, subreg,
+		emit_vlmax_reg_op (code_for_pred_mov (subpart_mode), mem, subreg,
 			       ops[4], mask_mode);
 	      else
 		emit_move_insn (mem, subreg);

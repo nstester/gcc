@@ -721,8 +721,9 @@
   else
     {
       riscv_vector::emit_vlmax_vsetvl (<V_FRACT:MODE>mode, operands[2]);
-      riscv_vector::emit_vlmax_op (code_for_pred_mov (<V_FRACT:MODE>mode),
-      		operands[0], operands[1], operands[2], <VM>mode);
+      riscv_vector::emit_vlmax_reg_op (code_for_pred_mov (<V_FRACT:MODE>mode),
+				       operands[0], operands[1], operands[2],
+				       <VM>mode);
     }
   DONE;
 })
@@ -741,8 +742,9 @@
   else
     {
       riscv_vector::emit_vlmax_vsetvl (<VB:MODE>mode, operands[2]);
-      riscv_vector::emit_vlmax_op (code_for_pred_mov (<VB:MODE>mode),
-      		operands[0], operands[1], operands[2], <VB:MODE>mode);
+      riscv_vector::emit_vlmax_reg_op (code_for_pred_mov (<VB:MODE>mode),
+				       operands[0], operands[1], operands[2],
+				       <VB:MODE>mode);
     }
   DONE;
 })
@@ -806,7 +808,7 @@
   "TARGET_VECTOR"
   {
     riscv_vector::emit_vlmax_op (code_for_pred_broadcast (<MODE>mode),
-		operands[0], operands[1], <VM>mode);
+				 operands[0], operands[1], <VM>mode);
     DONE;
   }
 )
@@ -8159,12 +8161,19 @@
 ;; -----------------------------------------------------------------------------
 ;; ---- Integer Compare Instructions Simplification
 ;; -----------------------------------------------------------------------------
-;; Simplify to VMCLR.m Includes:
+;; Simplify OP(V, V) Instructions to VMCLR.m Includes:
 ;; - 1.  VMSNE
 ;; - 2.  VMSLT
 ;; - 3.  VMSLTU
 ;; - 4.  VMSGT
 ;; - 5.  VMSGTU
+;; -----------------------------------------------------------------------------
+;; Simplify OP(V, V) Instructions to VMSET.m Includes:
+;; - 1.  VMSEQ
+;; - 2.  VMSLE
+;; - 3.  VMSLEU
+;; - 4.  VMSGE
+;; - 5.  VMSGEU
 ;; -----------------------------------------------------------------------------
 (define_split
   [(set (match_operand:VB      0 "register_operand")

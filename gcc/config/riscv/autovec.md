@@ -31,8 +31,8 @@
    (match_operand 3 "const_0_operand")]
   "TARGET_VECTOR"
 {
-  riscv_vector::emit_nonvlmax_op (code_for_pred_mov (<MODE>mode), operands[0],
-				  operands[1], operands[2], <VM>mode);
+  riscv_vector::emit_len_op (code_for_pred_mov (<MODE>mode), operands[0],
+			     operands[1], operands[2], <VM>mode);
   DONE;
 })
 
@@ -43,8 +43,8 @@
    (match_operand 3 "const_0_operand")]
   "TARGET_VECTOR"
 {
-  riscv_vector::emit_nonvlmax_op (code_for_pred_mov (<MODE>mode), operands[0],
-				  operands[1], operands[2], <VM>mode);
+  riscv_vector::emit_len_op (code_for_pred_mov (<MODE>mode), operands[0],
+			     operands[1], operands[2], <VM>mode);
   DONE;
 })
 
@@ -82,3 +82,85 @@
     DONE;
   }
 )
+
+;; ========================================================================
+;; == Vector operations
+;; =========================================================================
+
+;; -------------------------------------------------------------------------
+;; ---- [INT] Binary operations
+;; -------------------------------------------------------------------------
+;; Includes:
+;; - vadd.vv/vsub.vv/...
+;; - vadd.vi/vsub.vi/...
+;; -------------------------------------------------------------------------
+
+(define_expand "<optab><mode>3"
+  [(set (match_operand:VI 0 "register_operand")
+    (any_int_binop_no_shift:VI
+     (match_operand:VI 1 "<binop_rhs1_predicate>")
+     (match_operand:VI 2 "<binop_rhs2_predicate>")))]
+  "TARGET_VECTOR"
+{
+  if (!register_operand (operands[2], <MODE>mode))
+    {
+      rtx cst;
+      gcc_assert (const_vec_duplicate_p(operands[2], &cst));
+      riscv_vector::emit_len_binop (code_for_pred_scalar
+				    (<CODE>, <MODE>mode),
+				    operands[0], operands[1], cst,
+				    NULL, <VM>mode,
+				    <VEL>mode);
+    }
+  else
+    riscv_vector::emit_len_binop (code_for_pred
+				  (<CODE>, <MODE>mode),
+				  operands[0], operands[1], operands[2],
+				  NULL, <VM>mode);
+  DONE;
+})
+
+;; -------------------------------------------------------------------------
+;; ---- [INT] Binary shifts by scalar.
+;; -------------------------------------------------------------------------
+;; Includes:
+;; - vsll.vx/vsra.vx/vsrl.vx
+;; - vsll.vi/vsra.vi/vsrl.vi
+;; -------------------------------------------------------------------------
+
+(define_expand "<optab><mode>3"
+  [(set (match_operand:VI 0 "register_operand")
+    (any_shift:VI
+     (match_operand:VI 1 "register_operand")
+     (match_operand:<VEL> 2 "csr_operand")))]
+  "TARGET_VECTOR"
+{
+  if (!CONST_SCALAR_INT_P (operands[2]))
+      operands[2] = gen_lowpart (Pmode, operands[2]);
+  riscv_vector::emit_len_binop (code_for_pred_scalar
+				(<CODE>, <MODE>mode),
+				operands[0], operands[1], operands[2],
+				NULL_RTX, <VM>mode, Pmode);
+  DONE;
+})
+
+;; -------------------------------------------------------------------------
+;; ---- [INT] Binary shifts by scalar.
+;; -------------------------------------------------------------------------
+;; Includes:
+;; - vsll.vv/vsra.vv/vsrl.vv
+;; -------------------------------------------------------------------------
+
+(define_expand "v<optab><mode>3"
+  [(set (match_operand:VI 0 "register_operand")
+    (any_shift:VI
+     (match_operand:VI 1 "register_operand")
+     (match_operand:VI 2 "vector_shift_operand")))]
+  "TARGET_VECTOR"
+{
+  riscv_vector::emit_len_binop (code_for_pred
+				(<CODE>, <MODE>mode),
+				operands[0], operands[1], operands[2],
+				NULL_RTX, <VM>mode);
+  DONE;
+})
