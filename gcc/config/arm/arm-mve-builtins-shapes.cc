@@ -974,6 +974,33 @@ struct binary_widen_n_def : public overloaded_base<0>
 };
 SHAPE (binary_widen_n)
 
+/* Shape for comparison operations that operate on
+   uniform types.
+
+   Examples: vcmpq.
+   mve_pred16_t [__arm_]vcmpeqq[_s16](int16x8_t a, int16x8_t b)
+   mve_pred16_t [__arm_]vcmpeqq[_n_s16](int16x8_t a, int16_t b)
+   mve_pred16_t [__arm_]vcmpeqq_m[_s16](int16x8_t a, int16x8_t b, mve_pred16_t p)
+   mve_pred16_t [__arm_]vcmpeqq_m[_n_s16](int16x8_t a, int16_t b, mve_pred16_t p)  */
+struct cmp_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "p,v0,v0", group, MODE_none, preserve_user_namespace);
+    build_all (b, "p,v0,s0", group, MODE_n, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    return r.resolve_uniform_opt_n (2);
+  }
+};
+SHAPE (cmp)
+
 /* <T0>xN_t vfoo[_t0](uint64_t, uint64_t)
 
    where there are N arguments in total.
@@ -1039,6 +1066,34 @@ struct unary_def : public overloaded_base<0>
 };
 SHAPE (unary)
 
+/* <S0:twice>_t vfoo[_<t0>](<T0>_t)
+
+   i.e. a version of "unary" in which the source elements are half the
+   size of the destination scalar, but have the same type class.
+
+   Example: vaddlvq.
+   int64_t [__arm_]vaddlvq[_s32](int32x4_t a)
+   int64_t [__arm_]vaddlvq_p[_s32](int32x4_t a, mve_pred16_t p) */
+struct unary_acc_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "sw0,v0", group, MODE_none, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    /* FIXME: check that the return value is actually
+       twice as wide as arg 0.  */
+    return r.resolve_unary ();
+  }
+};
+SHAPE (unary_acc)
+
 /* <T0>_t foo_t0[_t1](<T1>_t)
 
    where the target type <t0> must be specified explicitly but the source
@@ -1066,6 +1121,166 @@ struct unary_convert_def : public overloaded_base<1>
   }
 };
 SHAPE (unary_convert)
+
+/* [u]int32_t vfoo[_<t0>](<T0>_t)
+
+   i.e. a version of "unary" which generates a scalar of type int32_t
+   or uint32_t depending on the signedness of the elements of of input
+   vector.
+
+   Example: vaddvq
+   int32_t [__arm_]vaddvq[_s16](int16x8_t a)
+   int32_t [__arm_]vaddvq_p[_s16](int16x8_t a, mve_pred16_t p)  */
+struct unary_int32_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "sx32,v0", group, MODE_none, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    return r.resolve_uniform (1);
+  }
+};
+SHAPE (unary_int32)
+
+/* [u]int32_t vfoo[_<t0>]([u]int32_t, <T0>_t)
+
+   i.e. a version of "unary" which accumulates into scalar of type
+   int32_t or uint32_t depending on the signedness of the elements of
+   of input vector.
+
+   Example: vaddvaq.
+   int32_t [__arm_]vaddvaq[_s16](int32_t a, int16x8_t b)
+   int32_t [__arm_]vaddvaq_p[_s16](int32_t a, int16x8_t b, mve_pred16_t p)  */
+struct unary_int32_acc_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "sx32,sx32,v0", group, MODE_none, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    unsigned int i, nargs;
+    type_suffix_index type;
+    if (!r.check_gp_argument (2, i, nargs)
+	|| !r.require_integer_immediate (0)
+	|| (type = r.infer_vector_type (1)) == NUM_TYPE_SUFFIXES)
+      return error_mark_node;
+
+    return r.resolve_to (r.mode_suffix_id, type);
+  }
+};
+SHAPE (unary_int32_acc)
+
+/* <T0>_t vfoo[_n]_t0(<S0>_t)
+
+   Example: vdupq.
+   int16x8_t [__arm_]vdupq_n_s16(int16_t a)
+   int16x8_t [__arm_]vdupq_m[_n_s16](int16x8_t inactive, int16_t a, mve_pred16_t p)
+   int16x8_t [__arm_]vdupq_x_n_s16(int16_t a, mve_pred16_t p)  */
+struct unary_n_def : public overloaded_base<0>
+{
+  bool
+  explicit_type_suffix_p (unsigned int, enum predication_index pred,
+			  enum mode_suffix_index) const override
+  {
+    return pred != PRED_m;
+  }
+
+  bool
+  explicit_mode_suffix_p (enum predication_index pred,
+			  enum mode_suffix_index mode) const override
+  {
+    return ((mode == MODE_n)
+	    && (pred != PRED_m));
+  }
+
+  bool
+  skip_overload_p (enum predication_index pred, enum mode_suffix_index mode)
+    const override
+  {
+    switch (mode)
+      {
+      case MODE_n:
+	return pred != PRED_m;
+
+      default:
+	gcc_unreachable ();
+      }
+  }
+
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_n, preserve_user_namespace);
+    build_all (b, "v0,s0", group, MODE_n, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    return r.resolve_unary_n ();
+  }
+};
+SHAPE (unary_n)
+
+/* <T0:twice>_t vfoo[_t0](<T0>_t)
+
+   i.e. a version of "unary" in which the source elements are half the
+   size of the destination, but have the same type class.
+
+   Example: vmovlbq.
+   int32x4_t [__arm_]vmovlbq[_s16](int16x8_t a)
+   int32x4_t [__arm_]vmovlbq_m[_s16](int32x4_t inactive, int16x8_t a, mve_pred16_t p)
+   int32x4_t [__arm_]vmovlbq_x[_s16](int16x8_t a, mve_pred16_t p)  */
+struct unary_widen_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "vw0,v0", group, MODE_none, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    unsigned int i, nargs;
+    type_suffix_index type;
+    tree res;
+    if (!r.check_gp_argument (1, i, nargs)
+	|| (type = r.infer_vector_type (i)) == NUM_TYPE_SUFFIXES)
+      return error_mark_node;
+
+    type_suffix_index wide_suffix
+      = find_type_suffix (type_suffixes[type].tclass,
+			  type_suffixes[type].element_bits * 2);
+
+    /* Check the inactive argument has the wide type.  */
+    if ((r.pred == PRED_m)
+	&& (r.infer_vector_type (0) != wide_suffix))
+    return r.report_no_such_form (type);
+
+    if ((res = r.lookup_form (r.mode_suffix_id, type)))
+	return res;
+
+    return r.report_no_such_form (type);
+  }
+};
+SHAPE (unary_widen)
 
 } /* end namespace arm_mve */
 

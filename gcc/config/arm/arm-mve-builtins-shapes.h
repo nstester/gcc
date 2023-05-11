@@ -49,10 +49,16 @@ namespace arm_mve
     extern const function_shape *const binary_rshift_narrow;
     extern const function_shape *const binary_rshift_narrow_unsigned;
     extern const function_shape *const binary_widen_n;
+    extern const function_shape *const cmp;
     extern const function_shape *const create;
     extern const function_shape *const inherent;
     extern const function_shape *const unary;
+    extern const function_shape *const unary_acc;
     extern const function_shape *const unary_convert;
+    extern const function_shape *const unary_int32;
+    extern const function_shape *const unary_int32_acc;
+    extern const function_shape *const unary_n;
+    extern const function_shape *const unary_widen;
 
   } /* end namespace arm_mve::shapes */
 } /* end namespace arm_mve */
