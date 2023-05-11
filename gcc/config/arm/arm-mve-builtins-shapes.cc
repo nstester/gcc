@@ -365,6 +365,130 @@ struct binary_def : public overloaded_base<0>
 };
 SHAPE (binary)
 
+/* <[u]int32>_t vfoo[_<t0>](<T0>_t, <T0>_t)
+
+   i.e. the shape for binary operations that operate on a pair of
+   vectors and produce an int32_t or an uint32_t depending on the
+   signedness of the input elements.
+
+   Example: vmladavq.
+   int32_t [__arm_]vmladavq[_s16](int16x8_t m1, int16x8_t m2)
+   int32_t [__arm_]vmladavq_p[_s16](int16x8_t m1, int16x8_t m2, mve_pred16_t p)  */
+struct binary_acc_int32_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "sx32,v0,v0", group, MODE_none, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    return r.resolve_uniform (2);
+  }
+};
+SHAPE (binary_acc_int32)
+
+/* <[u]int64>_t vfoo[_<t0>](<T0>_t, <T0>_t)
+
+   Example: vmlaldavq.
+   int64_t [__arm_]vmlaldavq[_s16](int16x8_t m1, int16x8_t m2)
+   int64_t [__arm_]vmlaldavq_p[_s16](int16x8_t m1, int16x8_t m2, mve_pred16_t p)  */
+struct binary_acc_int64_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "sx64,v0,v0", group, MODE_none, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    return r.resolve_uniform (2);
+  }
+};
+SHAPE (binary_acc_int64)
+
+/* <[u]int32>_t vfoo[_<t0>]([u]int32_t, <T0>_t, <T0>_t)
+
+   Example: vmladavaq.
+   int32_t [__arm_]vmladavaq[_s16](int32_t add, int16x8_t m1, int16x8_t m2)
+   int32_t [__arm_]vmladavaq_p[_s16](int32_t add, int16x8_t m1, int16x8_t m2, mve_pred16_t p)  */
+struct binary_acca_int32_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "sx32,sx32,v0,v0", group, MODE_none, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    unsigned int i, nargs;
+    type_suffix_index type;
+    if (!r.check_gp_argument (3, i, nargs)
+	|| (type = r.infer_vector_type (1)) == NUM_TYPE_SUFFIXES)
+      return error_mark_node;
+
+    unsigned int last_arg = i;
+    for (i = 1; i < last_arg; i++)
+      if (!r.require_matching_vector_type (i, type))
+	return error_mark_node;
+
+    if (!r.require_integer_immediate (0))
+      return error_mark_node;
+
+    return r.resolve_to (r.mode_suffix_id, type);
+  }
+};
+SHAPE (binary_acca_int32)
+
+/* [u]int64_t vfoo[_<t0>]([u]int64_t, <T0>_t, <T0>_t)
+
+   Example: vmlaldavaq.
+   int64_t [__arm_]vmlaldavaq[_s16](int64_t add, int16x8_t m1, int16x8_t m2)
+   int64_t [__arm_]vmlaldavaq_p[_s16](int64_t add, int16x8_t m1, int16x8_t m2, mve_pred16_t p)  */
+struct binary_acca_int64_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "sx64,sx64,v0,v0", group, MODE_none, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    unsigned int i, nargs;
+    type_suffix_index type;
+    if (!r.check_gp_argument (3, i, nargs)
+	|| (type = r.infer_vector_type (1)) == NUM_TYPE_SUFFIXES)
+      return error_mark_node;
+
+    unsigned int last_arg = i;
+    for (i = 1; i < last_arg; i++)
+      if (!r.require_matching_vector_type (i, type))
+	return error_mark_node;
+
+    if (!r.require_integer_immediate (0))
+      return error_mark_node;
+
+    return r.resolve_to (r.mode_suffix_id, type);
+  }
+};
+SHAPE (binary_acca_int64)
+
 /* <T0>_t vfoo[_n_t0](<T0>_t, const int)
 
    Shape for vector shift right operations that take a vector first
@@ -1039,6 +1163,59 @@ struct inherent_def : public nonoverloaded_base
 };
 SHAPE (inherent)
 
+/* <T0>_t vfoo[_t0](<T0>_t, <T0>_t, <T0>_t)
+
+   i.e. the standard shape for ternary operations that operate on
+   uniform types.
+
+   Example: vqrdmlsdhxq.
+   int8x16_t [__arm_]vqrdmlsdhxq[_s8](int8x16_t inactive, int8x16_t a, int8x16_t b)
+   int8x16_t [__arm_]vqrdmlsdhxq_m[_s8](int8x16_t inactive, int8x16_t a, int8x16_t b, mve_pred16_t p)  */
+struct ternary_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "v0,v0,v0,v0", group, MODE_none, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    return r.resolve_uniform_opt_n (3);
+  }
+};
+SHAPE (ternary)
+
+/* <T0>_t vfoo[_n_t0](<T0>_t, <T0>_t, <S0>_t)
+
+   i.e. the standard shape for ternary operations that operate on a
+   pair of vectors of the same type as the destination, and take a
+   third scalar argument of the same type as the vector elements.
+
+   Example: vmlaq.
+   int8x16_t [__arm_]vmlaq[_n_s8](int8x16_t add, int8x16_t m1, int8_t m2)
+   int8x16_t [__arm_]vmlaq_m[_n_s8](int8x16_t add, int8x16_t m1, int8_t m2, mve_pred16_t p)  */
+struct ternary_n_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_n, preserve_user_namespace);
+    build_all (b, "v0,v0,v0,s0", group, MODE_n, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    return r.resolve_uniform (2, 1);
+  }
+};
+SHAPE (ternary_n)
+
 /* <T0>_t vfoo[_t0](<T0>_t)
 
    i.e. the standard shape for unary operations that operate on
@@ -1281,6 +1458,40 @@ struct unary_widen_def : public overloaded_base<0>
   }
 };
 SHAPE (unary_widen)
+
+/* <S0:twice>_t vfoo[_<t0>](<S0:twice>_t, <T0>_t)
+
+   i.e. a version of "unary" in which the source elements are half the
+   size of the destination scalar and accumulator, but have the same
+   type class.
+
+   Example: vaddlvaq.
+   int64_t [__arm_]vaddlvaq[_s32](int64_t a, int32x4_t b)
+   int64_t [__arm_]vaddlvaq_p[_s32](int64_t a, int32x4_t b, mve_pred16_t p)  */
+struct unary_widen_acc_def : public overloaded_base<0>
+{
+  void
+  build (function_builder &b, const function_group_info &group,
+	 bool preserve_user_namespace) const override
+  {
+    b.add_overloaded_functions (group, MODE_none, preserve_user_namespace);
+    build_all (b, "sw0,sw0,v0", group, MODE_none, preserve_user_namespace);
+  }
+
+  tree
+  resolve (function_resolver &r) const override
+  {
+    unsigned int i, nargs;
+    type_suffix_index type;
+    if (!r.check_gp_argument (2, i, nargs)
+	|| !r.require_derived_scalar_type (0, r.SAME_TYPE_CLASS)
+	|| (type = r.infer_vector_type (i)) == NUM_TYPE_SUFFIXES)
+      return error_mark_node;
+
+    return r.resolve_to (r.mode_suffix_id, type);
+  }
+};
+SHAPE (unary_widen_acc)
 
 } /* end namespace arm_mve */
 
