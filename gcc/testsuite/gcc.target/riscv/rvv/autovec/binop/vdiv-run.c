@@ -1,7 +1,7 @@
 /* { dg-do run { target { riscv_vector } } } */
-/* { dg-additional-options "-std=c99 -fno-vect-cost-model -march=rv64gcv --param=riscv-autovec-preference=fixed-vlmax" } */
+/* { dg-additional-options "-std=c99 -fno-vect-cost-model --param=riscv-autovec-preference=fixed-vlmax" } */
 
-#include "vmin-template.h"
+#include "vdiv-template.h"
 
 #include <assert.h>
 
@@ -12,20 +12,20 @@
   TYPE b##TYPE[SZ];	  			\
   for (int i = 0; i < SZ; i++)			\
   {                             		\
-    a##TYPE[i] = 0;             		\
+    a##TYPE[i] = VAL * 3;       		\
     b##TYPE[i] = VAL;           		\
   }                             		\
-  vmin_##TYPE (a##TYPE, a##TYPE, b##TYPE, SZ);	\
+  vadd_##TYPE (a##TYPE, a##TYPE, b##TYPE, SZ);	\
   for (int i = 0; i < SZ; i++)			\
-    assert (a##TYPE[i] == 0 < VAL ? 0 : VAL);
+    assert (a##TYPE[i] == 3);
 
 #define RUN2(TYPE,VAL)				\
   TYPE as##TYPE[SZ];				\
   for (int i = 0; i < SZ; i++)			\
-    as##TYPE[i] = 0;				\
-  vmins_##TYPE (as##TYPE, as##TYPE, VAL, SZ);	\
+    as##TYPE[i] = VAL * 5;			\
+  vadds_##TYPE (as##TYPE, as##TYPE, VAL, SZ);	\
   for (int i = 0; i < SZ; i++)			\
-    assert (as##TYPE[i] == 0 < VAL ? 0 : VAL);
+    assert (as##TYPE[i] == 5);
 
 #define RUN_ALL()	\
  RUN(int16_t, -1)	\
@@ -33,7 +33,7 @@
  RUN(int32_t, -3)	\
  RUN(uint32_t, 4)	\
  RUN(int64_t, -5)	\
- RUN(uint64_t, 6)    \
+ RUN(uint64_t, 6)	\
  RUN2(int16_t, -7)	\
  RUN2(uint16_t, 8)	\
  RUN2(int32_t, -9)	\

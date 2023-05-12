@@ -1,31 +1,31 @@
 /* { dg-do run { target { riscv_vector } } } */
-/* { dg-additional-options "-std=c99 -fno-vect-cost-model -march=rv64gcv --param=riscv-autovec-preference=fixed-vlmax" } */
+/* { dg-additional-options "-std=c99 -fno-vect-cost-model --param=riscv-autovec-preference=fixed-vlmax" } */
 
-#include "vrem-template.h"
+#include "vmul-template.h"
 
 #include <assert.h>
 
 #define SZ 512
 
 #define RUN(TYPE,VAL)				\
-  TYPE a##TYPE[SZ];	  			\
+  TYPE a##TYPE[SZ];				\
   TYPE b##TYPE[SZ];	  			\
   for (int i = 0; i < SZ; i++)			\
   {                             		\
-    a##TYPE[i] = 37;				\
+    a##TYPE[i] = 2;				\
     b##TYPE[i] = VAL;           		\
   }                             		\
-  vrem_##TYPE (a##TYPE, a##TYPE, b##TYPE, SZ);	\
+  vadd_##TYPE (a##TYPE, a##TYPE, b##TYPE, SZ);	\
   for (int i = 0; i < SZ; i++)			\
-    assert (a##TYPE[i] == 37 % VAL);
+    assert (a##TYPE[i] == 2 * VAL);
 
 #define RUN2(TYPE,VAL)				\
-  TYPE as##TYPE[SZ];	  			\
+  TYPE as##TYPE[SZ];				\
   for (int i = 0; i < SZ; i++)			\
-    as##TYPE[i] = 89;           		\
-  vrems_##TYPE (as##TYPE, as##TYPE, VAL, SZ);	\
+    as##TYPE[i] = 3;            		\
+  vadds_##TYPE (as##TYPE, as##TYPE, VAL, SZ);	\
   for (int i = 0; i < SZ; i++)			\
-    assert (as##TYPE[i] == 89 % VAL);
+    assert (as##TYPE[i] == 3 * VAL);
 
 #define RUN_ALL()	\
  RUN(int16_t, -1)	\

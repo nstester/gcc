@@ -1,7 +1,7 @@
 /* { dg-do run { target { riscv_vector } } } */
-/* { dg-additional-options "-std=c99 -fno-vect-cost-model -march=rv64gcv --param=riscv-autovec-preference=fixed-vlmax" } */
+/* { dg-additional-options "-std=c99 -fno-vect-cost-model --param=riscv-autovec-preference=fixed-vlmax" } */
 
-#include "vand-template.h"
+#include "vor-template.h"
 
 #include <assert.h>
 
@@ -12,36 +12,36 @@
   TYPE b##TYPE[SZ];	  			\
   for (int i = 0; i < SZ; i++)			\
   {                             		\
-    a##TYPE[i] = 123;				\
-    b##TYPE[i] = VAL;				\
+    a##TYPE[i] = 123;           		\
+    b##TYPE[i] = VAL;           		\
   }                             		\
-  vand_##TYPE (a##TYPE, a##TYPE, b##TYPE, SZ);	\
-  for (int i = 0; i < SZ; i++)			\
-    assert (a##TYPE[i] == (TYPE)(123 & VAL));
+  vor_##TYPE (a##TYPE, a##TYPE, b##TYPE, SZ);	\
+  for (int i = 0; i < SZ; i++)	  	\
+    assert (a##TYPE[i] == (123 | VAL));
 
 #define RUN2(TYPE,VAL)				\
   TYPE as##TYPE[SZ];				\
   for (int i = 0; i < SZ; i++)			\
-    as##TYPE[i] = 123;				\
-  vands_##TYPE (as##TYPE, as##TYPE, VAL, SZ);	\
+    as##TYPE[i] = 123;          		\
+  vors_##TYPE (as##TYPE, as##TYPE, VAL, SZ);	\
   for (int i = 0; i < SZ; i++)			\
-    assert (as##TYPE[i] == (123 & VAL));
+    assert (as##TYPE[i] == (123 | VAL));
 
 #define RUN3(TYPE,VAL)				\
-  TYPE ai##TYPE[SZ];				\
+  TYPE ai##TYPE[SZ];	  	        	\
   for (int i = 0; i < SZ; i++)			\
     ai##TYPE[i] = VAL;				\
-  vandi_##TYPE (ai##TYPE, ai##TYPE, SZ);	\
-  for (int i = 0; i < SZ; i++)			\
-    assert (ai##TYPE[i] == (VAL & 15));
+  vori_##TYPE (ai##TYPE, ai##TYPE, SZ);		\
+  for (int i = 0; i < SZ; i++)	  		\
+    assert (ai##TYPE[i] == (VAL | 15));
 
 #define RUN3M(TYPE,VAL)				\
-  TYPE aim##TYPE[SZ];				\
+  TYPE aim##TYPE[SZ];	  	        	\
   for (int i = 0; i < SZ; i++)			\
     aim##TYPE[i] = VAL;				\
-  vandim_##TYPE (aim##TYPE, aim##TYPE, SZ);	\
+  vorim_##TYPE (aim##TYPE, aim##TYPE, SZ);	\
   for (int i = 0; i < SZ; i++)			\
-    assert (aim##TYPE[i] == (VAL & -16));
+    assert (aim##TYPE[i] == (VAL | -16));
 
 #define RUN_ALL()	\
  RUN(int16_t, -1)	\
