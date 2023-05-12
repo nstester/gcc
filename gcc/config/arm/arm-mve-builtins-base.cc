@@ -103,6 +103,15 @@ namespace arm_mve {
     UNSPEC##_M_S, UNSPEC##_M_U, UNSPEC##_M_F,				\
     -1, -1, -1))
 
+  /* Helper for builtins with RTX codes, _m predicated and _n
+     overrides, but no floating-point version.  */
+#define FUNCTION_WITH_RTX_M_N_NO_F(NAME, RTX, UNSPEC) FUNCTION		\
+  (NAME, unspec_based_mve_function_exact_insn,				\
+   (RTX, RTX, UNKNOWN,							\
+    UNSPEC##_N_S, UNSPEC##_N_U, -1,					\
+    UNSPEC##_M_S, UNSPEC##_M_U, -1,					\
+    UNSPEC##_M_N_S, UNSPEC##_M_N_U, -1))
+
   /* Helper for builtins with RTX codes, _m predicated and _n overrides.  */
 #define FUNCTION_WITH_RTX_M_N_NO_N_F(NAME, RTX, UNSPEC) FUNCTION	\
   (NAME, unspec_based_mve_function_exact_insn,				\
@@ -250,6 +259,7 @@ FUNCTION_PRED_P_S_U (vaddlvq, VADDLVQ)
 FUNCTION_PRED_P_S_U (vaddvq, VADDVQ)
 FUNCTION_PRED_P_S_U (vaddvaq, VADDVAQ)
 FUNCTION_WITH_RTX_M (vandq, AND, VANDQ)
+FUNCTION_ONLY_N (vbrsrq, VBRSRQ)
 FUNCTION_WITHOUT_N_NO_U_F (vclsq, VCLSQ)
 FUNCTION (vclzq, unspec_based_mve_function_exact_insn, (CLZ, CLZ, CLZ, -1, -1, -1, VCLZQ_M_S, VCLZQ_M_U, -1, -1, -1 ,-1))
 FUNCTION (vcmpeqq, unspec_based_mve_function_exact_insn_vcmp, (EQ, EQ, EQ, VCMPEQQ_M_S, VCMPEQQ_M_U, VCMPEQQ_M_F, VCMPEQQ_M_N_S, VCMPEQQ_M_N_U, VCMPEQQ_M_N_F))
@@ -263,6 +273,9 @@ FUNCTION (vcmphiq, unspec_based_mve_function_exact_insn_vcmp, (UNKNOWN, GTU, UNK
 FUNCTION_WITHOUT_M_N (vcreateq, VCREATEQ)
 FUNCTION_ONLY_N (vdupq, VDUPQ)
 FUNCTION_WITH_RTX_M (veorq, XOR, VEORQ)
+FUNCTION (vfmaq, unspec_mve_function_exact_insn, (-1, -1, VFMAQ_F, -1, -1, VFMAQ_N_F, -1, -1, VFMAQ_M_F, -1, -1, VFMAQ_M_N_F))
+FUNCTION (vfmasq, unspec_mve_function_exact_insn, (-1, -1, -1, -1, -1, VFMASQ_N_F, -1, -1, -1, -1, -1, VFMASQ_M_N_F))
+FUNCTION (vfmsq, unspec_mve_function_exact_insn, (-1, -1, VFMSQ_F, -1, -1, -1, -1, -1, VFMSQ_M_F, -1, -1, -1))
 FUNCTION_WITH_M_N_NO_F (vhaddq, VHADDQ)
 FUNCTION_WITH_M_N_NO_F (vhsubq, VHSUBQ)
 FUNCTION_PRED_P_S (vmaxavq, VMAXAVQ)
@@ -305,7 +318,9 @@ FUNCTION_WITHOUT_N_NO_F (vmovnbq, VMOVNBQ)
 FUNCTION_WITHOUT_N_NO_F (vmovntq, VMOVNTQ)
 FUNCTION_WITHOUT_N_NO_F (vmulhq, VMULHQ)
 FUNCTION_WITH_RTX_M_N (vmulq, MULT, VMULQ)
+FUNCTION_WITH_RTX_M_N_NO_F (vmvnq, NOT, VMVNQ)
 FUNCTION (vnegq, unspec_based_mve_function_exact_insn, (NEG, NEG, NEG, -1, -1, -1, VNEGQ_M_S, -1, VNEGQ_M_F, -1, -1, -1))
+FUNCTION_WITHOUT_M_N (vpselq, VPSELQ)
 FUNCTION_WITH_RTX_M_N_NO_N_F (vorrq, IOR, VORRQ)
 FUNCTION_WITHOUT_N_NO_U_F (vqabsq, VQABSQ)
 FUNCTION_WITH_M_N_NO_F (vqaddq, VQADDQ)
@@ -320,6 +335,8 @@ FUNCTION_ONLY_N_NO_U_F (vqdmlashq, VQDMLASHQ)
 FUNCTION_WITHOUT_N_NO_U_F (vqdmlsdhq, VQDMLSDHQ)
 FUNCTION_WITHOUT_N_NO_U_F (vqdmlsdhxq, VQDMLSDHXQ)
 FUNCTION_WITH_M_N_NO_U_F (vqdmulhq, VQDMULHQ)
+FUNCTION_WITH_M_N_NO_U_F (vqdmullbq, VQDMULLBQ)
+FUNCTION_WITH_M_N_NO_U_F (vqdmulltq, VQDMULLTQ)
 FUNCTION_WITHOUT_N_NO_U_F (vqrdmladhq, VQRDMLADHQ)
 FUNCTION_WITHOUT_N_NO_U_F (vqrdmladhxq, VQRDMLADHXQ)
 FUNCTION_ONLY_N_NO_U_F (vqrdmlahq, VQRDMLAHQ)
@@ -330,6 +347,7 @@ FUNCTION_WITHOUT_N_NO_U_F (vqnegq, VQNEGQ)
 FUNCTION_WITH_M_N_NO_F (vqrshlq, VQRSHLQ)
 FUNCTION_WITH_M_N_NO_U_F (vqrdmulhq, VQRDMULHQ)
 FUNCTION_WITH_M_N_R (vqshlq, VQSHLQ)
+FUNCTION_ONLY_N_NO_U_F (vqshluq, VQSHLUQ)
 FUNCTION_ONLY_N_NO_F (vqrshrnbq, VQRSHRNBQ)
 FUNCTION_ONLY_N_NO_F (vqrshrntq, VQRSHRNTQ)
 FUNCTION_ONLY_N_NO_U_F (vqrshrunbq, VQRSHRUNBQ)
@@ -344,8 +362,12 @@ FUNCTION_WITHOUT_N_NO_F (vrev16q, VREV16Q)
 FUNCTION_WITHOUT_N (vrev32q, VREV32Q)
 FUNCTION_WITHOUT_N (vrev64q, VREV64Q)
 FUNCTION_WITHOUT_N_NO_F (vrhaddq, VRHADDQ)
+FUNCTION_PRED_P_S_U (vrmlaldavhaq, VRMLALDAVHAQ)
+FUNCTION_PRED_P_S (vrmlaldavhaxq, VRMLALDAVHAXQ)
 FUNCTION_PRED_P_S_U (vrmlaldavhq, VRMLALDAVHQ)
 FUNCTION_PRED_P_S (vrmlaldavhxq, VRMLALDAVHXQ)
+FUNCTION_PRED_P_S (vrmlsldavhaq, VRMLSLDAVHAQ)
+FUNCTION_PRED_P_S (vrmlsldavhaxq, VRMLSLDAVHAXQ)
 FUNCTION_PRED_P_S (vrmlsldavhq, VRMLSLDAVHQ)
 FUNCTION_PRED_P_S (vrmlsldavhxq, VRMLSLDAVHXQ)
 FUNCTION_WITHOUT_N_NO_F (vrmulhq, VRMULHQ)
@@ -365,6 +387,8 @@ FUNCTION_WITH_M_N_R (vshlq, VSHLQ)
 FUNCTION_ONLY_N_NO_F (vshrnbq, VSHRNBQ)
 FUNCTION_ONLY_N_NO_F (vshrntq, VSHRNTQ)
 FUNCTION_ONLY_N_NO_F (vshrq, VSHRQ)
+FUNCTION_ONLY_N_NO_F (vsliq, VSLIQ)
+FUNCTION_ONLY_N_NO_F (vsriq, VSRIQ)
 FUNCTION_WITH_RTX_M_N (vsubq, MINUS, VSUBQ)
 FUNCTION (vuninitializedq, vuninitializedq_impl,)
 
