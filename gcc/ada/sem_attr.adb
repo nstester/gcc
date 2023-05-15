@@ -1068,9 +1068,11 @@ package body Sem_Attr is
                   Analyze (N);
                   return;
 
-               --  OK if a task type, this test needs sharpening up ???
+               --  OK if current task.
 
-               elsif Is_Task_Type (Typ) then
+               elsif Is_Task_Type (Typ)
+                 and then In_Open_Scopes (Typ)
+               then
                   null;
 
                --  OK if self-reference in an aggregate in Ada 2005, and
@@ -3299,6 +3301,7 @@ package body Sem_Attr is
             --  Check for missing/bad expression (result of previous error)
 
             if No (E1) or else Etype (E1) = Any_Type then
+               Check_Error_Detected;
                raise Bad_Attribute;
             end if;
          end if;
@@ -4613,7 +4616,7 @@ package body Sem_Attr is
 
          if Comes_From_Source (N) then
 
-            --  This attribute be prefixed with references to objects or
+            --  This attribute can be prefixed with references to objects or
             --  values (such as a current instance value given within a type
             --  or subtype aspect).
 
@@ -4621,6 +4624,13 @@ package body Sem_Attr is
               and then not Is_Current_Instance_Reference_In_Type_Aspect (P)
             then
                Error_Attr_P ("prefix of % attribute must be object");
+
+            --  Just like attribute 'Valid_Scalars this attribute is illegal
+            --  on unchecked union types.
+
+            elsif Has_Unchecked_Union (Validated_View (P_Type)) then
+               Error_Attr_P
+                 ("attribute % not allowed for Unchecked_Union type");
             end if;
          end if;
 
@@ -7598,7 +7608,7 @@ package body Sem_Attr is
 
       --  In SPARK certain attributes (see below) depend on Tasking_State.
       --  Ensure that the entity is available for gnat2why by loading it.
-      --  See SPARK RM 9(18) for the relevant rule.
+      --  See SPARK RM 9(19) for the relevant rule.
 
       if GNATprove_Mode then
          case Attr_Id is

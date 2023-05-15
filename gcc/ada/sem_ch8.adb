@@ -3485,9 +3485,13 @@ package body Sem_Ch8 is
          --  constructed later at the freeze point, so indicate that the
          --  completion has not been seen yet.
 
-         Reinit_Field_To_Zero (New_S, F_Has_Out_Or_In_Out_Parameter);
-         Reinit_Field_To_Zero (New_S, F_Needs_No_Actuals,
+         Reinit_Field_To_Zero (New_S, F_Has_Out_Or_In_Out_Parameter,
            Old_Ekind => (E_Function | E_Procedure => True, others => False));
+         Reinit_Field_To_Zero (New_S, F_Needs_No_Actuals);
+         Reinit_Field_To_Zero (New_S, F_Is_Predicate_Function);
+         Reinit_Field_To_Zero (New_S, F_Protected_Subprogram);
+         Reinit_Field_To_Zero (New_S, F_Is_Inlined_Always);
+         Reinit_Field_To_Zero (New_S, F_Is_Generic_Actual_Subprogram);
          Mutate_Ekind (New_S, E_Subprogram_Body);
          New_S := Rename_Spec;
          Set_Has_Completion (Rename_Spec, False);
@@ -5066,7 +5070,6 @@ package body Sem_Ch8 is
          if Id /= Current_Entity (Id) then
             Prev := Current_Entity (Id);
             while Present (Prev)
-              and then Present (Homonym (Prev))
               and then Homonym (Prev) /= Id
             loop
                Prev := Homonym (Prev);
@@ -5074,7 +5077,7 @@ package body Sem_Ch8 is
 
             --  Skip to end of loop if Id is not in the visibility chain
 
-            if No (Prev) or else Homonym (Prev) /= Id then
+            if No (Prev) then
                goto Next_Ent;
             end if;
 
