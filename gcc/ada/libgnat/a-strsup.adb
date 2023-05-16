@@ -29,12 +29,13 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  Ghost code, loop invariants and assertions in this unit are meant for
+--  Ghost code, loop (in)variants and assertions in this unit are meant for
 --  analysis only, not for run-time checking, as it would be too costly
 --  otherwise. This is enforced by setting the assertion policy to Ignore.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Loop_Invariant => Ignore,
+                         Loop_Variant   => Ignore,
                          Assert         => Ignore);
 
 with Ada.Strings.Maps; use Ada.Strings.Maps;
@@ -1787,6 +1788,12 @@ package body Ada.Strings.Superbounded with SPARK_Mode is
                   Source.Data (1 .. Npad) := [others => Pad];
                   Source.Data (Npad + 1 .. Max_Length) :=
                     Temp (1 .. Max_Length - Npad);
+
+                  pragma Assert
+                    (Source.Data (1 .. Npad) = [1 .. Npad => Pad]);
+                  pragma Assert
+                    (Source.Data (Npad + 1 .. Max_Length)
+                     = Temp (1 .. Max_Length - Npad));
                end if;
 
             when Strings.Left =>

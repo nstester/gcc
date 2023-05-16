@@ -580,6 +580,10 @@ begin
    Write_Line ("        s    suppress all info/warnings");
    Write_Line ("        .s   turn on warnings for overridden size clause");
    Write_Line ("        .S*  turn off warnings for overridden size clause");
+   Write_Line ("        _s+  turn on warnings for ineffective predicate " &
+                                                  "tests");
+   Write_Line ("        _S*  turn off warnings for ineffective predicate " &
+                                                   "tests");
    Write_Line ("        t    turn on warnings for tracking deleted code");
    Write_Line ("        T*   turn off warnings for tracking deleted code");
    Write_Line ("        .t*+ turn on warnings for suspicious contract");
@@ -655,6 +659,7 @@ begin
    Write_Line ("        c    check comment format (two spaces)");
    Write_Line ("        C    check comment format (one space)");
    Write_Line ("        d    check no DOS line terminators");
+   Write_Line ("        D    check declared identifiers in mixed case");
    Write_Line ("        e    check end/exit labels present");
    Write_Line ("        f    check no form feeds/vertical tabs in source");
    Write_Line ("        g    check standard GNAT style rules, same as ydISux");

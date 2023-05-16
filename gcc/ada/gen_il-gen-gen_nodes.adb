@@ -531,7 +531,8 @@ begin -- Gen_IL.Gen.Gen_Nodes
    Cc (N_Range, N_Subexpr,
        (Sy (Low_Bound, Node_Id),
         Sy (High_Bound, Node_Id),
-        Sy (Includes_Infinities, Flag)));
+        Sm (Cannot_Be_Superflat, Flag),
+        Sm (Includes_Infinities, Flag)));
 
    Cc (N_Reference, N_Subexpr,
        (Sy (Prefix, Node_Id)));
@@ -1604,7 +1605,7 @@ begin -- Gen_IL.Gen.Gen_Nodes
         Sm (Dcheck_Function, Node_Id),
         Sm (Enclosing_Variant, Node_Id),
         Sm (Has_SP_Choice, Flag),
-        Sm (Present_Expr, Valid_Uint)));
+        Sm (Present_Expr, Uint)));
 
    Cc (N_Variant_Part, Node_Kind,
        (Sy (Name, Node_Id, Default_Empty),

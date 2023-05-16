@@ -2536,7 +2536,7 @@ package body Exp_Ch4 is
       --  Reset to False if at least one operand is encountered which is known
       --  at compile time to be non-null. Used for handling the special case
       --  of setting the high bound to the last operand high bound for a null
-      --  result, thus ensuring a proper high bound in the super-flat case.
+      --  result, thus ensuring a proper high bound in the superflat case.
 
       N : constant Nat := List_Length (Opnds);
       --  Number of concatenation operands including possibly null operands
@@ -2726,8 +2726,9 @@ package body Exp_Ch4 is
       --  Local Declarations
 
       Opnd_Typ   : Entity_Id;
-      Slice_Rng  : Entity_Id;
-      Subtyp_Ind : Entity_Id;
+      Slice_Rng  : Node_Id;
+      Subtyp_Ind : Node_Id;
+      Subtyp_Rng : Node_Id;
       Ent        : Entity_Id;
       Len        : Unat;
       J          : Nat;
@@ -3184,7 +3185,7 @@ package body Exp_Ch4 is
 
       --  Handle the exceptional case where the result is null, in which case
       --  case the bounds come from the last operand (so that we get the proper
-      --  bounds if the last operand is super-flat).
+      --  bounds if the last operand is superflat).
 
       if Result_May_Be_Null then
          Low_Bound :=
@@ -3239,6 +3240,12 @@ package body Exp_Ch4 is
          Slice_Rng := Empty;
       end if;
 
+      Subtyp_Rng := Make_Range (Loc, Low_Bound, High_Bound);
+
+      --  If the result cannot be null then the range cannot be superflat
+
+      Set_Cannot_Be_Superflat (Subtyp_Rng, not Result_May_Be_Null);
+
       --  Now we construct an array object with appropriate bounds. We mark
       --  the target as internal to prevent useless initialization when
       --  Initialize_Scalars is enabled. Also since this is the actual result
@@ -3249,10 +3256,7 @@ package body Exp_Ch4 is
           Subtype_Mark => New_Occurrence_Of (Atyp, Loc),
           Constraint   =>
             Make_Index_Or_Discriminant_Constraint (Loc,
-              Constraints => New_List (
-                Make_Range (Loc,
-                  Low_Bound  => Low_Bound,
-                  High_Bound => High_Bound))));
+              Constraints => New_List (Subtyp_Rng)));
 
       Ent := Make_Temporary (Loc, 'S');
       Set_Is_Internal       (Ent);
@@ -5062,13 +5066,12 @@ package body Exp_Ch4 is
                --  Add discriminants if discriminated type
 
                declare
-                  Dis : Boolean := False;
-                  Typ : Entity_Id := Empty;
+                  Dis : Boolean   := False;
+                  Typ : Entity_Id := T;
 
                begin
                   if Has_Discriminants (T) then
                      Dis := True;
-                     Typ := T;
 
                   --  Type may be a private type with no visible discriminants
                   --  in which case check full view if in scope, or the
@@ -5111,30 +5114,6 @@ package body Exp_Ch4 is
                         Set_Expression (N, New_Occurrence_Of (Typ, Loc));
                      end if;
 
-                     --  When the designated subtype is unconstrained and
-                     --  the allocator specifies a constrained subtype (or
-                     --  such a subtype has been created, such as above by
-                     --  Build_Default_Subtype), associate that subtype with
-                     --  the dereference of the allocator's access value.
-                     --  This is needed by the back end for cases where
-                     --  the access type has a Designated_Storage_Model,
-                     --  to support allocation of a host object of the right
-                     --  size for passing to the initialization procedure.
-
-                     if not Is_Constrained (Dtyp)
-                       and then Is_Constrained (Typ)
-                     then
-                        declare
-                           Init_Deref : constant Node_Id :=
-                             Unqual_Conv (Init_Arg1);
-                        begin
-                           pragma Assert
-                             (Nkind (Init_Deref) = N_Explicit_Dereference);
-
-                           Set_Actual_Designated_Subtype (Init_Deref, Typ);
-                        end;
-                     end if;
-
                      Discr := First_Elmt (Discriminant_Constraint (Typ));
                      while Present (Discr) loop
                         Nod := Node (Discr);
@@ -5156,6 +5135,29 @@ package body Exp_Ch4 is
 
                         Next_Elmt (Discr);
                      end loop;
+                  end if;
+
+                  --  When the designated subtype is unconstrained and
+                  --  the allocator specifies a constrained subtype (or
+                  --  such a subtype has been created, such as above by
+                  --  Build_Default_Subtype), associate that subtype with
+                  --  the dereference of the allocator's access value.
+                  --  This is needed by the expander for cases where the
+                  --  access type has a Designated_Storage_Model in order
+                  --  to support allocation of a host object of the right
+                  --  size for passing to the initialization procedure.
+
+                  if not Is_Constrained (Dtyp)
+                    and then Is_Constrained (Typ)
+                  then
+                     declare
+                        Deref : constant Node_Id := Unqual_Conv (Init_Arg1);
+
+                     begin
+                        pragma Assert (Nkind (Deref) = N_Explicit_Dereference);
+
+                        Set_Actual_Designated_Subtype (Deref, Typ);
+                     end;
                   end if;
                end;
 
