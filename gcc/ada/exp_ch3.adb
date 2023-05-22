@@ -2946,8 +2946,8 @@ package body Exp_Ch3 is
                   while Present (Next (Ins_Nod))
                     and then
                       (Nkind (Ins_Nod) /= N_If_Statement
-                        or else (Nkind (First (Then_Statements (Ins_Nod)))
-                                   /= N_Procedure_Call_Statement)
+                        or else Nkind (First (Then_Statements (Ins_Nod)))
+                                  /= N_Procedure_Call_Statement
                         or else not Is_Init_Proc
                                       (Name (First (Then_Statements
                                          (Ins_Nod)))))
@@ -7338,7 +7338,7 @@ package body Exp_Ch3 is
         and then (Restriction_Active (No_Implicit_Heap_Allocations)
           or else Restriction_Active (No_Implicit_Task_Allocations))
         and then not (Ekind (Typ) in E_Array_Type | E_Array_Subtype
-                      and then (Has_Init_Expression (N)))
+                      and then Has_Init_Expression (N))
       then
          declare
             PS_Count, SS_Count : Int := 0;
@@ -9251,9 +9251,13 @@ package body Exp_Ch3 is
          --  this is indeed the case, associate the Finalize_Address routine
          --  of the full view with the finalization masters of all pending
          --  access types. This scenario applies to anonymous access types as
-         --  well.
+         --  well. But the Finalize_Address routine is missing if the type is
+         --  class-wide and we are under restriction No_Dispatching_Calls, see
+         --  Expand_Freeze_Class_Wide_Type above for the rationale.
 
          elsif Needs_Finalization (Typ)
+           and then (not Is_Class_Wide_Type (Typ)
+                      or else not Restriction_Active (No_Dispatching_Calls))
            and then Present (Pending_Access_Types (Typ))
          then
             E := First_Elmt (Pending_Access_Types (Typ));
@@ -11105,9 +11109,10 @@ package body Exp_Ch3 is
                 Null_Record_Present => True);
 
             --  GNATprove will use expression of an expression function as an
-            --  implicit postcondition. GNAT will not benefit from expression
-            --  function (and would struggle if we add an expression function
-            --  to freezing actions).
+            --  implicit postcondition. GNAT will also benefit from expression
+            --  function to avoid premature freezing, but would struggle if we
+            --  added an expression function to freezing actions, so we create
+            --  the expanded form directly.
 
             if GNATprove_Mode then
                Func_Body :=
@@ -11126,6 +11131,7 @@ package body Exp_Ch3 is
                        Statements => New_List (
                          Make_Simple_Return_Statement (Loc,
                            Expression => Ext_Aggr))));
+               Set_Was_Expression_Function (Func_Body);
             end if;
 
             Append_To (Body_List, Func_Body);
@@ -11898,8 +11904,8 @@ package body Exp_Ch3 is
 
       --  Spec of Put_Image
 
-      if (not No_Run_Time_Mode)
-         and then RTE_Available (RE_Root_Buffer_Type)
+      if not No_Run_Time_Mode
+        and then RTE_Available (RE_Root_Buffer_Type)
       then
          --  No_Run_Time_Mode implies that the declaration of Tag_Typ
          --  (like any tagged type) will be rejected. Given this, avoid
@@ -12413,7 +12419,7 @@ package body Exp_Ch3 is
       --  Body of Put_Image
 
       if No (TSS (Tag_Typ, TSS_Put_Image))
-         and then (not No_Run_Time_Mode)
+         and then not No_Run_Time_Mode
          and then RTE_Available (RE_Root_Buffer_Type)
       then
          Build_Record_Put_Image_Procedure (Loc, Tag_Typ, Decl, Ent);

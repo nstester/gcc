@@ -226,6 +226,10 @@ package body Sem_Ch6 is
    --  Preanalysis of default expressions of subprogram formals. N is the
    --  expression to be analyzed and T is the expected type.
 
+   procedure Set_Formal_Mode (Formal_Id : Entity_Id);
+   --  Set proper Ekind to reflect formal mode (in, out, in out), and set
+   --  miscellaneous other attributes.
+
    procedure Set_Formal_Validity (Formal_Id : Entity_Id);
    --  Formal_Id is an formal parameter entity. This procedure deals with
    --  setting the proper validity status for this entity, which depends on
@@ -5241,6 +5245,8 @@ package body Sem_Ch6 is
          Set_Etype (Designator, Standard_Void_Type);
       end if;
 
+      Set_Is_Not_Self_Hidden (Designator);
+
       --  Flag Is_Inlined_Always is True by default, and reversed to False for
       --  those subprograms which could be inlined in GNATprove mode (because
       --  Body_To_Inline is non-Empty) but should not be inlined.
@@ -9025,8 +9031,8 @@ package body Sem_Ch6 is
                          or else not
                            (Is_Limited_Type (Formal_Type)
                              and then
-                               (Is_Tagged_Type
-                                  (Underlying_Type (Formal_Type)))))
+                               Is_Tagged_Type
+                                 (Underlying_Type (Formal_Type))))
             then
                Set_Extra_Constrained
                  (Formal, Add_Extra_Formal (Formal, Standard_Boolean, E, "O"));
@@ -10357,7 +10363,7 @@ package body Sem_Ch6 is
                  FCL (Expressions (E1), Expressions (E2));
 
             when N_Integer_Literal =>
-               return (Intval (E1) = Intval (E2))
+               return Intval (E1) = Intval (E2)
                  and then not User_Defined_Numeric_Literal_Mismatch;
 
             when N_Null =>
@@ -10444,7 +10450,7 @@ package body Sem_Ch6 is
                  FCE (High_Bound (E1), High_Bound (E2));
 
             when N_Real_Literal =>
-               return (Realval (E1) = Realval (E2))
+               return Realval (E1) = Realval (E2)
                  and then not User_Defined_Numeric_Literal_Mismatch;
 
             when N_Selected_Component =>
@@ -11726,7 +11732,7 @@ package body Sem_Ch6 is
 
          begin
             while Present (Param_E1) and then Present (Param_E2) loop
-               if (Ctype >= Mode_Conformant) and then
+               if Ctype >= Mode_Conformant and then
                  Ekind (Defining_Identifier (Param_E1)) /=
                  Ekind (Defining_Identifier (Param_E2))
                then
@@ -13420,6 +13426,8 @@ package body Sem_Ch6 is
       else
          Mutate_Ekind (Formal_Id, E_In_Parameter);
       end if;
+
+      Set_Is_Not_Self_Hidden (Formal_Id);
 
       --  Set Is_Known_Non_Null for access parameters since the language
       --  guarantees that access parameters are always non-null. We also set

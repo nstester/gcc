@@ -120,7 +120,7 @@ package body Sem_Ch11 is
                elsif Nkind (Id1) /= N_Others_Choice
                  and then
                    (Id_Entity = Entity (Id1)
-                     or else (Id_Entity = Renamed_Entity (Entity (Id1))))
+                     or else Id_Entity = Renamed_Entity (Entity (Id1)))
                then
                   if Handler /= Parent (Id) then
                      Error_Msg_Sloc := Sloc (Id1);
@@ -234,6 +234,7 @@ package body Sem_Ch11 is
 
                Enter_Name (Choice);
                Mutate_Ekind (Choice, E_Variable);
+               Set_Is_Not_Self_Hidden (Choice);
 
                if RTE_Available (RE_Exception_Occurrence) then
                   Set_Etype (Choice, RTE (RE_Exception_Occurrence));

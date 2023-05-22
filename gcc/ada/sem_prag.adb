@@ -208,9 +208,10 @@ package body Sem_Prag is
      (Prag    : Node_Id;
       Spec_Id : Entity_Id);
    --  Subsidiary to the analysis of pragmas Contract_Cases, Postcondition,
-   --  Precondition, Refined_Post, and Test_Case. Emit a warning when pragma
-   --  Prag is associated with subprogram Spec_Id subject to Inline_Always,
-   --  and assertions are enabled.
+   --  Precondition, Refined_Post, Subprogram_Variant, and Test_Case. Emit a
+   --  warning when pragma Prag is associated with subprogram Spec_Id subject
+   --  to Inline_Always, assertions are enabled and inling is done in the
+   --  frontend.
 
    procedure Check_State_And_Constituent_Use
      (States   : Elist_Id;
@@ -11699,29 +11700,24 @@ package body Sem_Prag is
 
       --  Preset arguments
 
-      Arg_Count := 0;
-      Arg1      := Empty;
+      Arg_Count := List_Length (Pragma_Argument_Associations (N));
+      Arg1      := First (Pragma_Argument_Associations (N));
       Arg2      := Empty;
       Arg3      := Empty;
       Arg4      := Empty;
       Arg5      := Empty;
 
-      if Present (Pragma_Argument_Associations (N)) then
-         Arg_Count := List_Length (Pragma_Argument_Associations (N));
-         Arg1 := First (Pragma_Argument_Associations (N));
+      if Present (Arg1) then
+         Arg2 := Next (Arg1);
 
-         if Present (Arg1) then
-            Arg2 := Next (Arg1);
+         if Present (Arg2) then
+            Arg3 := Next (Arg2);
 
-            if Present (Arg2) then
-               Arg3 := Next (Arg2);
+            if Present (Arg3) then
+               Arg4 := Next (Arg3);
 
-               if Present (Arg3) then
-                  Arg4 := Next (Arg3);
-
-                  if Present (Arg4) then
-                     Arg5 := Next (Arg4);
-                  end if;
+               if Present (Arg4) then
+                  Arg5 := Next (Arg4);
                end if;
             end if;
          end if;
@@ -12206,10 +12202,11 @@ package body Sem_Prag is
 
                   --  Null states never come from source
 
-                  Set_Comes_From_Source   (State_Id, not Is_Null);
-                  Set_Parent              (State_Id, State);
-                  Mutate_Ekind            (State_Id, E_Abstract_State);
-                  Set_Etype               (State_Id, Standard_Void_Type);
+                  Set_Comes_From_Source (State_Id, not Is_Null);
+                  Set_Parent (State_Id, State);
+                  Mutate_Ekind (State_Id, E_Abstract_State);
+                  Set_Is_Not_Self_Hidden (State_Id);
+                  Set_Etype (State_Id, Standard_Void_Type);
                   Set_Encapsulating_State (State_Id, Empty);
 
                   --  Set the SPARK mode from the current context
@@ -12945,8 +12942,8 @@ package body Sem_Prag is
                               Standard_String);
                      begin
                         for Idx in Type_Table'Range loop
-                           if (L_Type = Type_Table (Idx)) or
-                              (R_Type = Type_Table (Idx))
+                           if L_Type = Type_Table (Idx) or
+                              R_Type = Type_Table (Idx)
                            then
                               return Type_Table (Idx);
                            end if;
@@ -15498,7 +15495,7 @@ package body Sem_Prag is
             Default := Fold_Upper (Name_Buffer (1));
 
             if not Support_Nondefault_SSO_On_Target
-              and then (Ttypes.Bytes_Big_Endian /= (Default = 'H'))
+              and then Ttypes.Bytes_Big_Endian /= (Default = 'H')
             then
                if Warn_On_Unrecognized_Pragma then
                   Error_Msg_N
@@ -20035,7 +20032,11 @@ package body Sem_Prag is
                 N : Node_Id) return Boolean
             is
             begin
-               if Ekind (E) = E_Procedure then
+               if Ekind (E) in E_Function | E_Generic_Function then
+                  Error_Msg_Ada_2022_Feature ("No_Return function", Sloc (N));
+                  return Ada_Version >= Ada_2022;
+
+               elsif Ekind (E) = E_Procedure then
 
                   --  If E is a generic instance, marking it with No_Return
                   --  is forbidden, but having it inherit the No_Return of
@@ -20106,9 +20107,7 @@ package body Sem_Prag is
                   --  Ada 2022 (AI12-0269): A function can be No_Return
 
                   if Ekind (E) in E_Generic_Procedure | E_Procedure
-                    or else (Ada_Version >= Ada_2022
-                              and then
-                             Ekind (E) in E_Generic_Function | E_Function)
+                                   | E_Generic_Function | E_Function
                   then
                      --  Check that the pragma is not applied to a body.
                      --  First check the specless body case, to give a
@@ -29630,6 +29629,11 @@ package body Sem_Prag is
             End_Scope;
          end if;
 
+         --  Currently it is not possible to inline Subprogram_Variant on a
+         --  subprogram subject to pragma Inline_Always.
+
+         Check_Postcondition_Use_In_Inlined_Subprogram (N, Spec_Id);
+
       --  Otherwise the pragma is illegal
 
       else
@@ -30307,6 +30311,7 @@ package body Sem_Prag is
       if Warn_On_Redundant_Constructs
         and then Has_Pragma_Inline_Always (Spec_Id)
         and then Assertions_Enabled
+        and then not Back_End_Inlining
       then
          Error_Msg_Name_1 := Original_Aspect_Pragma_Name (Prag);
 

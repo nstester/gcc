@@ -2057,6 +2057,7 @@ package body Exp_Aggr is
             Set_Etype (L_J, Any_Type);
 
             Mutate_Ekind (L_J, E_Variable);
+            Set_Is_Not_Self_Hidden (L_J);
             Set_Scope (L_J, Ent);
          else
             L_J := Make_Temporary (Loc, 'J', L);
@@ -3837,6 +3838,7 @@ package body Exp_Aggr is
       Comp := First (Component_Associations (N));
       while Present (Comp) loop
          Selector := Entity (First (Choices (Comp)));
+         pragma Assert (Present (Selector));
 
          --  C++ constructors
 
@@ -7396,7 +7398,7 @@ package body Exp_Aggr is
          Comp   : Node_Id;
          Choice : Node_Id;
          Lo, Hi : Node_Id;
-         Siz     : Int := 0;
+         Siz    : Int;
 
          procedure Add_Range_Size;
          --  Compute number of components specified by a component association
@@ -7421,11 +7423,9 @@ package body Exp_Aggr is
          end Add_Range_Size;
 
       begin
-         --  Aggregate is either all positional or all named.
+         --  Aggregate is either all positional or all named
 
-         if Present (Expressions (N)) then
-            Siz := List_Length (Expressions (N));
-         end if;
+         Siz := List_Length (Expressions (N));
 
          if Present (Component_Associations (N)) then
             Comp := First (Component_Associations (N));
@@ -9840,6 +9840,7 @@ package body Exp_Aggr is
       Res_Decl    : Node_Id;
       Res_Id      : Entity_Id;
       Res_Typ     : Entity_Id;
+      Copy_Init_Expr : constant Node_Id := New_Copy_Tree (Init_Expr);
 
    --  Start of processing for Process_Transient_Component
 
@@ -9890,7 +9891,15 @@ package body Exp_Aggr is
           Constant_Present    => True,
           Object_Definition   => New_Occurrence_Of (Res_Typ, Loc),
           Expression          =>
-            Make_Reference (Loc, New_Copy_Tree (Init_Expr)));
+            Make_Reference (Loc, Copy_Init_Expr));
+
+      --  In some cases, like iterated component, the Init_Expr may have been
+      --  analyzed in a context where all the Etype fields are not correct yet
+      --  and a later call to Analyze is expected to set them.
+      --  Resetting the Analyzed flag ensures this later call doesn't skip this
+      --  node.
+
+      Reset_Analyzed_Flags (Copy_Init_Expr);
 
       Add_Item (Res_Decl);
 

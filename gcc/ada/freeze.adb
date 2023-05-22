@@ -1904,8 +1904,8 @@ package body Freeze is
                      if Iface_Prim /= Par_Prim
                        and then Chars (Iface_Prim) = Chars (Prim)
                        and then Comes_From_Source (Iface_Prim)
-                       and then (Is_Interface_Conformant
-                                   (R, Iface_Prim, Prim))
+                       and then Is_Interface_Conformant
+                                  (R, Iface_Prim, Prim)
                      then
                         Check_Same_Strub_Mode (Prim, Iface_Prim);
                      end if;
@@ -6127,8 +6127,7 @@ package body Freeze is
 
             Bod :=
               Make_Subprogram_Body (Loc,
-                Specification              =>
-                  Copy_Separate_Tree (Spec),
+                Specification              => Copy_Subprogram_Spec (Spec),
                 Declarations               => New_List (
                   Make_Subprogram_Declaration (Loc,
                     Specification => Copy_Separate_Tree (Spec)),
@@ -6438,7 +6437,9 @@ package body Freeze is
 
             --  Check for needing to wrap imported subprogram
 
-            Wrap_Imported_Subprogram (E);
+            if not Inside_A_Generic then
+               Wrap_Imported_Subprogram (E);
+            end if;
 
             --  Freeze all parameter types and the return type (RM 13.14(14)).
             --  However skip this for internal subprograms. This is also where
@@ -8284,7 +8285,7 @@ package body Freeze is
 
       if Desig_Typ /= Empty
         and then (Is_Frozen (Desig_Typ)
-                   or else (not Is_Fully_Defined (Desig_Typ)))
+                   or else not Is_Fully_Defined (Desig_Typ))
       then
          Desig_Typ := Empty;
       end if;
@@ -8427,7 +8428,7 @@ package body Freeze is
 
                   if not In_Spec_Expression
                     and then Nkind (N) = N_Identifier
-                    and then (Present (Entity (N)))
+                    and then Present (Entity (N))
                   then
                      --  We recognize the discriminant case by just looking for
                      --  a reference to a discriminant. It can only be one for

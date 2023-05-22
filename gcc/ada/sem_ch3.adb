@@ -7041,7 +7041,7 @@ package body Sem_Ch3 is
       Desig_Type := Designated_Type (Derived_Type);
 
       if Is_Composite_Type (Desig_Type)
-        and then (not Is_Array_Type (Desig_Type))
+        and then not Is_Array_Type (Desig_Type)
         and then Has_Discriminants (Desig_Type)
         and then Base_Type (Desig_Type) /= Desig_Type
       then
@@ -18417,10 +18417,10 @@ package body Sem_Ch3 is
                Set_Etype  (T, Base_T);
                Mutate_Ekind  (T, Subtype_Kind (Ekind (Base_T)));
                Set_Parent (T, Obj_Def);
+               Set_Scope (T, Current_Scope);
 
                if Ekind (T) = E_Array_Subtype then
-                  Set_First_Index (T, First_Index (Base_T));
-                  Set_Is_Constrained (T);
+                  Constrain_Array (T, Obj_Def, Related_Nod, T, 'P');
 
                elsif Ekind (T) = E_Record_Subtype then
                   Set_First_Entity (T, First_Entity (Base_T));
