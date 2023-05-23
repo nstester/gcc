@@ -552,6 +552,7 @@ package Snames is
    Name_Elaborate                      : constant Name_Id := N + $; -- Ada 83
    Name_Elaborate_All                  : constant Name_Id := N + $;
    Name_Elaborate_Body                 : constant Name_Id := N + $;
+   Name_Exceptional_Cases              : constant Name_Id := N + $; -- GNAT
    Name_Export                         : constant Name_Id := N + $;
    Name_Export_Function                : constant Name_Id := N + $; -- GNAT
    Name_Export_Object                  : constant Name_Id := N + $; -- GNAT
@@ -1337,9 +1338,10 @@ package Snames is
    Name_Shift_Right                      : constant Name_Id := N + $;
    Name_Shift_Right_Arithmetic           : constant Name_Id := N + $;
    Name_Source_Location                  : constant Name_Id := N + $;
+   Name_To_Integer                       : constant Name_Id := N + $;
+   Name_To_Pointer                       : constant Name_Id := N + $;
    Name_Unchecked_Conversion             : constant Name_Id := N + $;
    Name_Unchecked_Deallocation           : constant Name_Id := N + $;
-   Name_To_Pointer                       : constant Name_Id := N + $;
    Last_Intrinsic_Name                   : constant Name_Id := N + $;
 
    --  Names used in processing intrinsic calls
@@ -1847,6 +1849,7 @@ package Snames is
       Pragma_Elaborate,
       Pragma_Elaborate_All,
       Pragma_Elaborate_Body,
+      Pragma_Exceptional_Cases,
       Pragma_Export,
       Pragma_Export_Function,
       Pragma_Export_Object,

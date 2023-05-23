@@ -263,7 +263,8 @@ package body Sem_Ch12 is
    --     package                  subprogram [body]
    --       Abstract_State           Contract_Cases
    --       Initial_Condition        Depends
-   --       Initializes              Extensions_Visible
+   --       Initializes              Exceptional_Cases
+   --                                Extensions_Visible
    --                                Global
    --     package body               Post
    --       Refined_State            Post_Class
@@ -4810,16 +4811,7 @@ package body Sem_Ch12 is
                   Scope_Loop : while Enclosing_Master /= Standard_Standard loop
                      if Ekind (Enclosing_Master) = E_Package then
                         if Is_Compilation_Unit (Enclosing_Master) then
-                           if In_Package_Body (Enclosing_Master) then
-                              Set_Delay_Subprogram_Descriptors
-                                (Body_Entity (Enclosing_Master));
-                           else
-                              Set_Delay_Subprogram_Descriptors
-                                (Enclosing_Master);
-                           end if;
-
                            exit Scope_Loop;
-
                         else
                            Enclosing_Master := Scope (Enclosing_Master);
                         end if;
@@ -4835,35 +4827,19 @@ package body Sem_Ch12 is
                         exit Scope_Loop;
 
                      else
-                        if Ekind (Enclosing_Master) = E_Entry
-                          and then
-                            Ekind (Scope (Enclosing_Master)) = E_Protected_Type
-                        then
-                           if not Expander_Active then
-                              exit Scope_Loop;
-                           else
-                              Enclosing_Master :=
-                                Protected_Body_Subprogram (Enclosing_Master);
-                           end if;
-                        end if;
-
                         Set_Delay_Cleanups (Enclosing_Master);
 
                         while Ekind (Enclosing_Master) = E_Block loop
                            Enclosing_Master := Scope (Enclosing_Master);
                         end loop;
 
-                        if Is_Subprogram (Enclosing_Master) then
-                           Set_Delay_Subprogram_Descriptors (Enclosing_Master);
-
-                        elsif Is_Task_Type (Enclosing_Master) then
+                        if Is_Task_Type (Enclosing_Master) then
                            declare
                               TBP : constant Node_Id :=
                                       Get_Task_Body_Procedure
                                         (Enclosing_Master);
                            begin
                               if Present (TBP) then
-                                 Set_Delay_Subprogram_Descriptors (TBP);
                                  Set_Delay_Cleanups (TBP);
                               end if;
                            end;

@@ -9560,6 +9560,13 @@ package body Exp_Ch4 is
       Typ   : constant Entity_Id  := Etype (N);
       DDC   : constant Boolean    := Do_Division_Check (N);
 
+      Is_Stoele_Mod : constant Boolean :=
+        Is_RTE (Typ, RE_Address)
+          and then Nkind (Right_Opnd (N)) = N_Unchecked_Type_Conversion
+          and then
+            Is_RTE (Etype (Expression (Right_Opnd (N))), RE_Storage_Offset);
+      --  True if this is the special mod operator of System.Storage_Elements
+
       Left  : Node_Id;
       Right : Node_Id;
 
@@ -9593,7 +9600,10 @@ package body Exp_Ch4 is
          end if;
       end if;
 
-      if Is_Integer_Type (Typ) then
+      --  For the special mod operator of System.Storage_Elements, the checks
+      --  are subsumed into the handling of the negative case below.
+
+      if Is_Integer_Type (Typ) and then not Is_Stoele_Mod then
          Apply_Divide_Checks (N);
 
          --  All done if we don't have a MOD any more, which can happen as a
@@ -9624,6 +9634,7 @@ package body Exp_Ch4 is
         and then ((Llo >= 0 and then Rlo >= 0)
                      or else
                   (Lhi <= 0 and then Rhi <= 0))
+        and then not Is_Stoele_Mod
       then
          Rewrite (N,
            Make_Op_Rem (Sloc (N),
@@ -9660,6 +9671,24 @@ package body Exp_Ch4 is
 
             Rewrite (N, Make_Integer_Literal (Loc, 0));
             Analyze_And_Resolve (N, Typ);
+            return;
+         end if;
+
+         --  The negative case makes no sense since it is a case of a mod where
+         --  the left argument is unsigned and the right argument is signed. In
+         --  accordance with the (spirit of the) permission of RM 13.7.1(16),
+         --  we raise CE, and also include the zero case here. Yes, the RM says
+         --  PE, but this really is so obviously more like a constraint error.
+
+         if Is_Stoele_Mod and then (not ROK or else Rlo <= 0) then
+            Insert_Action (N,
+              Make_Raise_Constraint_Error (Loc,
+                Condition =>
+                  Make_Op_Le (Loc,
+                    Left_Opnd  =>
+                      Duplicate_Subexpr_No_Checks (Expression (Right)),
+                    Right_Opnd => Make_Integer_Literal (Loc, 0)),
+                Reason => CE_Overflow_Check_Failed));
             return;
          end if;
 
@@ -10118,14 +10147,6 @@ package body Exp_Ch4 is
                   Make_Op_Eq (Loc,
                     Left_Opnd  => Left_Opnd (N),
                     Right_Opnd => Right_Opnd (N)));
-
-            --  The level of parentheses is useless in GNATprove mode, and
-            --  bumping its level here leads to wrong columns being used in
-            --  check messages, hence skip it in this mode.
-
-            if not GNATprove_Mode then
-               Set_Paren_Count (Right_Opnd (Neg), 1);
-            end if;
 
             if Scope (Ne) /= Standard_Standard then
                Set_Entity (Right_Opnd (Neg), Corresponding_Equality (Ne));

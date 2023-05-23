@@ -312,11 +312,12 @@ package body Sem_Util is
    --------------------------
 
    procedure Add_Block_Identifier
-       (N : Node_Id;
-        Id : out Entity_Id;
-        Scope : Entity_Id := Current_Scope)
+     (N     : Node_Id;
+      Id    : out Entity_Id;
+      Scope : Entity_Id := Current_Scope)
    is
       Loc : constant Source_Ptr := Sloc (N);
+
    begin
       pragma Assert (Nkind (N) = N_Block_Statement);
 
@@ -331,7 +332,6 @@ package body Sem_Util is
          Id := New_Internal_Entity (E_Block, Scope, Loc, 'B');
          Set_Etype  (Id, Standard_Void_Type);
          Set_Parent (Id, N);
-
          Set_Identifier (N, New_Occurrence_Of (Id, Loc));
          Set_Block_Node (Id, Identifier (N));
       end if;
@@ -2618,7 +2618,8 @@ package body Sem_Util is
 
          function Check_Node (N : Node_Id) return Traverse_Result is
             Is_Writable_Actual : Boolean := False;
-            Id                 : Entity_Id;
+            Id                 : Entity_Id := Empty;
+            --  Default init of Id for CodePeer
 
          begin
             if Nkind (N) = N_Identifier then
@@ -20575,6 +20576,7 @@ package body Sem_Util is
 
       return    Nam = Name_Contract_Cases
         or else Nam = Name_Depends
+        or else Nam = Name_Exceptional_Cases
         or else Nam = Name_Extensions_Visible
         or else Nam = Name_Global
         or else Nam = Name_Post
@@ -21170,11 +21172,8 @@ package body Sem_Util is
                return Is_Variable_Prefix (Prefix (Orig_Node));
 
             when N_Selected_Component =>
-               return (Is_Variable (Selector_Name (Orig_Node))
-                        and then Is_Variable_Prefix (Prefix (Orig_Node)))
-                 or else
-                   (Nkind (N) = N_Expanded_Name
-                     and then Scope (Entity (N)) = Entity (Prefix (N)));
+               return Is_Variable (Selector_Name (Orig_Node))
+                       and then Is_Variable_Prefix (Prefix (Orig_Node));
 
             --  For an explicit dereference, the type of the prefix cannot
             --  be an access to constant or an access to subprogram.
@@ -27245,6 +27244,15 @@ package body Sem_Util is
          then
             return True;
 
+         --  The body of a protected operation is within the protected type
+
+         elsif Is_Subprogram (Curr)
+           and then Present (Protected_Subprogram (Curr))
+           and then Is_Protected_Type (Outer)
+           and then Scope (Protected_Subprogram (Curr)) = Outer
+         then
+            return True;
+
          --  Outside of its scope, a synchronized type may just be private
 
          elsif Is_Private_Type (Curr)
@@ -27283,6 +27291,13 @@ package body Sem_Util is
 
          elsif Is_Subprogram (Curr)
            and then Outer = Protected_Body_Subprogram (Curr)
+         then
+            return True;
+
+         elsif Is_Subprogram (Curr)
+           and then Present (Protected_Subprogram (Curr))
+           and then Is_Protected_Type (Outer)
+           and then Scope (Protected_Subprogram (Curr)) = Outer
          then
             return True;
 
