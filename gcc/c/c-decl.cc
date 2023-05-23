@@ -5364,7 +5364,8 @@ start_decl (struct c_declarator *declarator, struct c_declspecs *declspecs,
     if (lastdecl != error_mark_node)
       *lastloc = DECL_SOURCE_LOCATION (lastdecl);
 
-  if (expr)
+  /* Make sure the size expression is evaluated at this point.  */
+  if (expr && !current_scope->parm_flag)
     add_stmt (fold_convert (void_type_node, expr));
 
   if (TREE_CODE (decl) != FUNCTION_DECL && MAIN_NAME_P (DECL_NAME (decl))
@@ -6489,6 +6490,58 @@ smallest_type_quals_location (const location_t *locations,
   return loc;
 }
 
+
+/* We attach an artificial TYPE_DECL to pointed-to type
+   and arrange for it to be included in a DECL_EXPR.  This
+   forces the sizes evaluation at a safe point and ensures it
+   is not deferred until e.g. within a deeper conditional context.
+
+   PARM contexts have no enclosing statement list that
+   can hold the DECL_EXPR, so we need to use a BIND_EXPR
+   instead, and add it to the list of expressions that
+   need to be evaluated.
+
+   TYPENAME contexts do have an enclosing statement list,
+   but it would be incorrect to use it, as the size should
+   only be evaluated if the containing expression is
+   evaluated.  We might also be in the middle of an
+   expression with side effects on the pointed-to type size
+   "arguments" prior to the pointer declaration point and
+   the fake TYPE_DECL in the enclosing context would force
+   the size evaluation prior to the side effects.  We therefore
+   use BIND_EXPRs in TYPENAME contexts too.  */
+static void
+add_decl_expr (location_t loc, enum decl_context decl_context, tree type,
+	       tree *expr)
+{
+  tree bind = NULL_TREE;
+  if (decl_context == TYPENAME || decl_context == PARM
+      || decl_context == FIELD)
+    {
+      bind = build3 (BIND_EXPR, void_type_node, NULL_TREE, NULL_TREE,
+		     NULL_TREE);
+      TREE_SIDE_EFFECTS (bind) = 1;
+      BIND_EXPR_BODY (bind) = push_stmt_list ();
+      push_scope ();
+    }
+
+  tree decl = build_decl (loc, TYPE_DECL, NULL_TREE, type);
+  pushdecl (decl);
+  DECL_ARTIFICIAL (decl) = 1;
+  add_stmt (build_stmt (DECL_SOURCE_LOCATION (decl), DECL_EXPR, decl));
+  TYPE_NAME (type) = decl;
+
+  if (bind)
+    {
+      pop_scope ();
+      BIND_EXPR_BODY (bind) = pop_stmt_list (BIND_EXPR_BODY (bind));
+      if (*expr)
+	*expr = build2 (COMPOUND_EXPR, void_type_node, *expr, bind);
+      else
+	*expr = bind;
+    }
+}
+
 /* Given declspecs and a declarator,
    determine the name and type of the object declared
    and construct a ..._DECL node for it.
@@ -7473,56 +7526,9 @@ grokdeclarator (const struct c_declarator *declarator,
 
 	       This is expected to happen automatically when the pointed-to
 	       type has a name/declaration of it's own, but special attention
-	       is required if the type is anonymous.
-
-	       We attach an artificial TYPE_DECL to such pointed-to type
-	       and arrange for it to be included in a DECL_EXPR.  This
-	       forces the sizes evaluation at a safe point and ensures it
-	       is not deferred until e.g. within a deeper conditional context.
-
-	       PARM contexts have no enclosing statement list that
-	       can hold the DECL_EXPR, so we need to use a BIND_EXPR
-	       instead, and add it to the list of expressions that
-	       need to be evaluated.
-
-	       TYPENAME contexts do have an enclosing statement list,
-	       but it would be incorrect to use it, as the size should
-	       only be evaluated if the containing expression is
-	       evaluated.  We might also be in the middle of an
-	       expression with side effects on the pointed-to type size
-	       "arguments" prior to the pointer declaration point and
-	       the fake TYPE_DECL in the enclosing context would force
-	       the size evaluation prior to the side effects.  We therefore
-	       use BIND_EXPRs in TYPENAME contexts too.  */
-	    if (!TYPE_NAME (type)
-		&& c_type_variably_modified_p (type))
-	      {
-		tree bind = NULL_TREE;
-		if (decl_context == TYPENAME || decl_context == PARM)
-		  {
-		    bind = build3 (BIND_EXPR, void_type_node, NULL_TREE,
-				   NULL_TREE, NULL_TREE);
-		    TREE_SIDE_EFFECTS (bind) = 1;
-		    BIND_EXPR_BODY (bind) = push_stmt_list ();
-		    push_scope ();
-		  }
-		tree decl = build_decl (loc, TYPE_DECL, NULL_TREE, type);
-		DECL_ARTIFICIAL (decl) = 1;
-		pushdecl (decl);
-		finish_decl (decl, loc, NULL_TREE, NULL_TREE, NULL_TREE);
-		TYPE_NAME (type) = decl;
-		if (bind)
-		  {
-		    pop_scope ();
-		    BIND_EXPR_BODY (bind)
-		      = pop_stmt_list (BIND_EXPR_BODY (bind));
-		    if (*expr)
-		      *expr = build2 (COMPOUND_EXPR, void_type_node, *expr,
-				      bind);
-		    else
-		      *expr = bind;
-		  }
-	      }
+	       is required if the type is anonymous. */
+	    if (!TYPE_NAME (type) && c_type_variably_modified_p (type))
+	      add_decl_expr (loc, decl_context, type, expr);
 
 	    type = c_build_pointer_type (type);
 
@@ -7784,6 +7790,11 @@ grokdeclarator (const struct c_declarator *declarator,
 	    if (type_quals)
 	      type = c_build_qualified_type (type, type_quals, orig_qual_type,
 					     orig_qual_indirect);
+
+	    /* The pointed-to type may need a decl expr (see above).  */
+	    if (!TYPE_NAME (type) && c_type_variably_modified_p (type))
+	      add_decl_expr (loc, decl_context, type, expr);
+
 	    type = c_build_pointer_type (type);
 	    type_quals = array_ptr_quals;
 	    if (type_quals)
@@ -8709,7 +8720,7 @@ start_struct (location_t loc, enum tree_code code, tree name,
 tree
 grokfield (location_t loc,
 	   struct c_declarator *declarator, struct c_declspecs *declspecs,
-	   tree width, tree *decl_attrs)
+	   tree width, tree *decl_attrs, tree *expr)
 {
   tree value;
 
@@ -8766,7 +8777,7 @@ grokfield (location_t loc,
     }
 
   value = grokdeclarator (declarator, declspecs, FIELD, false,
-			  width ? &width : NULL, decl_attrs, NULL, NULL,
+			  width ? &width : NULL, decl_attrs, expr, NULL,
 			  DEPRECATED_NORMAL);
 
   finish_decl (value, loc, NULL_TREE, NULL_TREE, NULL_TREE);
@@ -9424,13 +9435,6 @@ finish_struct (location_t loc, tree t, tree fieldlist, tree attributes,
 
   finish_incomplete_vars (incomplete_vars, toplevel);
 
-  /* If we're inside a function proper, i.e. not file-scope and not still
-     parsing parameters, then arrange for the size of a variable sized type
-     to be bound now.  */
-  if (building_stmt_list_p () && c_type_variably_modified_p(t))
-    add_stmt (build_stmt (loc,
-			  DECL_EXPR, build_decl (loc, TYPE_DECL, NULL, t)));
-
   if (warn_cxx_compat)
     warn_cxx_compat_finish_struct (fieldlist, TREE_CODE (t), loc);
 
@@ -10056,6 +10060,7 @@ start_function (struct c_declspecs *declspecs, struct c_declarator *declarator,
   tree restype, resdecl;
   location_t loc;
   location_t result_loc;
+  tree expr = NULL;
 
   current_function_returns_value = 0;  /* Assume, until we see it does.  */
   current_function_returns_null = 0;
@@ -10067,7 +10072,7 @@ start_function (struct c_declspecs *declspecs, struct c_declarator *declarator,
   in_statement = 0;
 
   decl1 = grokdeclarator (declarator, declspecs, FUNCDEF, true, NULL,
-			  &attributes, NULL, NULL, DEPRECATED_NORMAL);
+			  &attributes, &expr, NULL, DEPRECATED_NORMAL);
   invoke_plugin_callbacks (PLUGIN_START_PARSE_FUNCTION, decl1);
 
   /* If the declarator is not suitable for a function definition,
@@ -10075,6 +10080,11 @@ start_function (struct c_declspecs *declspecs, struct c_declarator *declarator,
   if (decl1 == NULL_TREE
       || TREE_CODE (decl1) != FUNCTION_DECL)
     return false;
+
+  /* Nested functions may have variably modified (return) type.
+     Make sure the size expression is evaluated at this point.  */
+  if (expr && !current_scope->parm_flag)
+    add_stmt (fold_convert (void_type_node, expr));
 
   loc = DECL_SOURCE_LOCATION (decl1);
 
@@ -12284,10 +12294,13 @@ declspecs_add_type (location_t loc, struct c_declspecs *specs,
     }
   else
     {
-      if (TREE_CODE (type) != ERROR_MARK && spec.kind == ctsk_typeof)
+      if (TREE_CODE (type) != ERROR_MARK)
 	{
-	  specs->typedef_p = true;
-	  specs->locations[cdw_typedef] = loc;
+	  if (spec.kind == ctsk_typeof)
+	    {
+	      specs->typedef_p = true;
+	      specs->locations[cdw_typedef] = loc;
+	    }
 	  if (spec.expr)
 	    {
 	      if (specs->expr)
