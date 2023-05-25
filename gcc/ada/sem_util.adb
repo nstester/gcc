@@ -2234,9 +2234,12 @@ package body Sem_Util is
            and then Entity (Formal_Type) = Par_Typ
          then
             Rewrite (Formal_Type, New_Occurrence_Of (Typ, Loc));
-         end if;
 
-         --  Nothing needs to be done for access parameters
+         elsif Nkind (Formal_Type) = N_Access_Definition
+           and then Entity (Subtype_Mark (Formal_Type)) = Par_Typ
+         then
+            Rewrite (Subtype_Mark (Formal_Type), New_Occurrence_Of (Typ, Loc));
+         end if;
 
          Next (Formal_Spec);
       end loop;
@@ -3498,6 +3501,11 @@ package body Sem_Util is
                     ("internal call cannot appear in default for formal of "
                      & "protected operation", N);
                   return;
+
+               --  Prevent the search from going too far
+
+               elsif Is_Body_Or_Package_Declaration (P) then
+                  exit;
                end if;
 
                P := Parent (P);
@@ -8212,12 +8220,8 @@ package body Sem_Util is
       elsif Present (Etype (Def_Id)) then
          null;
 
-      --  Otherwise, the kind E_Void insures that premature uses of the entity
-      --  will be detected. Any_Type insures that no cascaded errors will occur
-
       else
-         Mutate_Ekind (Def_Id, E_Void);
-         Set_Etype (Def_Id, Any_Type);
+         Set_Etype (Def_Id, Any_Type); -- avoid cascaded errors
       end if;
 
       --  All entities except Itypes are immediately visible
@@ -23059,11 +23063,10 @@ package body Sem_Util is
    -------------------
 
    function New_Copy_Tree
-     (Source           : Node_Id;
-      Map              : Elist_Id   := No_Elist;
-      New_Sloc         : Source_Ptr := No_Location;
-      New_Scope        : Entity_Id  := Empty;
-      Scopes_In_EWA_OK : Boolean    := False) return Node_Id
+     (Source    : Node_Id;
+      Map       : Elist_Id   := No_Elist;
+      New_Sloc  : Source_Ptr := No_Location;
+      New_Scope : Entity_Id  := Empty) return Node_Id
    is
       --  This routine performs low-level tree manipulations and needs access
       --  to the internals of the tree.
@@ -23850,9 +23853,7 @@ package body Sem_Util is
             --  ??? Is there a better way of distinguishing those?
 
             while Present (Old_Id) and then Present (New_Id) loop
-               if not (Present (Entity_Map)
-                        and then In_Entity_Map (Old_Id, Entity_Map))
-               then
+               if not In_Entity_Map (Old_Id, Entity_Map) then
                   Update_Semantic_Fields (New_Id);
                end if;
 
@@ -24024,12 +24025,9 @@ package body Sem_Util is
             return;
 
          --  Nothing to do when the entity is defined in a scoping construct
-         --  within an N_Expression_With_Actions node, unless the caller has
-         --  requested their replication.
+         --  within an N_Expression_With_Actions node.
 
-         --  ??? should this restriction be eliminated?
-
-         elsif EWA_Inner_Scope_Level > 0 and then not Scopes_In_EWA_OK then
+         elsif EWA_Inner_Scope_Level > 0 then
             return;
 
          --  Nothing to do when the entity does not denote a construct that
@@ -24381,7 +24379,10 @@ package body Sem_Util is
          then
             EWA_Inner_Scope_Level := EWA_Inner_Scope_Level - 1;
 
-         elsif Nkind (N) = N_Expression_With_Actions then
+         elsif Nkind (N) = N_Expression_With_Actions
+           or else
+             (Nkind (N) = N_Quantified_Expression and then Expander_Active)
+         then
             EWA_Level := EWA_Level - 1;
          end if;
       end Visit_Node;
@@ -30650,9 +30651,9 @@ package body Sem_Util is
            (Expr : Node_Id; Expr_Trailer : Node_Id := Empty)
            return Determining_Expression_List
          is
-            Par           : Node_Id := Expr;
-            Trailer       : Node_Id := Expr_Trailer;
-            Next_Element  : Determining_Expr;
+            Par          : Node_Id := Expr;
+            Trailer      : Node_Id := Expr_Trailer;
+            Next_Element : Determining_Expr;
          begin
             --  We want to stop climbing up the tree when we reach the
             --  postcondition expression. An aspect_specification is
@@ -30760,9 +30761,13 @@ package body Sem_Util is
                         else
                            pragma Assert
                              (Get_Pragma_Id (Pragma_Name (Par)) in
-                                Pragma_Post | Pragma_Postcondition
-                                | Pragma_Post_Class | Pragma_Refined_Post
-                                | Pragma_Check | Pragma_Contract_Cases);
+                                Pragma_Check
+                              | Pragma_Contract_Cases
+                              | Pragma_Exceptional_Cases
+                              | Pragma_Post
+                              | Pragma_Postcondition
+                              | Pragma_Post_Class
+                              | Pragma_Refined_Post);
 
                            return (1 .. 0 => <>); -- recursion terminates here
                         end if;

@@ -225,10 +225,10 @@ package body Sem_Prag is
    procedure Contract_Freeze_Error
      (Contract_Id : Entity_Id;
       Freeze_Id   : Entity_Id);
-   --  Subsidiary to the analysis of pragmas Contract_Cases, Part_Of, Post, and
-   --  Pre. Emit a freezing-related error message where Freeze_Id is the entity
-   --  of a body which caused contract freezing and Contract_Id denotes the
-   --  entity of the affected contstruct.
+   --  Subsidiary to the analysis of pragmas Contract_Cases, Exceptional_Cases,
+   --  Part_Of, Post, Pre and Subprogram_Variant. Emit a freezing-related error
+   --  message where Freeze_Id is the entity of a body which caused contract
+   --  freezing and Contract_Id denotes the entity of the affected contstruct.
 
    procedure Duplication_Error (Prag : Node_Id; Prev : Node_Id);
    --  Subsidiary to all Find_Related_xxx routines. Emit an error on pragma
@@ -4515,11 +4515,11 @@ package body Sem_Prag is
 
       procedure Ensure_Aggregate_Form (Arg : Node_Id);
       --  Subsidiary routine to the processing of pragmas Abstract_State,
-      --  Contract_Cases, Depends, Global, Initializes, Refined_Depends,
-      --  Refined_Global, Refined_State and Subprogram_Variant. Transform
-      --  argument Arg into an aggregate if not one already. N_Null is never
-      --  transformed. Arg may denote an aspect specification or a pragma
-      --  argument association.
+      --  Contract_Cases, Depends, Exceptional_Cases, Global, Initializes,
+      --  Refined_Depends, Refined_Global, Refined_State and
+      --  Subprogram_Variant. Transform argument Arg into an aggregate if not
+      --  one already. N_Null is never transformed. Arg may denote an aspect
+      --  specification or a pragma argument association.
 
       procedure Error_Pragma (Msg : String);
       pragma No_Return (Error_Pragma);
@@ -16688,7 +16688,7 @@ package body Sem_Prag is
             Ensure_Aggregate_Form (Get_Argument (N, Spec_Id));
 
             --  Chain the pragma on the contract for further processing by
-            --  Analyze_Subprogram_Variant_In_Decl_Part.
+            --  Analyze_Exceptional_Cases_In_Decl_Part.
 
             Add_Contract_Item (N, Defining_Entity (Subp_Decl));
 
@@ -16698,13 +16698,13 @@ package body Sem_Prag is
             if Nkind (Subp_Decl) in N_Subprogram_Body
                                   | N_Subprogram_Body_Stub
             then
-               --  The legality checks of pragma Subprogram_Variant are
+               --  The legality checks of pragma Exceptional_Cases are
                --  affected by the SPARK mode in effect and the volatility
                --  of the context. Analyze all pragmas in a specific order.
 
                Analyze_If_Present (Pragma_SPARK_Mode);
                Analyze_If_Present (Pragma_Volatile_Function);
-               Analyze_Subprogram_Variant_In_Decl_Part (N);
+               Analyze_Exceptional_Cases_In_Decl_Part (N);
             end if;
          end Exceptional_Cases;
 

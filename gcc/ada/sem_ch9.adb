@@ -2067,6 +2067,7 @@ package body Sem_Ch9 is
       end if;
 
       Mutate_Ekind           (T, E_Protected_Type);
+      Set_Is_Not_Self_Hidden (T);
       Set_Is_First_Subtype   (T);
       Reinit_Size_Align      (T);
       Set_Etype              (T, T);
@@ -2180,14 +2181,16 @@ package body Sem_Ch9 is
          Set_Has_Controlled_Component (T, True);
       end if;
 
-      --  The Ekind of components is E_Void during analysis to detect illegal
-      --  uses. Now it can be set correctly.
+      --  The Ekind of components is E_Void during analysis for historical
+      --  reasons. Now it can be set correctly.
 
       E := First_Entity (Current_Scope);
       while Present (E) loop
          if Ekind (E) = E_Void then
-            Mutate_Ekind (E, E_Component);
-            Reinit_Component_Location (E);
+            if not Is_Itype (E) then
+               Mutate_Ekind (E, E_Component);
+               Reinit_Component_Location (E);
+            end if;
          end if;
 
          Next_Entity (E);
@@ -2901,6 +2904,7 @@ package body Sem_Ch9 is
 
       Enter_Name (Obj_Id);
       Mutate_Ekind               (Obj_Id, E_Variable);
+      Set_Is_Not_Self_Hidden     (Obj_Id);
       Set_Etype                  (Obj_Id, Typ);
       Set_SPARK_Pragma           (Obj_Id, SPARK_Mode_Pragma);
       Set_SPARK_Pragma_Inherited (Obj_Id);
@@ -2987,6 +2991,7 @@ package body Sem_Ch9 is
 
       Enter_Name (Obj_Id);
       Mutate_Ekind               (Obj_Id, E_Variable);
+      Set_Is_Not_Self_Hidden     (Obj_Id);
       Set_Etype                  (Obj_Id, Typ);
       Set_SPARK_Pragma           (Obj_Id, SPARK_Mode_Pragma);
       Set_SPARK_Pragma_Inherited (Obj_Id);
@@ -3265,6 +3270,7 @@ package body Sem_Ch9 is
       end if;
 
       Mutate_Ekind           (T, E_Task_Type);
+      Set_Is_Not_Self_Hidden (T);
       Set_Is_First_Subtype   (T, True);
       Set_Has_Task           (T, True);
       Reinit_Size_Align      (T);
