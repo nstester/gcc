@@ -373,3 +373,148 @@
     DONE;
   }
 )
+
+;; -------------------------------------------------------------------------
+;; ---- [INT] Sign and zero extension
+;; -------------------------------------------------------------------------
+;; Includes:
+;; - vzext.vf[2|4|8]
+;; - vsext.vf[2|4|8]
+;; -------------------------------------------------------------------------
+
+(define_expand "<optab><v_double_trunc><mode>2"
+  [(set (match_operand:VWEXTI 0 "register_operand")
+    (any_extend:VWEXTI
+     (match_operand:<V_DOUBLE_TRUNC> 1 "register_operand")))]
+  "TARGET_VECTOR"
+{
+  insn_code icode = code_for_pred_vf2 (<CODE>, <MODE>mode);
+  riscv_vector::emit_vlmax_insn (icode, riscv_vector::RVV_UNOP, operands);
+  DONE;
+})
+
+(define_expand "<optab><v_quad_trunc><mode>2"
+  [(set (match_operand:VQEXTI 0 "register_operand")
+    (any_extend:VQEXTI
+     (match_operand:<V_QUAD_TRUNC> 1 "register_operand")))]
+  "TARGET_VECTOR"
+{
+  insn_code icode = code_for_pred_vf4 (<CODE>, <MODE>mode);
+  riscv_vector::emit_vlmax_insn (icode, riscv_vector::RVV_UNOP, operands);
+  DONE;
+})
+
+(define_expand "<optab><v_oct_trunc><mode>2"
+  [(set (match_operand:VOEXTI 0 "register_operand")
+    (any_extend:VOEXTI
+     (match_operand:<V_OCT_TRUNC> 1 "register_operand")))]
+  "TARGET_VECTOR"
+{
+  insn_code icode = code_for_pred_vf8 (<CODE>, <MODE>mode);
+  riscv_vector::emit_vlmax_insn (icode, riscv_vector::RVV_UNOP, operands);
+  DONE;
+})
+
+;; -------------------------------------------------------------------------
+;; ---- [INT] Truncation
+;; -------------------------------------------------------------------------
+;; - vncvt.x.x.w
+;; -------------------------------------------------------------------------
+(define_expand "trunc<mode><v_double_trunc>2"
+  [(set (match_operand:<V_DOUBLE_TRUNC> 0 "register_operand")
+    (truncate:<V_DOUBLE_TRUNC>
+     (match_operand:VWEXTI 1 "register_operand")))]
+  "TARGET_VECTOR"
+{
+  insn_code icode = code_for_pred_trunc (<MODE>mode);
+  riscv_vector::emit_vlmax_insn (icode, riscv_vector::RVV_UNOP, operands);
+  DONE;
+})
+
+;; -------------------------------------------------------------------------
+;; Truncation to a mode whose inner mode size is a quarter of mode's.
+;; We emulate this with two consecutive vncvts.
+;; -------------------------------------------------------------------------
+(define_expand "trunc<mode><v_quad_trunc>2"
+  [(set (match_operand:<V_QUAD_TRUNC> 0 "register_operand")
+    (truncate:<V_QUAD_TRUNC>
+     (match_operand:VQEXTI 1 "register_operand")))]
+  "TARGET_VECTOR"
+{
+  rtx half = gen_reg_rtx (<V_DOUBLE_TRUNC>mode);
+  rtx opshalf[] = {half, operands[1]};
+  insn_code icode = code_for_pred_trunc (<MODE>mode);
+  riscv_vector::emit_vlmax_insn (icode, riscv_vector::RVV_UNOP, opshalf);
+
+  rtx ops[] = {operands[0], half};
+  icode = code_for_pred_trunc (<V_DOUBLE_TRUNC>mode);
+  riscv_vector::emit_vlmax_insn (icode, riscv_vector::RVV_UNOP, ops);
+  DONE;
+})
+
+;; -------------------------------------------------------------------------
+;; Truncation to a mode whose inner mode size is an eigth of mode's.
+;; We emulate this with three consecutive vncvts.
+;; -------------------------------------------------------------------------
+(define_expand "trunc<mode><v_oct_trunc>2"
+  [(set (match_operand:<V_OCT_TRUNC> 0 "register_operand")
+    (truncate:<V_OCT_TRUNC>
+     (match_operand:VOEXTI 1 "register_operand")))]
+  "TARGET_VECTOR"
+{
+  rtx half = gen_reg_rtx (<V_DOUBLE_TRUNC>mode);
+  rtx opshalf[] = {half, operands[1]};
+  insn_code icode = code_for_pred_trunc (<MODE>mode);
+  riscv_vector::emit_vlmax_insn (icode, riscv_vector::RVV_UNOP, opshalf);
+
+  rtx quarter = gen_reg_rtx (<V_QUAD_TRUNC>mode);
+  rtx opsquarter[] = {quarter, half};
+  icode = code_for_pred_trunc (<V_DOUBLE_TRUNC>mode);
+  riscv_vector::emit_vlmax_insn (icode, riscv_vector::RVV_UNOP, opsquarter);
+
+  rtx ops[] = {operands[0], quarter};
+  icode = code_for_pred_trunc (<V_QUAD_TRUNC>mode);
+  riscv_vector::emit_vlmax_insn (icode, riscv_vector::RVV_UNOP, ops);
+  DONE;
+})
+
+;; =========================================================================
+;; == Unary arithmetic
+;; =========================================================================
+
+;; -------------------------------------------------------------------------------
+;; ---- [INT] Unary operations
+;; -------------------------------------------------------------------------------
+;; Includes:
+;; - vneg.v/vnot.v
+;; -------------------------------------------------------------------------------
+(define_expand "<optab><mode>2"
+  [(set (match_operand:VI 0 "register_operand")
+    (any_int_unop:VI
+     (match_operand:VI 1 "register_operand")))]
+  "TARGET_VECTOR"
+{
+  insn_code icode = code_for_pred (<CODE>, <MODE>mode);
+  riscv_vector::emit_vlmax_insn (icode, riscv_vector::RVV_UNOP, operands);
+  DONE;
+})
+
+;; -------------------------------------------------------------------------------
+;; - ABS expansion to vmslt and vneg
+;; -------------------------------------------------------------------------------
+
+(define_expand "abs<mode>2"
+  [(set (match_operand:VI 0 "register_operand")
+    (match_operand:VI 1 "register_operand"))]
+  "TARGET_VECTOR"
+{
+  rtx zero = gen_const_vec_duplicate (<MODE>mode, GEN_INT (0));
+  machine_mode mask_mode = riscv_vector::get_mask_mode (<MODE>mode).require ();
+  rtx mask = gen_reg_rtx (mask_mode);
+  riscv_vector::expand_vec_cmp (mask, LT, operands[1], zero);
+
+  rtx ops[] = {operands[0], mask, operands[1], operands[1]};
+  riscv_vector::emit_vlmax_masked_mu_insn (code_for_pred (NEG, <MODE>mode),
+					   riscv_vector::RVV_UNOP_MU, ops);
+  DONE;
+})
