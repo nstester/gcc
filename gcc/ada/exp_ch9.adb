@@ -154,8 +154,7 @@ package body Exp_Ch9 is
    --  N is the enclosing construct.
 
    function Build_Entry_Count_Expression
-     (Concurrent_Type : Node_Id;
-      Component_List  : List_Id;
+     (Concurrent_Type : Entity_Id;
       Loc             : Source_Ptr) return Node_Id;
    --  Compute number of entries for concurrent object. This is a count of
    --  simple entries, followed by an expression that computes the length
@@ -1219,9 +1218,9 @@ package body Exp_Ch9 is
       then
          declare
             Ins_Nod : Node_Id;
+            Par_Nod : Node_Id;
 
          begin
-            Set_Has_Master_Entity (Master_Scope);
             Master_Decl := Build_Master_Declaration (Loc);
 
             --  Ensure that the master declaration is placed before its use
@@ -1230,6 +1229,30 @@ package body Exp_Ch9 is
             while not Is_List_Member (Ins_Nod) loop
                Ins_Nod := Parent (Ins_Nod);
             end loop;
+
+            Par_Nod := Parent (List_Containing (Ins_Nod));
+
+            --  For internal blocks created by Wrap_Loop_Statement, Wrap_
+            --  Statements_In_Block, and Build_Abort_Undefer_Block, remember
+            --  that they have a task master entity declaration; required by
+            --  Build_Master_Entity to avoid creating another master entity,
+            --  and also ensures that subsequent calls to Find_Master_Scope
+            --  return this scope as the master scope of Typ.
+
+            if Is_Internal_Block (Par_Nod) then
+               Set_Has_Master_Entity (Entity (Identifier (Par_Nod)));
+
+            elsif Nkind (Par_Nod) = N_Handled_Sequence_Of_Statements
+              and then Is_Internal_Block (Parent (Par_Nod))
+            then
+               Set_Has_Master_Entity (Entity (Identifier (Parent (Par_Nod))));
+
+            --  Otherwise remember that this scope has an associated task
+            --  master entity declaration.
+
+            else
+               Set_Has_Master_Entity (Master_Scope);
+            end if;
 
             Insert_Before (First (List_Containing (Ins_Nod)), Master_Decl);
             Analyze (Master_Decl);
@@ -1404,14 +1427,12 @@ package body Exp_Ch9 is
    ----------------------------------
 
    function Build_Entry_Count_Expression
-     (Concurrent_Type : Node_Id;
-      Component_List  : List_Id;
+     (Concurrent_Type : Entity_Id;
       Loc             : Source_Ptr) return Node_Id
    is
       Eindx  : Nat;
       Ent    : Entity_Id;
       Ecount : Node_Id;
-      Comp   : Node_Id;
       Lo     : Node_Id;
       Hi     : Node_Id;
       Typ    : Entity_Id;
@@ -1435,13 +1456,8 @@ package body Exp_Ch9 is
       --  Loop through entry families building the addition nodes
 
       Ent := First_Entity (Concurrent_Type);
-      Comp := First (Component_List);
       while Present (Ent) loop
          if Ekind (Ent) = E_Entry_Family then
-            while Chars (Ent) /= Chars (Defining_Identifier (Comp)) loop
-               Next (Comp);
-            end loop;
-
             Typ := Entry_Index_Type (Ent);
             Hi := Type_High_Bound (Typ);
             Lo := Type_Low_Bound  (Typ);
@@ -3167,28 +3183,6 @@ package body Exp_Ch9 is
          Par := Associated_Node_For_Itype (Obj_Or_Typ);
       else
          Par := Parent (Obj_Or_Typ);
-      end if;
-
-      --  For transient scopes check if the master entity is already defined
-
-      if Is_Type (Obj_Or_Typ)
-        and then Ekind (Scope (Obj_Or_Typ)) = E_Block
-        and then Is_Internal (Scope (Obj_Or_Typ))
-      then
-         declare
-            Master_Scope : constant Entity_Id :=
-                             Find_Master_Scope (Obj_Or_Typ);
-         begin
-            if Has_Master_Entity (Master_Scope)
-              or else Is_Finalizer (Master_Scope)
-            then
-               return;
-            end if;
-
-            if Present (Current_Entity_In_Scope (Name_uMaster)) then
-               return;
-            end if;
-         end;
       end if;
 
       --  When creating a master for a record component which is either a task
@@ -7710,7 +7704,7 @@ package body Exp_Ch9 is
    --         or else K = Ada.Tags.TK_Tagged
    --       then
    --          <dispatching-call>;
-   --          <triggering-statements>
+   --          --  <triggering-statements> (code factorized after if-stmt)
 
    --       else
    --          S :=
@@ -7735,11 +7729,14 @@ package body Exp_Ch9 is
    --                <dispatching-call>;
    --             end if;
 
-   --             <triggering-statements>
+   --             --  <triggering-statements> (code factorized after if-stmt)
    --          else
    --             <else-statements>
+   --             goto L0; -- skip triggering statements
    --          end if;
    --       end if;
+   --       <triggering-statements>
+   --       L0:
    --    end;
 
    procedure Expand_N_Conditional_Entry_Call (N : Node_Id) is
@@ -7755,6 +7752,8 @@ package body Exp_Ch9 is
       Decl           : Node_Id;
       Decls          : List_Id;
       Formals        : List_Id;
+      Label          : Node_Id;
+      Label_Id       : Entity_Id := Empty;
       Lim_Typ_Stmts  : List_Id;
       N_Stats        : List_Id;
       Obj            : Entity_Id;
@@ -7881,12 +7880,13 @@ package body Exp_Ch9 is
          --       then
          --          <dispatching-call>
          --       end if;
-         --       <normal-statements>
+         --       --  <triggering-stataments> (code factorized after if-stmt)
          --    else
          --       <else-statements>
+         --       goto L0; --  skip triggering statements
          --    end if;
 
-         N_Stats := New_Copy_Separate_List (Statements (Alt));
+         N_Stats := New_List;
 
          Prepend_To (N_Stats,
            Make_Implicit_If_Statement (N,
@@ -7920,6 +7920,14 @@ package body Exp_Ch9 is
              Then_Statements =>
                New_List (Blk)));
 
+         Label_Id := Make_Identifier (Loc, New_External_Name ('L', 0));
+         Set_Entity (Label_Id,
+           Make_Defining_Identifier (Loc, Chars (Label_Id)));
+
+         Append_To (Else_Statements (N),
+           Make_Goto_Statement (Loc,
+             Name => New_Occurrence_Of (Entity (Label_Id), Loc)));
+
          Append_To (Conc_Typ_Stmts,
            Make_Implicit_If_Statement (N,
              Condition       => New_Occurrence_Of (B, Loc),
@@ -7928,15 +7936,14 @@ package body Exp_Ch9 is
 
          --  Generate:
          --    <dispatching-call>;
-         --    <triggering-statements>
+         --    --  <triggering-statements>  (code factorized after if-stmt)
 
-         Lim_Typ_Stmts := New_Copy_Separate_List (Statements (Alt));
-         Prepend_To (Lim_Typ_Stmts, New_Copy_Tree (Blk));
+         Lim_Typ_Stmts := New_List (New_Copy_Tree (Blk));
 
          --  Generate:
          --    if K = Ada.Tags.TK_Limited_Tagged
          --         or else K = Ada.Tags.TK_Tagged
-         --       then
+         --    then
          --       Lim_Typ_Stmts
          --    else
          --       Conc_Typ_Stmts
@@ -7947,6 +7954,15 @@ package body Exp_Ch9 is
              Condition       => Build_Dispatching_Tag_Check (K, N),
              Then_Statements => Lim_Typ_Stmts,
              Else_Statements => Conc_Typ_Stmts));
+
+         Label := Make_Label (Loc, Label_Id);
+         Append_To (Decls,
+           Make_Implicit_Label_Declaration (Loc,
+             Defining_Identifier => Entity (Label_Id),
+             Label_Construct     => Label));
+
+         Append_List_To (Stmts, Statements (Alt)); --  triggering-statements
+         Append_To (Stmts, Label);
 
          Rewrite (N,
            Make_Block_Statement (Loc,
@@ -9224,7 +9240,7 @@ package body Exp_Ch9 is
          declare
             Entry_Count_Expr   : constant Node_Id :=
                                    Build_Entry_Count_Expression
-                                     (Prot_Typ, Cdecls, Loc);
+                                     (Prot_Typ, Loc);
             Num_Attach_Handler : Nat := 0;
             Protection_Subtype : Node_Id;
             Ritem              : Node_Id;
@@ -14208,7 +14224,7 @@ package body Exp_Ch9 is
       Tdec   : Node_Id;
       Tdef   : Node_Id;
       Tnam   : Name_Id;
-      Ttyp   : Node_Id;
+      Ttyp   : Entity_Id;
 
    begin
       Ttyp := Corresponding_Concurrent_Type (Task_Rec);
@@ -14429,14 +14445,7 @@ package body Exp_Ch9 is
 
          --  where a,b... are the entry family names for the task definition
 
-         Ecount :=
-           Build_Entry_Count_Expression
-             (Ttyp,
-              Component_Items
-                (Component_List
-                   (Type_Definition
-                      (Parent (Corresponding_Record_Type (Ttyp))))),
-              Loc);
+         Ecount := Build_Entry_Count_Expression (Ttyp, Loc);
          Append_To (Args, Ecount);
 
          --  Master parameter. This is a reference to the _Master parameter of

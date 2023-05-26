@@ -1080,7 +1080,6 @@ package Sem_Util is
    --
    --    Report_Errors is set to True if the values of the discriminants are
    --     insufficiently static (see body for details of what that means).
-
    --
    --    Allow_Compile_Time if set to True, allows compile time known values in
    --     Governed_By expressions in addition to static expressions.
@@ -2101,6 +2100,11 @@ package Sem_Util is
    --     9. Nominal subtype of the returned object statically compatible
    --        with the result subtype of the expression function.
 
+   function Is_Internal_Block (N : Node_Id) return Boolean;
+   pragma Inline (Is_Internal_Block);
+   --  Determine if N is an N_Block_Statement with an internal label. See
+   --  Add_Block_Identifier.
+
    function Is_Iterator (Typ : Entity_Id) return Boolean;
    --  AI05-0139-2: Check whether Typ is one of the predefined interfaces in
    --  Ada.Iterator_Interfaces, or it is derived from one.
@@ -2618,16 +2622,6 @@ package Sem_Util is
    --  Copy recursively an analyzed list of nodes. Uses New_Copy_Tree defined
    --  below. As for New_Copy_Tree, it is illegal to attempt to copy extended
    --  nodes (entities) either directly or indirectly using this function.
-
-   function New_Copy_Separate_List (List : List_Id) return List_Id;
-   --  Copy recursively a list of nodes using New_Copy_Separate_Tree
-
-   function New_Copy_Separate_Tree (Source : Node_Id) return Node_Id;
-   --  Perform a deep copy of the subtree rooted at Source using New_Copy_Tree
-   --  replacing entities of local declarations by new entities. This behavior
-   --  is required by the backend to ensure entities uniqueness when a copy of
-   --  a subtree is attached to the tree. The new entities keep their original
-   --  names to facilitate debugging the tree copy.
 
    function New_Copy_Tree
      (Source    : Node_Id;

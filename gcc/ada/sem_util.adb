@@ -6110,7 +6110,7 @@ package body Sem_Util is
 
                      Conc_Typ : constant Entity_Id :=
                        (if Present (Init_Proc_Type)
-                          and then Init_Proc_Type in E_Record_Type_Id
+                          and then Ekind (Init_Proc_Type) = E_Record_Type
                         then Corresponding_Concurrent_Type (Init_Proc_Type)
                         else Empty);
 
@@ -6524,7 +6524,6 @@ package body Sem_Util is
       begin
          while Present (E) and then E /= Prim loop
             if not Is_Tagged_Type (E)
-              and then Present (Direct_Primitive_Operations (E))
               and then Contains (Direct_Primitive_Operations (E), Prim)
             then
                return E;
@@ -9748,14 +9747,9 @@ package body Sem_Util is
 
       if No (Comp_List) or else Null_Present (Comp_List) then
          return;
-
-      elsif Present (Component_Items (Comp_List)) then
-         Comp_Item := First (Component_Items (Comp_List));
-
-      else
-         Comp_Item := Empty;
       end if;
 
+      Comp_Item := First (Component_Items (Comp_List));
       while Present (Comp_Item) loop
 
          --  Skip the tag of a tagged record, as well as all items that are not
@@ -9793,6 +9787,8 @@ package body Sem_Util is
       Assoc := First (Governed_By);
       Find_Constraint : loop
          Discrim := First (Choices (Assoc));
+         pragma Assert (No (Next (Discrim)));
+
          exit Find_Constraint when
            Chars (Discrim_Name) = Chars (Discrim)
              or else
@@ -9867,16 +9863,16 @@ package body Sem_Util is
             end if;
          end if;
 
-         if No (Next (Assoc)) then
+         Next (Assoc);
+
+         if No (Assoc) then
             Error_Msg_NE
-              (" missing value for discriminant&",
+              ("missing value for discriminant&",
                First (Governed_By), Discrim_Name);
 
             Report_Errors := True;
             return;
          end if;
-
-         Next (Assoc);
       end loop Find_Constraint;
 
       Discrim_Value := Expression (Assoc);
@@ -17645,6 +17641,16 @@ package body Sem_Util is
       return False;
    end Is_Inlinable_Expression_Function;
 
+   -----------------------
+   -- Is_Internal_Block --
+   -----------------------
+
+   function Is_Internal_Block (N : Node_Id) return Boolean is
+   begin
+      return Nkind (N) = N_Block_Statement
+        and then Is_Internal (Entity (Identifier (N)));
+   end Is_Internal_Block;
+
    -----------------
    -- Is_Iterator --
    -----------------
@@ -18692,19 +18698,17 @@ package body Sem_Util is
          return True;
       end if;
 
-      Item := First (Component_Items (Component_List (Record_Def)));
+      Item := First_Non_Pragma (Component_Items (Component_List (Record_Def)));
 
       while Present (Item) loop
          if Nkind (Item) = N_Component_Declaration
            and then Is_Internal_Name (Chars (Defining_Identifier (Item)))
          then
             null;
-         elsif Nkind (Item) = N_Pragma then
-            null;
          else
             return False;
          end if;
-         Item := Next (Item);
+         Next_Non_Pragma (Item);
       end loop;
 
       return True;
@@ -22878,113 +22882,6 @@ package body Sem_Util is
          return NL;
       end if;
    end New_Copy_List_Tree;
-
-   ----------------------------
-   -- New_Copy_Separate_List --
-   ----------------------------
-
-   function New_Copy_Separate_List (List : List_Id) return List_Id is
-   begin
-      if List = No_List then
-         return No_List;
-
-      else
-         declare
-            List_Copy : constant List_Id := New_List;
-            N         : Node_Id := First (List);
-
-         begin
-            while Present (N) loop
-               Append (New_Copy_Separate_Tree (N), List_Copy);
-               Next (N);
-            end loop;
-
-            return List_Copy;
-         end;
-      end if;
-   end New_Copy_Separate_List;
-
-   ----------------------------
-   -- New_Copy_Separate_Tree --
-   ----------------------------
-
-   function New_Copy_Separate_Tree (Source : Node_Id) return Node_Id is
-      function Search_Decl (N : Node_Id) return Traverse_Result;
-      --  Subtree visitor which collects declarations
-
-      procedure Search_Declarations is new Traverse_Proc (Search_Decl);
-      --  Subtree visitor instantiation
-
-      -----------------
-      -- Search_Decl --
-      -----------------
-
-      Decls : Elist_Id;
-
-      function Search_Decl (N : Node_Id) return Traverse_Result is
-      begin
-         if Nkind (N) in N_Declaration then
-            Append_New_Elmt (N, Decls);
-         end if;
-
-         return OK;
-      end Search_Decl;
-
-      --  Local variables
-
-      Source_Copy : constant Node_Id := New_Copy_Tree (Source);
-
-   --  Start of processing for New_Copy_Separate_Tree
-
-   begin
-      Decls := No_Elist;
-      Search_Declarations (Source_Copy);
-
-      --  Associate a new Entity with all the subtree declarations (keeping
-      --  their original name).
-
-      if Present (Decls) then
-         declare
-            Elmt  : Elmt_Id;
-            Decl  : Node_Id;
-            New_E : Entity_Id;
-
-         begin
-            Elmt := First_Elmt (Decls);
-            while Present (Elmt) loop
-               Decl  := Node (Elmt);
-               New_E := Make_Temporary (Sloc (Decl), 'P');
-
-               if Nkind (Decl) = N_Expression_Function then
-                  Decl := Specification (Decl);
-               end if;
-
-               if Nkind (Decl) in N_Function_Instantiation
-                                | N_Function_Specification
-                                | N_Generic_Function_Renaming_Declaration
-                                | N_Generic_Package_Renaming_Declaration
-                                | N_Generic_Procedure_Renaming_Declaration
-                                | N_Package_Body
-                                | N_Package_Instantiation
-                                | N_Package_Renaming_Declaration
-                                | N_Package_Specification
-                                | N_Procedure_Instantiation
-                                | N_Procedure_Specification
-               then
-                  Set_Chars (New_E, Chars (Defining_Unit_Name (Decl)));
-                  Set_Defining_Unit_Name (Decl, New_E);
-               else
-                  Set_Chars (New_E, Chars (Defining_Identifier (Decl)));
-                  Set_Defining_Identifier (Decl, New_E);
-               end if;
-
-               Next_Elmt (Elmt);
-            end loop;
-         end;
-      end if;
-
-      return Source_Copy;
-   end New_Copy_Separate_Tree;
 
    -------------------
    -- New_Copy_Tree --

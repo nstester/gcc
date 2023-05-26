@@ -4991,6 +4991,25 @@ package body Exp_Ch4 is
                         Expand_N_Full_Type_Declaration
                           (Parent (Base_Type (PtrT)));
 
+                     --  When the allocator has a subtype indication then a
+                     --  constraint is present and an itype has been added by
+                     --  Analyze_Allocator as the subtype of this allocator.
+
+                     --  If an allocator with constraints is called in the
+                     --  return statement of a function returning a general
+                     --  access type, then propagate to the itype the master
+                     --  of the general access type (since it is the master
+                     --  associated with the returned object).
+
+                     elsif Is_Itype (PtrT)
+                       and then Ekind (Current_Scope) = E_Function
+                       and then Ekind (Etype (Current_Scope))
+                                  = E_General_Access_Type
+                       and then In_Return_Value (N)
+                     then
+                        Set_Master_Id (PtrT,
+                          Master_Id (Etype (Current_Scope)));
+
                      --  The only other possibility is an itype. For this
                      --  case, the master must exist in the context. This is
                      --  the case when the allocator initializes an access
@@ -6492,34 +6511,16 @@ package body Exp_Ch4 is
          ----------------------------
 
          function Is_OK_Object_Reference (Nod : Node_Id) return Boolean is
-            Obj_Ref : Node_Id;
+            Obj_Ref : constant Node_Id := Original_Node (Nod);
+            --  The original operand
 
          begin
-            --  Inspect the original operand
-
-            Obj_Ref := Original_Node (Nod);
-
             --  The object reference must be a source construct, otherwise the
             --  codefix suggestion may refer to nonexistent code from a user
             --  perspective.
 
-            if Comes_From_Source (Obj_Ref) then
-               loop
-                  if Nkind (Obj_Ref) in
-                       N_Type_Conversion |
-                       N_Unchecked_Type_Conversion |
-                       N_Qualified_Expression
-                  then
-                     Obj_Ref := Expression (Obj_Ref);
-                  else
-                     exit;
-                  end if;
-               end loop;
-
-               return Is_Object_Reference (Obj_Ref);
-            end if;
-
-            return False;
+            return Comes_From_Source (Obj_Ref)
+              and then Is_Object_Reference (Unqual_Conv (Obj_Ref));
          end Is_OK_Object_Reference;
 
       --  Start of processing for Substitute_Valid_Test
@@ -12149,8 +12150,12 @@ package body Exp_Ch4 is
                Expr_Id : constant Entity_Id := Make_Temporary (Loc, 'T', Conv);
                Int_Typ : constant Entity_Id :=
                  Small_Integer_Type_For (RM_Size (Btyp), Uns => False);
+               Trunc   : constant Boolean   := Float_Truncate (Conv);
 
             begin
+               Conv := Convert_To (Int_Typ, Expression (Conv));
+               Set_Float_Truncate (Conv, Trunc);
+
                --  Generate a temporary with the integer value. Required in the
                --  CCG compiler to ensure that run-time checks reference this
                --  integer expression (instead of the resulting fixed-point
@@ -12162,8 +12167,7 @@ package body Exp_Ch4 is
                    Defining_Identifier => Expr_Id,
                    Object_Definition   => New_Occurrence_Of (Int_Typ, Loc),
                    Constant_Present    => True,
-                   Expression          =>
-                     Convert_To (Int_Typ, Expression (Conv))));
+                   Expression          => Conv));
 
                --  Create integer objects for range checking of result.
 
@@ -13216,8 +13220,6 @@ package body Exp_Ch4 is
 
    procedure Expand_Set_Membership (N : Node_Id) is
       Lop : constant Node_Id := Left_Opnd (N);
-      Alt : Node_Id;
-      Res : Node_Id;
 
       function Make_Cond (Alt : Node_Id) return Node_Id;
       --  If the alternative is a subtype mark, create a simple membership
@@ -13246,23 +13248,22 @@ package body Exp_Ch4 is
          return Cond;
       end Make_Cond;
 
+      --  Local variables
+
+      Alt : Node_Id;
+      Res : Node_Id := Empty;
+
    --  Start of processing for Expand_Set_Membership
 
    begin
       Remove_Side_Effects (Lop);
 
-      Alt := First (Alternatives (N));
-      Res := Make_Cond (Alt);
-      Next (Alt);
-
       --  We use left associativity as in the equivalent boolean case. This
       --  kind of canonicalization helps the optimizer of the code generator.
 
+      Alt := First (Alternatives (N));
       while Present (Alt) loop
-         Res :=
-           Make_Or_Else (Sloc (Alt),
-             Left_Opnd  => Res,
-             Right_Opnd => Make_Cond (Alt));
+         Evolve_Or_Else (Res, Make_Cond (Alt));
          Next (Alt);
       end loop;
 

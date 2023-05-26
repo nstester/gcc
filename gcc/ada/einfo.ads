@@ -864,12 +864,12 @@ package Einfo is
 --       and IN OUT parameters in the absence of errors).
 
 --    Delay_Cleanups
---       Defined in entities that have finalization lists (subprograms
---       blocks, and tasks). Set if there are pending generic body
---       instantiations for the corresponding entity. If this flag is
---       set, then generation of cleanup actions for the corresponding
---       entity must be delayed, since the insertion of the generic body
---       may affect cleanup generation (see Inline for further details).
+--       Defined in entities that have finalization lists (subprograms, blocks
+--       and tasks) or finalizers (package specs and bodies). Set if there are
+--       pending package body instantiations for the corresponding entity. If
+--       it is set, then generation of cleanup actions for the corresponding
+--       entity must be delayed, since the insertion of the package bodies may
+--       affect cleanup generation (see Inline for further details).
 
 --    Delta_Value
 --       Defined in fixed and decimal types. Points to a universal real
@@ -4762,7 +4762,7 @@ package Einfo is
 
 --    Wrapped_Statements
 --       Defined in functions, procedures, entries, and entry families. Refers
---       to the entity of the _Wrapped_Statements procedure which gets
+--       to the entity of the _Wrapped_Statements procedure, which gets
 --       generated as part of the expansion of contracts and postconditions
 --       and contains its enclosing subprogram's original source declarations
 --       and statements.
