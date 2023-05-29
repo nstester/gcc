@@ -132,9 +132,6 @@ package body Sem_Util is
    --  Determine whether arbitrary entity Id denotes an atomic object as per
    --  RM C.6(7).
 
-   function Is_Container_Aggregate (Exp : Node_Id) return Boolean;
-   --  Is the given expression a container aggregate?
-
    generic
       with function Is_Effectively_Volatile_Entity
         (Id : Entity_Id) return Boolean;
@@ -2885,9 +2882,7 @@ package body Sem_Util is
                   Collect_Identifiers (Right_Opnd (N));
                end if;
 
-               if Nkind (N) in N_In | N_Not_In
-                 and then Present (Alternatives (N))
-               then
+               if Nkind (N) in N_Membership_Test then
                   Expr := First (Alternatives (N));
                   while Present (Expr) loop
                      Collect_Identifiers (Expr);
@@ -4546,13 +4541,12 @@ package body Sem_Util is
       --  Local variables
 
       Items        : constant Node_Id := Contract (Subp_Id);
-      Subp_Decl    : constant Node_Id := Unit_Declaration_Node (Subp_Id);
       Case_Prag    : Node_Id := Empty;
       Post_Prag    : Node_Id := Empty;
       Prag         : Node_Id;
       Seen_In_Case : Boolean := False;
       Seen_In_Post : Boolean := False;
-      Spec_Id      : Entity_Id;
+      Spec_Id      : constant Entity_Id := Unique_Entity (Subp_Id);
 
    --  Start of processing for Check_Result_And_Post_State
 
@@ -4568,22 +4562,6 @@ package body Sem_Util is
 
       elsif No (Items) then
          return;
-      end if;
-
-      --  Retrieve the entity of the subprogram spec (if any)
-
-      if Nkind (Subp_Decl) = N_Subprogram_Body
-        and then Present (Corresponding_Spec (Subp_Decl))
-      then
-         Spec_Id := Corresponding_Spec (Subp_Decl);
-
-      elsif Nkind (Subp_Decl) = N_Subprogram_Body_Stub
-        and then Present (Corresponding_Spec_Of_Stub (Subp_Decl))
-      then
-         Spec_Id := Corresponding_Spec_Of_Stub (Subp_Decl);
-
-      else
-         Spec_Id := Subp_Id;
       end if;
 
       --  Examine all postconditions for attribute 'Result and a post-state
@@ -4644,7 +4622,8 @@ package body Sem_Util is
       --  attribute 'Result.
 
       elsif Present (Case_Prag) and then not Seen_In_Case then
-         Error_Msg_N ("contract cases do not mention result?.t?", Case_Prag);
+         Error_Msg_N
+           ("contract cases do not mention function result?.t?", Case_Prag);
 
       --  The function has non-trivial postconditions only and they do not
       --  mention attribute 'Result.

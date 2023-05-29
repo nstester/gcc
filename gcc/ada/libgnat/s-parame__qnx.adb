@@ -2,11 +2,11 @@
 --                                                                          --
 --                         GNAT COMPILER COMPONENTS                         --
 --                                                                          --
---             A D A . E X C E P T I O N S . C A L L _ C H A I N            --
+--                    S Y S T E M . P A R A M E T E R S                     --
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2023, Free Software Foundation, Inc.         --
+--          Copyright (C) 1995-2023, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -29,46 +29,53 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-pragma Warnings (Off);
---  Allow withing of non-Preelaborated units in Ada 2005 mode where this
---  package will be categorized as Preelaborate. See AI-362 for details.
---  It is safe in the context of the run-time to violate the rules.
+--  This is the version for AArch64 QNX
 
-with System.Traceback;
+package body System.Parameters is
 
-pragma Warnings (On);
+   -------------------------
+   -- Adjust_Storage_Size --
+   -------------------------
 
-separate (Ada.Exceptions)
-procedure Call_Chain (Excep : EOA) is
+   function Adjust_Storage_Size (Size : Size_Type) return Size_Type is
+   begin
+      if Size = Unspecified_Size then
+         return Default_Stack_Size;
+      elsif Size < Minimum_Stack_Size then
+         return Minimum_Stack_Size;
+      else
+         return Size;
+      end if;
+   end Adjust_Storage_Size;
 
-   Exception_Tracebacks : constant Integer;
-   pragma Import (C, Exception_Tracebacks, "__gl_exception_tracebacks");
-   --  Boolean indicating whether tracebacks should be stored in exception
-   --  occurrences.
+   ------------------------
+   -- Default_Stack_Size --
+   ------------------------
 
-begin
-   if Exception_Tracebacks /= 0 and Excep.Num_Tracebacks = 0 then
+   function Default_Stack_Size return Size_Type is
+      Default_Stack_Size : constant Integer;
+      pragma Import (C, Default_Stack_Size, "__gl_default_stack_size");
+   begin
+      if Default_Stack_Size = -1 then
+         --  256K is the default stack size on aarch64 QNX
+         return 256 * 1024;
+      elsif Size_Type (Default_Stack_Size) < Minimum_Stack_Size then
+         return Minimum_Stack_Size;
+      else
+         return Size_Type (Default_Stack_Size);
+      end if;
+   end Default_Stack_Size;
 
-      --  If Exception_Tracebacks = 0 then the program was not
-      --  compiled for storing tracebacks in exception occurrences
-      --  (-bargs -E switch) so that we do not generate them.
-      --
-      --  If Excep.Num_Tracebacks /= 0 then this is a reraise, no need
-      --  to store a new (wrong) chain.
+   ------------------------
+   -- Minimum_Stack_Size --
+   ------------------------
 
-      --  We ask System.Traceback.Call_Chain to skip 3 frames to ensure that
-      --  itself, ourselves and our caller are not part of the result. Our
-      --  caller is always an exception propagation actor that we don't want
-      --  to see, and it may be part of a separate subunit which pulls it
-      --  outside the AAA/ZZZ range.
+   function Minimum_Stack_Size return Size_Type is
+   begin
+      --  256 is the value of PTHREAD_STACK_MIN on QNX and
+      --  12K is required for stack-checking. The value is
+      --  rounded up to a multiple of a 4K page.
+      return 16 * 1024;
+   end Minimum_Stack_Size;
 
-      System.Traceback.Call_Chain
-        (Traceback   => Excep.Tracebacks,
-         Max_Len     => Max_Tracebacks,
-         Len         => Excep.Num_Tracebacks,
-         Exclude_Min => AAA'Code_Address,
-         Exclude_Max => ZZZ'Code_Address,
-         Skip_Frames => 3);
-   end if;
-
-end Call_Chain;
+end System.Parameters;

@@ -5235,9 +5235,19 @@ package body Sem_Prag is
          then
             null;
 
-         --  An access-to-subprogram type can have pre/postconditions, but
-         --  these are transferred to the generated subprogram wrapper and
-         --  analyzed there.
+         --  An access-to-subprogram type can have pre/postconditions, which
+         --  are both analyzed when attached to the type and copied to the
+         --  generated subprogram wrapper and analyzed there.
+
+         elsif Nkind (Subp_Decl) = N_Full_Type_Declaration
+           and then Nkind (Type_Definition (Subp_Decl)) in
+                      N_Access_To_Subprogram_Definition
+         then
+            if Ada_Version < Ada_2022 then
+               Error_Msg_Ada_2022_Feature
+                 ("pre/postcondition on access-to-subprogram", Loc);
+               raise Pragma_Exit;
+            end if;
 
          --  Otherwise the placement of the pragma is illegal
 
@@ -5255,7 +5265,11 @@ package body Sem_Prag is
          --  Chain the pragma on the contract for further processing by
          --  Analyze_Pre_Post_Condition_In_Decl_Part.
 
-         Add_Contract_Item (N, Subp_Id);
+         if Ekind (Subp_Id) in Access_Subprogram_Kind then
+            Add_Contract_Item (N, Directly_Designated_Type (Subp_Id));
+         else
+            Add_Contract_Item (N, Subp_Id);
+         end if;
 
          --  Fully analyze the pragma when it appears inside an entry or
          --  subprogram body because it cannot benefit from forward references.
@@ -8127,7 +8141,9 @@ package body Sem_Prag is
          --  then. For example, if the expression is "Record_Type'Size /= 32"
          --  it might be known after the back end has determined the size of
          --  Record_Type. We do not defer validation if we're inside a generic
-         --  unit, because we will have more information in the instances.
+         --  unit, because we will have more information in the instances, and
+         --  this ultimately applies to the main unit itself, because it is not
+         --  compiled by the back end when it is generic.
 
          if Compile_Time_Known_Value (Arg1x) then
             Validate_Compile_Time_Warning_Or_Error (N, Sloc (Arg1));
@@ -8145,7 +8161,10 @@ package body Sem_Prag is
                end if;
             end loop;
 
-            if No (P) then
+            if No (P)
+              and then
+                Nkind (Unit (Cunit (Main_Unit))) not in N_Generic_Declaration
+            then
                Defer_Compile_Time_Warning_Error_To_BE (N);
             end if;
          end if;
@@ -26635,11 +26654,15 @@ package body Sem_Prag is
 
       if not In_Open_Scopes (Spec_Id) then
          Restore_Scope := True;
-         Push_Scope (Spec_Id);
 
          if Is_Generic_Subprogram (Spec_Id) then
+            Push_Scope (Spec_Id);
             Install_Generic_Formals (Spec_Id);
+         elsif Is_Access_Subprogram_Type (Spec_Id) then
+            Push_Scope (Designated_Type (Spec_Id));
+            Install_Formals (Designated_Type (Spec_Id));
          else
+            Push_Scope (Spec_Id);
             Install_Formals (Spec_Id);
          end if;
       end if;
