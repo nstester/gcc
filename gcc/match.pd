@@ -4833,7 +4833,7 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 
    Case 2)
    (cond (eq (convert1? x) c1) (convert2? x) c2) -> (cond (eq x c1) c1 c2).  */
-(for cmp (lt le gt ge eq)
+(for cmp (lt le gt ge eq ne)
  (simplify
   (cond (cmp (convert1? @1) INTEGER_CST@3) (convert2? @1) INTEGER_CST@2)
   (with
@@ -5024,7 +5024,7 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 /* Optimize (a CMP b) ? minmax<a, c> : minmax<b, c>
    to minmax<min/max<a, b>, c> */
 (for minmax (min max)
- (for cmp (lt le gt ge)
+ (for cmp (lt le gt ge ne)
   (simplify
    (cond (cmp @1 @3) (minmax:c @1 @4) (minmax:c @2 @4))
    (with
@@ -5035,6 +5035,24 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
      (minmax (min @1 @2) @4)
      (if (code == MAX_EXPR)
       (minmax (max @1 @2) @4)))))))
+
+/* Optimize (a CMP CST1) ? max<a,CST2> : a */
+(for cmp    (gt  ge  lt  le)
+     minmax (min min max max)
+ (simplify
+  (cond (cmp @0 @1) (minmax:c@2 @0 @3) @4)
+   (with
+    {
+      tree_code code = minmax_from_comparison (cmp, @0, @1, @0, @4);
+    }
+    (if ((cmp == LT_EXPR || cmp == LE_EXPR)
+	 && code == MIN_EXPR
+         && integer_nonzerop (fold_build2 (LE_EXPR, boolean_type_node, @3, @1)))
+     (min @2 @4)
+     (if ((cmp == GT_EXPR || cmp == GE_EXPR)
+	  && code == MAX_EXPR
+          && integer_nonzerop (fold_build2 (GE_EXPR, boolean_type_node, @3, @1)))
+      (max @2 @4))))))
 
 /* X != C1 ? -X : C2 simplifies to -X when -C1 == C2.  */
 (simplify
