@@ -1039,13 +1039,39 @@
   }
 )
 
-(define_insn "aarch64_<sur>adalp<mode>"
+(define_expand "aarch64_<su>adalp<mode>"
+  [(set (match_operand:<VDBLW> 0 "register_operand")
+	(plus:<VDBLW>
+	  (plus:<VDBLW>
+	    (vec_select:<VDBLW>
+	      (ANY_EXTEND:<V2XWIDE>
+		(match_operand:VDQV_L 2 "register_operand"))
+	      (match_dup 3))
+	    (vec_select:<VDBLW> (ANY_EXTEND:<V2XWIDE> (match_dup 2))
+	      (match_dup 4)))
+	  (match_operand:<VDBLW> 1 "register_operand")))]
+ "TARGET_SIMD"
+ {
+   int nunits = GET_MODE_NUNITS (<MODE>mode).to_constant () / 2;
+   operands[3] = aarch64_gen_stepped_int_parallel (nunits, 0, 2);
+   operands[4] = aarch64_gen_stepped_int_parallel (nunits, 1, 2);
+ }
+)
+
+(define_insn "*aarch64_<su>adalp<mode><vczle><vczbe>_insn"
   [(set (match_operand:<VDBLW> 0 "register_operand" "=w")
-	(unspec:<VDBLW> [(match_operand:VDQV_L 2 "register_operand" "w")
-			 (match_operand:<VDBLW> 1 "register_operand" "0")]
-	ADALP))]
-  "TARGET_SIMD"
-  "<sur>adalp\t%0.<Vwhalf>, %2.<Vtype>"
+	(plus:<VDBLW>
+	  (plus:<VDBLW>
+	    (vec_select:<VDBLW>
+	      (ANY_EXTEND:<V2XWIDE>
+		(match_operand:VDQV_L 2 "register_operand" "w"))
+	      (match_operand:<V2XWIDE> 3 "vect_par_cnst_even_or_odd_half" ""))
+	    (vec_select:<VDBLW> (ANY_EXTEND:<V2XWIDE> (match_dup 2))
+	      (match_operand:<V2XWIDE> 4 "vect_par_cnst_even_or_odd_half" "")))
+	(match_operand:<VDBLW> 1 "register_operand" "0")))]
+ "TARGET_SIMD
+  && !rtx_equal_p (operands[3], operands[4])"
+ "<su>adalp\t%0.<Vwhalf>, %2.<Vtype>"
   [(set_attr "type" "neon_reduc_add<q>")]
 )
 
@@ -3699,11 +3725,34 @@
   [(set_attr "type" "neon_reduc_add<VDQV_L:q>")]
 )
 
-(define_insn "aarch64_<su>addlp<mode>"
- [(set (match_operand:<VDBLW> 0 "register_operand" "=w")
-       (unspec:<VDBLW> [(match_operand:VDQV_L 1 "register_operand" "w")]
-		    USADDLP))]
+(define_expand "aarch64_<su>addlp<mode>"
+  [(set (match_operand:<VDBLW> 0 "register_operand")
+	(plus:<VDBLW>
+	  (vec_select:<VDBLW>
+	    (ANY_EXTEND:<V2XWIDE>
+	      (match_operand:VDQV_L 1 "register_operand"))
+	    (match_dup 2))
+	  (vec_select:<VDBLW> (ANY_EXTEND:<V2XWIDE> (match_dup 1))
+	    (match_dup 3))))]
  "TARGET_SIMD"
+ {
+   int nunits = GET_MODE_NUNITS (<MODE>mode).to_constant () / 2;
+   operands[2] = aarch64_gen_stepped_int_parallel (nunits, 0, 2);
+   operands[3] = aarch64_gen_stepped_int_parallel (nunits, 1, 2);
+ }
+)
+
+(define_insn "*aarch64_<su>addlp<mode><vczle><vczbe>_insn"
+  [(set (match_operand:<VDBLW> 0 "register_operand" "=w")
+	(plus:<VDBLW>
+	  (vec_select:<VDBLW>
+	    (ANY_EXTEND:<V2XWIDE>
+	      (match_operand:VDQV_L 1 "register_operand" "w"))
+	    (match_operand:<V2XWIDE> 2 "vect_par_cnst_even_or_odd_half"))
+	  (vec_select:<VDBLW> (ANY_EXTEND:<V2XWIDE> (match_dup 1))
+	    (match_operand:<V2XWIDE> 3 "vect_par_cnst_even_or_odd_half"))))]
+ "TARGET_SIMD
+  && !rtx_equal_p (operands[2], operands[3])"
  "<su>addlp\\t%0.<Vwhalf>, %1.<Vtype>"
   [(set_attr "type" "neon_reduc_add<q>")]
 )
@@ -4944,30 +4993,86 @@
 
 ;; <su><r>h<addsub>.
 
-(define_expand "<u>avg<mode>3_floor"
+(define_expand "<su_optab>avg<mode>3_floor"
   [(set (match_operand:VDQ_BHSI 0 "register_operand")
-	(unspec:VDQ_BHSI [(match_operand:VDQ_BHSI 1 "register_operand")
-			  (match_operand:VDQ_BHSI 2 "register_operand")]
-			 HADD))]
+	(truncate:VDQ_BHSI
+	  (ashiftrt:<V2XWIDE>
+	    (plus:<V2XWIDE>
+	      (ANY_EXTEND:<V2XWIDE>
+		(match_operand:VDQ_BHSI 1 "register_operand"))
+	      (ANY_EXTEND:<V2XWIDE>
+		(match_operand:VDQ_BHSI 2 "register_operand")))
+	    (match_dup 3))))]
   "TARGET_SIMD"
+  {
+    operands[3] = CONST1_RTX (<V2XWIDE>mode);
+  }
 )
 
-(define_expand "<u>avg<mode>3_ceil"
+(define_expand "<su_optab>avg<mode>3_ceil"
   [(set (match_operand:VDQ_BHSI 0 "register_operand")
-	(unspec:VDQ_BHSI [(match_operand:VDQ_BHSI 1 "register_operand")
-			  (match_operand:VDQ_BHSI 2 "register_operand")]
-			 RHADD))]
+	(truncate:VDQ_BHSI
+	  (ashiftrt:<V2XWIDE>
+	    (plus:<V2XWIDE>
+	      (plus:<V2XWIDE>
+		(ANY_EXTEND:<V2XWIDE>
+		  (match_operand:VDQ_BHSI 1 "register_operand"))
+		(ANY_EXTEND:<V2XWIDE>
+		  (match_operand:VDQ_BHSI 2 "register_operand")))
+	       (match_dup 3))
+	    (match_dup 3))))]
   "TARGET_SIMD"
+  {
+    operands[3] = CONST1_RTX (<V2XWIDE>mode);
+  }
 )
 
-(define_insn "aarch64_<sur>h<addsub><mode><vczle><vczbe>"
+(define_expand "aarch64_<su>hsub<mode>"
+  [(set (match_operand:VDQ_BHSI 0 "register_operand")
+	(truncate:VDQ_BHSI
+	  (ashiftrt:<V2XWIDE>
+	    (minus:<V2XWIDE>
+	      (ANY_EXTEND:<V2XWIDE>
+		(match_operand:VDQ_BHSI 1 "register_operand"))
+	      (ANY_EXTEND:<V2XWIDE>
+		(match_operand:VDQ_BHSI 2 "register_operand")))
+	    (match_dup 3))))]
+  "TARGET_SIMD"
+  {
+    operands[3] = CONST1_RTX (<V2XWIDE>mode);
+  }
+)
+
+(define_insn "*aarch64_<su>h<ADDSUB:optab><mode><vczle><vczbe>_insn"
   [(set (match_operand:VDQ_BHSI 0 "register_operand" "=w")
-        (unspec:VDQ_BHSI [(match_operand:VDQ_BHSI 1 "register_operand" "w")
-		      (match_operand:VDQ_BHSI 2 "register_operand" "w")]
-		     HADDSUB))]
+	(truncate:VDQ_BHSI
+	  (ashiftrt:<V2XWIDE>
+	    (ADDSUB:<V2XWIDE>
+	      (ANY_EXTEND:<V2XWIDE>
+		(match_operand:VDQ_BHSI 1 "register_operand" "w"))
+	      (ANY_EXTEND:<V2XWIDE>
+		(match_operand:VDQ_BHSI 2 "register_operand" "w")))
+	    (match_operand:<V2XWIDE> 3 "aarch64_simd_imm_one"))))]
   "TARGET_SIMD"
-  "<sur>h<addsub>\\t%0.<Vtype>, %1.<Vtype>, %2.<Vtype>"
-  [(set_attr "type" "neon_<addsub>_halve<q>")]
+  "<su>h<ADDSUB:optab>\\t%0.<Vtype>, %1.<Vtype>, %2.<Vtype>"
+  [(set_attr "type" "neon_<ADDSUB:optab>_halve<q>")]
+)
+
+(define_insn "*aarch64_<su>rhadd<mode><vczle><vczbe>_insn"
+  [(set (match_operand:VDQ_BHSI 0 "register_operand" "=w")
+	(truncate:VDQ_BHSI
+	  (ashiftrt:<V2XWIDE>
+	    (plus:<V2XWIDE>
+	      (plus:<V2XWIDE>
+		(ANY_EXTEND:<V2XWIDE>
+		  (match_operand:VDQ_BHSI 1 "register_operand" "w"))
+		(ANY_EXTEND:<V2XWIDE>
+		  (match_operand:VDQ_BHSI 2 "register_operand" "w")))
+	       (match_operand:<V2XWIDE> 3 "aarch64_simd_imm_one"))
+	    (match_dup 3))))]
+  "TARGET_SIMD"
+  "<su>rhadd\\t%0.<Vtype>, %1.<Vtype>, %2.<Vtype>"
+  [(set_attr "type" "neon_add_halve<q>")]
 )
 
 ;; <r><addsub>hn<q>.
