@@ -4274,7 +4274,9 @@ maybe_init_list_as_array (tree elttype, tree init)
 
   init_elttype = cp_build_qualified_type (init_elttype, TYPE_QUAL_CONST);
   tree arr = build_array_of_n_type (init_elttype, CONSTRUCTOR_NELTS (init));
-  return finish_compound_literal (arr, init, tf_none);
+  arr = finish_compound_literal (arr, init, tf_none);
+  DECL_MERGEABLE (TARGET_EXPR_SLOT (arr)) = true;
+  return arr;
 }
 
 /* If we were going to call e.g. vector(initializer_list<string>) starting
@@ -8558,6 +8560,8 @@ convert_like_internal (conversion *convs, tree expr, tree fn, int argnum,
 	      (elttype, cp_type_quals (elttype) | TYPE_QUAL_CONST);
 	    array = build_array_of_n_type (elttype, len);
 	    array = finish_compound_literal (array, new_ctor, complain);
+	    /* This is dubious now, should be blessed by P2752.  */
+	    DECL_MERGEABLE (TARGET_EXPR_SLOT (array)) = true;
 	    /* Take the address explicitly rather than via decay_conversion
 	       to avoid the error about taking the address of a temporary.  */
 	    array = cp_build_addr_expr (array, complain);
@@ -12607,6 +12611,17 @@ cand_parms_match (z_candidate *c1, z_candidate *c2)
   return compparms (parms1, parms2);
 }
 
+/* True iff FN is a copy or move constructor or assignment operator.  */
+
+static bool
+sfk_copy_or_move (tree fn)
+{
+  if (TREE_CODE (fn) != FUNCTION_DECL)
+    return false;
+  special_function_kind sfk = special_function_p (fn);
+  return sfk >= sfk_copy_constructor && sfk <= sfk_move_assignment;
+}
+
 /* Compare two candidates for overloading as described in
    [over.match.best].  Return values:
 
@@ -12905,6 +12920,26 @@ joust (struct z_candidate *cand1, struct z_candidate *cand2, bool warn,
       if (winner)
 	return winner;
     }
+
+  /* CWG2735 (PR109247): A copy/move ctor/op= for which its operand uses an
+     explicit conversion (due to list-initialization) is worse.  */
+  {
+    z_candidate *sp = nullptr;
+    if (sfk_copy_or_move (cand1->fn))
+      sp = cand1;
+    if (sfk_copy_or_move (cand2->fn))
+      sp = sp ? nullptr : cand2;
+    if (sp)
+      {
+	conversion *conv = sp->convs[!DECL_CONSTRUCTOR_P (sp->fn)];
+	if (conv->user_conv_p)
+	  for (; conv; conv = next_conversion (conv))
+	    if (conv->kind == ck_user
+		&& DECL_P (conv->cand->fn)
+		&& DECL_NONCONVERTING_P (conv->cand->fn))
+	      return (sp == cand1) ? -1 : 1;
+      }
+  }
 
   /* or, if not that,
      F1 is a non-template function and F2 is a template function
@@ -13571,8 +13606,13 @@ set_up_extended_ref_temp (tree decl, tree expr, vec<tree, va_gc> **cleanups,
      VAR.  */
   if (TREE_CODE (expr) != TARGET_EXPR)
     expr = get_target_expr (expr);
-  else if (TREE_ADDRESSABLE (expr))
-    TREE_ADDRESSABLE (var) = 1;
+  else
+    {
+      if (TREE_ADDRESSABLE (expr))
+	TREE_ADDRESSABLE (var) = 1;
+      if (DECL_MERGEABLE (TARGET_EXPR_SLOT (expr)))
+	DECL_MERGEABLE (var) = true;
+    }
 
   if (TREE_CODE (decl) == FIELD_DECL
       && extra_warnings && !warning_suppressed_p (decl))
