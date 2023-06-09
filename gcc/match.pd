@@ -1984,12 +1984,19 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
   @0)
 
 /* zero_one_valued_p will match when a value is known to be either
-   0 or 1 including constants 0 or 1. */
+   0 or 1 including constants 0 or 1.
+   Signed 1-bits includes -1 so they cannot match here. */
 (match zero_one_valued_p
  @0
- (if (INTEGRAL_TYPE_P (type) && wi::leu_p (tree_nonzero_bits (@0), 1))))
+ (if (INTEGRAL_TYPE_P (type)
+      && (TYPE_UNSIGNED (type)
+	  || TYPE_PRECISION (type) > 1)
+      && wi::leu_p (tree_nonzero_bits (@0), 1))))
 (match zero_one_valued_p
- truth_valued_p@0)
+ truth_valued_p@0
+ (if (INTEGRAL_TYPE_P (type)
+      && (TYPE_UNSIGNED (type)
+	  || TYPE_PRECISION (type) > 1))))
 
 /* Transform { 0 or 1 } * { 0 or 1 } into { 0 or 1 } & { 0 or 1 }.  */
 (simplify
@@ -2058,7 +2065,10 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
  (if (INTEGRAL_TYPE_P (type)
       && INTEGRAL_TYPE_P (TREE_TYPE (@0))
       && TREE_CODE (TREE_TYPE (@0)) != BOOLEAN_TYPE
-      && !TYPE_UNSIGNED (TREE_TYPE (@0)))
+      /* Sign extending of the neg or a truncation of the neg
+         is needed. */
+      && (!TYPE_UNSIGNED (TREE_TYPE (@0))
+	  || TYPE_PRECISION (type) <= TYPE_PRECISION (TREE_TYPE (@0))))
   (mult (convert @0) @1)))
 
 /* Narrow integer multiplication by a zero_one_valued_p operand.
@@ -3685,8 +3695,8 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
   (cond (le @0 integer_zerop@1) (negate@2 @0) integer_zerop@1)
   (max @2 @1))
 
-/* (zero_one == 0) ? y : z <op> y -> (-(typeof(y))zero_one & z) <op> y */
-(for op (bit_xor bit_ior)
+/* (zero_one == 0) ? y : z <op> y -> ((typeof(y))zero_one * z) <op> y */
+(for op (bit_xor bit_ior plus)
  (simplify
   (cond (eq zero_one_valued_p@0
             integer_zerop)
@@ -3695,10 +3705,10 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
   (if (INTEGRAL_TYPE_P (type)
        && TYPE_PRECISION (type) > 1
        && (INTEGRAL_TYPE_P (TREE_TYPE (@0))))
-       (op (bit_and (negate (convert:type @0)) @2) @1))))
+       (op (mult (convert:type @0) @2) @1))))
 
-/* (zero_one != 0) ? z <op> y : y -> (-(typeof(y))zero_one & z) <op> y */
-(for op (bit_xor bit_ior)
+/* (zero_one != 0) ? z <op> y : y -> ((typeof(y))zero_one * z) <op> y */
+(for op (bit_xor bit_ior plus)
  (simplify
   (cond (ne zero_one_valued_p@0
             integer_zerop)
@@ -3707,7 +3717,7 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
   (if (INTEGRAL_TYPE_P (type)
        && TYPE_PRECISION (type) > 1
        && (INTEGRAL_TYPE_P (TREE_TYPE (@0))))
-       (op (bit_and (negate (convert:type @0)) @2) @1))))
+       (op (mult (convert:type @0) @2) @1))))
 
 /* Simplifications of shift and rotates.  */
 
