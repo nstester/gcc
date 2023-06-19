@@ -74,8 +74,10 @@ public:
     : m_opno (0), m_op_num (0), m_has_dest_p (false),
       m_fully_unmasked_p (false), m_use_real_merge_p (false),
       m_needs_avl_p (false), m_vlmax_p (false), m_has_tail_policy_p (false),
-      m_has_mask_policy_p (false), m_tail_policy (TAIL_ANY),
-      m_mask_policy (MASK_ANY), m_dest_mode (VOIDmode), m_mask_mode (VOIDmode),
+      m_has_mask_policy_p (false), m_has_fp_rounding_mode_p (false),
+      m_tail_policy (TAIL_ANY), m_mask_policy (MASK_ANY),
+      m_fp_rounding_mode (FRM_DYN),
+      m_dest_mode (VOIDmode), m_mask_mode (VOIDmode),
       m_vl_op (NULL_RTX)
   {}
 
@@ -87,8 +89,10 @@ public:
       m_fully_unmasked_p (use_all_trues_mask_p),
       m_use_real_merge_p (use_real_merge_p), m_needs_avl_p (needs_avl_p),
       m_vlmax_p (vlmax_p), m_has_tail_policy_p (false),
-      m_has_mask_policy_p (false), m_tail_policy (TAIL_ANY),
-      m_mask_policy (MASK_ANY), m_dest_mode (dest_mode),
+      m_has_mask_policy_p (false), m_has_fp_rounding_mode_p (false),
+      m_tail_policy (TAIL_ANY), m_mask_policy (MASK_ANY),
+      m_fp_rounding_mode (FRM_DYN),
+      m_dest_mode (dest_mode),
       m_mask_mode (mask_mode), m_vl_op (NULL_RTX)
   {}
 
@@ -103,6 +107,12 @@ public:
     m_mask_policy = ma;
   }
   void set_vl (rtx vl) { m_vl_op = vl; }
+
+  void set_rounding_mode (enum floating_point_rounding_mode mode)
+  {
+    m_has_fp_rounding_mode_p = true;
+    m_fp_rounding_mode = mode;
+  }
 
   void add_output_operand (rtx x, machine_mode mode)
   {
@@ -138,6 +148,15 @@ public:
   void add_avl_type_operand (avl_type type)
   {
     add_input_operand (gen_int_mode (type, Pmode), Pmode);
+  }
+
+  void add_rounding_mode_operand ()
+  {
+    if (m_has_fp_rounding_mode_p)
+      {
+	rtx frm_rtx = gen_int_mode (m_fp_rounding_mode, Pmode);
+	add_input_operand (frm_rtx, Pmode);
+      }
   }
 
   void emit_insn (enum insn_code icode, rtx *ops)
@@ -200,6 +219,9 @@ public:
       add_policy_operand ();
     if (m_needs_avl_p)
       add_avl_type_operand (m_vlmax_p ? avl_type::VLMAX : avl_type::NONVLMAX);
+
+    add_rounding_mode_operand ();
+
     expand (icode, any_mem_p);
   }
 
@@ -231,8 +253,10 @@ private:
   bool m_vlmax_p;
   bool m_has_tail_policy_p;
   bool m_has_mask_policy_p;
+  bool m_has_fp_rounding_mode_p;
   enum tail_policy m_tail_policy;
   enum mask_policy m_mask_policy;
+  enum floating_point_rounding_mode m_fp_rounding_mode;
   machine_mode m_dest_mode;
   machine_mode m_mask_mode;
   rtx m_vl_op;
@@ -653,6 +677,27 @@ emit_vlmax_insn (unsigned icode, int op_num, rtx *ops, rtx vl)
   e.emit_insn ((enum insn_code) icode, ops);
 }
 
+void
+emit_vlmax_fp_insn (unsigned icode, int op_num, rtx *ops, rtx vl)
+{
+  machine_mode dest_mode = GET_MODE (ops[0]);
+  machine_mode mask_mode = get_mask_mode (dest_mode).require ();
+  insn_expander<RVV_INSN_OPERANDS_MAX> e (op_num,
+					  /* HAS_DEST_P */ true,
+					  /* FULLY_UNMASKED_P */ true,
+					  /* USE_REAL_MERGE_P */ false,
+					  /* HAS_AVL_P */ true,
+					  /* VLMAX_P */ true,
+					  dest_mode,
+					  mask_mode);
+
+  e.set_policy (TAIL_ANY);
+  e.set_policy (MASK_ANY);
+  e.set_rounding_mode (FRM_DYN);
+  e.set_vl (vl);
+  e.emit_insn ((enum insn_code) icode, ops);
+}
+
 /* This function emits a {VLMAX, TAIL_ANY, MASK_ANY} vsetvli followed by the
  * ternary operation which always has a real merge operand.  */
 void
@@ -694,6 +739,52 @@ emit_nonvlmax_insn (unsigned icode, int op_num, rtx *ops, rtx avl)
   e.set_vl (avl);
   e.emit_insn ((enum insn_code) icode, ops);
 }
+
+/* This function emits a {NONVLMAX, TAIL_UNDISTURBED, MASK_ANY} vsetvli
+   followed by a vslide insn (with real merge operand).  */
+void
+emit_vlmax_slide_insn (unsigned icode, rtx *ops)
+{
+  machine_mode dest_mode = GET_MODE (ops[0]);
+  machine_mode mask_mode = get_mask_mode (dest_mode).require ();
+  insn_expander<RVV_INSN_OPERANDS_MAX> e (RVV_SLIDE_OP,
+					  /* HAS_DEST_P */ true,
+					  /* FULLY_UNMASKED_P */ true,
+					  /* USE_REAL_MERGE_P */ true,
+					  /* HAS_AVL_P */ true,
+					  /* VLMAX_P */ true,
+					  dest_mode,
+					  mask_mode);
+
+  e.set_policy (TAIL_ANY);
+  e.set_policy (MASK_ANY);
+
+  e.emit_insn ((enum insn_code) icode, ops);
+}
+
+/* This function emits a {NONVLMAX, TAIL_UNDISTURBED, MASK_ANY} vsetvli
+   followed by a vslide insn (with real merge operand).  */
+void
+emit_nonvlmax_slide_tu_insn (unsigned icode, rtx *ops, rtx avl)
+{
+  machine_mode dest_mode = GET_MODE (ops[0]);
+  machine_mode mask_mode = get_mask_mode (dest_mode).require ();
+  insn_expander<RVV_INSN_OPERANDS_MAX> e (RVV_SLIDE_OP,
+					  /* HAS_DEST_P */ true,
+					  /* FULLY_UNMASKED_P */ true,
+					  /* USE_REAL_MERGE_P */ true,
+					  /* HAS_AVL_P */ true,
+					  /* VLMAX_P */ false,
+					  dest_mode,
+					  mask_mode);
+
+  e.set_policy (TAIL_UNDISTURBED);
+  e.set_policy (MASK_ANY);
+  e.set_vl (avl);
+
+  e.emit_insn ((enum insn_code) icode, ops);
+}
+
 
 /* This function emits merge instruction.  */
 void
@@ -768,7 +859,7 @@ emit_vlmax_masked_mu_insn (unsigned icode, int op_num, rtx *ops)
 
 /* Emit vmv.s.x instruction.  */
 
-static void
+void
 emit_scalar_move_insn (unsigned icode, rtx *ops)
 {
   machine_mode dest_mode = GET_MODE (ops[0]);
@@ -798,7 +889,7 @@ emit_vlmax_integer_move_insn (unsigned icode, rtx *ops, rtx vl)
 
 /* Emit vmv.v.x instruction with nonvlmax.  */
 
-static void
+void
 emit_nonvlmax_integer_move_insn (unsigned icode, rtx *ops, rtx avl)
 {
   emit_nonvlmax_insn (icode, riscv_vector::RVV_UNOP, ops, avl);
