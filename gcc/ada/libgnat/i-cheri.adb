@@ -2,15 +2,11 @@
 --                                                                          --
 --                         GNAT COMPILER COMPONENTS                         --
 --                                                                          --
--- S Y S T E M . A D D R E S S _ T O _ A C C E S S _ C O N V E R S I O N S  --
+--                       I N T E R F A C E S . C H E R I                    --
 --                                                                          --
---                                 S p e c                                  --
+--                                  S p e c                                 --
 --                                                                          --
---          Copyright (C) 1992-2023, Free Software Foundation, Inc.         --
---                                                                          --
--- This specification is derived from the Ada Reference Manual for use with --
--- GNAT. The copyright notice above, and the license provisions that follow --
--- apply solely to the  contents of the part following the private keyword. --
+--                        Copyright (C) 2023, AdaCore                       --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -33,33 +29,47 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
-generic
-   type Object (<>) is limited private;
+package body Interfaces.CHERI is
 
-package System.Address_To_Access_Conversions is
-   pragma Preelaborate;
+   ----------------------------
+   -- Set_Address_And_Bounds --
+   ----------------------------
 
-   pragma Compile_Time_Warning
-     (Object'Unconstrained_Array,
-      "Object is unconstrained array type" & ASCII.LF &
-      "To_Pointer results may not have bounds");
+   procedure Set_Address_And_Bounds
+     (Cap     : in out Capability;
+      Address :        System.Storage_Elements.Integer_Address;
+      Length  :        Bounds_Length)
+   is
+   begin
+      Cap := Capability_With_Address_And_Bounds (Cap, Address, Length);
+   end Set_Address_And_Bounds;
 
-   type Object_Pointer is access all Object;
-   for Object_Pointer'Size use Standard'Address_Size;
+   ----------------------------------
+   -- Set_Address_And_Exact_Bounds --
+   ----------------------------------
 
-   pragma No_Strict_Aliasing (Object_Pointer);
-   --  Strictly speaking, this routine should not be used to generate pointers
-   --  to other than proper values of the proper type, but in practice, this
-   --  is done all the time. This pragma stops the compiler from doing some
-   --  optimizations that may cause unexpected results based on the assumption
-   --  of no strict aliasing.
+   procedure Set_Address_And_Exact_Bounds
+     (Cap     : in out Capability;
+      Address :        System.Storage_Elements.Integer_Address;
+      Length  :        Bounds_Length)
+   is
+   begin
+      Cap := Capability_With_Address_And_Exact_Bounds (Cap, Address, Length);
+   end Set_Address_And_Exact_Bounds;
 
-   function To_Pointer (Value : Address)        return Object_Pointer with
-     Global => null;
-   function To_Address (Value : Object_Pointer) return Address with
-     SPARK_Mode => Off;
+   ----------------------
+   -- Align_Address_Up --
+   ----------------------
 
-   pragma Import (Intrinsic, To_Pointer);
-   pragma Import (Intrinsic, To_Address);
+   function Align_Address_Up
+     (Address : System.Storage_Elements.Integer_Address;
+      Length  : Bounds_Length)
+      return System.Storage_Elements.Integer_Address
+   is
+      Mask : constant System.Storage_Elements.Integer_Address :=
+        Representable_Alignment_Mask (Length);
+   begin
+      return (Address + (not Mask)) and Mask;
+   end Align_Address_Up;
 
-end System.Address_To_Access_Conversions;
+end Interfaces.CHERI;
