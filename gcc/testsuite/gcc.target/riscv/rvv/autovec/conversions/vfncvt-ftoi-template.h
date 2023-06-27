@@ -1,7 +1,7 @@
 #include <stdint-gcc.h>
 
 #define TEST(TYPE1, TYPE2)                                                     \
-  __attribute__ ((noipa)) void vfcvt_##TYPE1##TYPE2 (TYPE2 *dst, TYPE1 *a,     \
+  __attribute__ ((noipa)) void vfncvt_##TYPE1##TYPE2 (TYPE2 *dst, TYPE1 *a,    \
 						     int n)                    \
   {                                                                            \
     for (int i = 0; i < n; i++)                                                \
@@ -9,11 +9,11 @@
   }
 
 #define TEST_ALL()                                                             \
-  TEST (float, int32_t)                                                        \
-  TEST (float, uint32_t)                                                       \
-  TEST (double, int64_t)						       \
-  TEST (double, uint64_t)						       \
-  TEST (_Float16, int16_t)						       \
-  TEST (_Float16, uint16_t)						       \
+  TEST (double, int32_t)                                                       \
+  TEST (double, uint32_t)                                                      \
+  TEST (float, int16_t)							       \
+  TEST (float, uint16_t)						       \
+  TEST (_Float16, int8_t)						       \
+  TEST (_Float16, uint8_t)						       \
 
 TEST_ALL ()
