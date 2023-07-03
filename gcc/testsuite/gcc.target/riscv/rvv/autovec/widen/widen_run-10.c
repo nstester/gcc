@@ -2,7 +2,7 @@
 /* { dg-additional-options "--param=riscv-autovec-preference=scalable -ffast-math" } */
 
 #include <assert.h>
-#include "widen-3.c"
+#include "widen-10.c"
 
 #define SZ 512
 
@@ -10,23 +10,20 @@
   TYPE2 a##TYPE2[SZ];                                                          \
   TYPE2 b##TYPE2[SZ];                                                          \
   TYPE1 dst##TYPE1[SZ];                                                        \
+  TYPE1 dst2##TYPE1[SZ];                                                       \
   for (int i = 0; i < SZ; i++)                                                 \
     {                                                                          \
       a##TYPE2[i] = LIMIT + i % 8723;                                          \
       b##TYPE2[i] = LIMIT + i & 1964;                                          \
+      dst##TYPE1[i] = LIMIT + i & 628;                                         \
+      dst2##TYPE1[i] = LIMIT + i & 628;                                        \
     }                                                                          \
-  vwmul_##TYPE1_##TYPE2 (dst##TYPE1, a##TYPE2, b##TYPE2, SZ);                  \
+  vwmacc_##TYPE1_##TYPE2 (dst##TYPE1, a##TYPE2, b##TYPE2, SZ);                 \
   for (int i = 0; i < SZ; i++)                                                 \
-    assert (dst##TYPE1[i] == ((TYPE1) a##TYPE2[i] * (TYPE1) b##TYPE2[i]));
+    assert (dst##TYPE1[i]                                                      \
+	    == -((TYPE1) a##TYPE2[i] * (TYPE1) b##TYPE2[i]) + dst2##TYPE1[i]);
 
-#define RUN_ALL()                                                              \
-  RUN (int16_t, int8_t, -128)                                                  \
-  RUN (uint16_t, uint8_t, 255)                                                 \
-  RUN (int32_t, int16_t, -32768)                                               \
-  RUN (uint32_t, uint16_t, 65535)                                              \
-  RUN (int64_t, int32_t, -2147483648)                                          \
-  RUN (uint64_t, uint32_t, 4294967295)                                         \
-  RUN (double, float, -2147483648)
+#define RUN_ALL() RUN (double, float, -2147483648)
 
 int
 main ()
