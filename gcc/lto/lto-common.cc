@@ -1883,7 +1883,7 @@ lto_read_decls (struct lto_file_decl_data *decl_data, const void *data,
   uint32_t num_decl_states;
 
   lto_input_block ib_main ((const char *) data + main_offset,
-			   header->main_size, decl_data->mode_table);
+			   header->main_size, decl_data);
 
   data_in = lto_data_in_create (decl_data, (const char *) data + string_offset,
 				header->string_size, resolutions);
@@ -2278,6 +2278,7 @@ lto_file_finalize (struct lto_file_decl_data *file_data, lto_file *file,
   lto_input_mode_table (file_data);
 #else
   file_data->mode_table = lto_mode_identity_table;
+  file_data->mode_bits = ceil_log2 (MAX_MACHINE_MODE);
 #endif
 
   data = lto_get_summary_section_data (file_data, LTO_section_decls, &len);
