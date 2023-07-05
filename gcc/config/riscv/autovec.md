@@ -1022,7 +1022,7 @@
 (define_expand "vec_set<mode>"
   [(match_operand:V	0 "register_operand")
    (match_operand:<VEL> 1 "register_operand")
-   (match_operand	2 "immediate_operand")]
+   (match_operand	2 "nonmemory_operand")]
   "TARGET_VECTOR"
 {
   /* If we set the first element, emit an v(f)mv.s.[xf].  */
@@ -1039,12 +1039,17 @@
 	 it at the proper position using vslideup with an
 	 "effective length" of 1 i.e. a VL 1 past the offset.  */
 
-      /* Slide offset = element index.  */
-      int offset = INTVAL (operands[2]);
-
-      /* Only insert one element, i.e. VL = offset + 1.  */
+      /* Here we set VL = offset + 1.  */
       rtx length = gen_reg_rtx (Pmode);
-      emit_move_insn (length, GEN_INT (offset + 1));
+      operands[2] = gen_lowpart (Pmode, operands[2]);
+      if (CONST_INT_P (operands[2]))
+	  emit_move_insn (length, GEN_INT (INTVAL (operands[2]) + 1));
+      else
+	{
+	  rtx add = gen_rtx_PLUS (GET_MODE (operands[2]),
+				  operands[2], GEN_INT (1));
+	  emit_move_insn (length, add);
+	}
 
       /* Move operands[1] into a vector register via vmv.v.x using the same
 	 VL we need for the slide.  */
@@ -1083,6 +1088,7 @@
     {
       /* Emit the slide down to index 0 in a new vector.  */
       tmp = gen_reg_rtx (<MODE>mode);
+      operands[2] = gen_lowpart (Pmode, operands[2]);
       rtx ops[] = {tmp, RVV_VUNDEF (<MODE>mode), operands[1], operands[2]};
       riscv_vector::emit_vlmax_slide_insn
 	(code_for_pred_slide (UNSPEC_VSLIDEDOWN, <MODE>mode), ops);
