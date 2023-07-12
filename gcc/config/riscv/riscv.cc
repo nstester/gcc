@@ -90,28 +90,6 @@ along with GCC; see the file COPYING3.  If not see
 /* True if bit BIT is set in VALUE.  */
 #define BITSET_P(VALUE, BIT) (((VALUE) & (1ULL << (BIT))) != 0)
 
-/* Classifies an address.
-
-   ADDRESS_REG
-       A natural register + offset address.  The register satisfies
-       riscv_valid_base_register_p and the offset is a const_arith_operand.
-
-   ADDRESS_LO_SUM
-       A LO_SUM rtx.  The first operand is a valid base register and
-       the second operand is a symbolic address.
-
-   ADDRESS_CONST_INT
-       A signed 16-bit constant address.
-
-   ADDRESS_SYMBOLIC:
-       A constant symbolic address.  */
-enum riscv_address_type {
-  ADDRESS_REG,
-  ADDRESS_LO_SUM,
-  ADDRESS_CONST_INT,
-  ADDRESS_SYMBOLIC
-};
-
 /* Information about a function's frame layout.  */
 struct GTY(())  riscv_frame_info {
   /* The size of the frame in bytes.  */
@@ -189,27 +167,6 @@ struct riscv_arg_info {
 
   /* The offset of the first register used, provided num_fprs is nonzero.  */
   unsigned int fpr_offset;
-};
-
-/* Information about an address described by riscv_address_type.
-
-   ADDRESS_CONST_INT
-       No fields are used.
-
-   ADDRESS_REG
-       REG is the base register and OFFSET is the constant offset.
-
-   ADDRESS_LO_SUM
-       REG and OFFSET are the operands to the LO_SUM and SYMBOL_TYPE
-       is the type of symbol it references.
-
-   ADDRESS_SYMBOLIC
-       SYMBOL_TYPE is the type of symbol that the address references.  */
-struct riscv_address_info {
-  enum riscv_address_type type;
-  rtx reg;
-  rtx offset;
-  enum riscv_symbol_type symbol_type;
 };
 
 /* One stage in a constant building sequence.  These sequences have
@@ -887,6 +844,26 @@ riscv_regno_mode_ok_for_base_p (int regno,
     return true;
 
   return GP_REG_P (regno);
+}
+
+/* Get valid index register class.
+   The RISC-V base instructions don't support index registers,
+   but extensions might support that.  */
+
+enum reg_class
+riscv_index_reg_class ()
+{
+  return NO_REGS;
+}
+
+/* Return true if register REGNO is a valid index register.
+   The RISC-V base instructions don't support index registers,
+   but extensions might support that.  */
+
+int
+riscv_regno_ok_for_index_p (int regno)
+{
+  return 0;
 }
 
 /* Return true if X is a valid base register for mode MODE.
@@ -4801,7 +4778,7 @@ riscv_print_operand_address (FILE *file, machine_mode mode ATTRIBUTE_UNUSED, rtx
     switch (addr.type)
       {
       case ADDRESS_REG:
-	riscv_print_operand (file, addr.offset, 0);
+	output_addr_const (file, riscv_strip_unspec_address (addr.offset));
 	fprintf (file, "(%s)", reg_names[REGNO (addr.reg)]);
 	return;
 
