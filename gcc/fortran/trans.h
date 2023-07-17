@@ -457,7 +457,7 @@ tree gfc_get_class_from_gfc_expr (gfc_expr *);
 tree gfc_get_class_from_expr (tree);
 tree gfc_get_vptr_from_expr (tree);
 tree gfc_copy_class_to_class (tree, tree, tree, bool);
-bool gfc_add_finalizer_call (stmtblock_t *, gfc_expr *);
+bool gfc_add_finalizer_call (stmtblock_t *, gfc_expr *, tree = NULL_TREE);
 bool gfc_add_comp_finalizer_call (stmtblock_t *, tree, gfc_component *, bool);
 void gfc_finalize_tree_expr (gfc_se *, gfc_symbol *, symbol_attribute, int);
 bool gfc_assignment_finalizer_call (gfc_se *, gfc_expr *, bool);
@@ -771,10 +771,11 @@ void gfc_allocate_using_malloc (stmtblock_t *, tree, tree, tree);
 
 /* Generate code to deallocate an array.  */
 tree gfc_deallocate_with_status (tree, tree, tree, tree, tree, bool,
-				 gfc_expr *, int, tree a = NULL_TREE,
-				 tree c = NULL_TREE);
+				 gfc_expr *, int, tree = NULL_TREE,
+				 tree a = NULL_TREE, tree c = NULL_TREE);
 tree gfc_deallocate_scalar_with_status (tree, tree, tree, bool, gfc_expr*,
-					gfc_typespec, bool c = false);
+					gfc_typespec, tree = NULL_TREE,
+					bool c = false);
 
 /* Generate code to call realloc().  */
 tree gfc_call_realloc (stmtblock_t *, tree, tree);
