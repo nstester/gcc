@@ -48,6 +48,8 @@
 
 #include <avxvnniint8intrin.h>
 
+#include <avxvnniint16intrin.h>
+
 #include <avx2intrin.h>
 
 #include <avx512fintrin.h>
@@ -105,6 +107,12 @@
 #endif
 
 #include <shaintrin.h>
+
+#include <sm3intrin.h>
+
+#include <sha512intrin.h>
+
+#include <sm4intrin.h>
 
 #include <fmaintrin.h>
 

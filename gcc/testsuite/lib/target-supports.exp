@@ -9856,6 +9856,61 @@ proc check_effective_target_amx_complex { } {
     } "-mamx-complex" ]
 }
 
+# Return 1 if avxvnniint16 instructions can be compiled.
+proc check_effective_target_avxvnniint16 { } {
+    return [check_no_compiler_messages avxvnniint16 object {
+	typedef int __v8si __attribute__ ((__vector_size__ (32)));
+	__v8si
+	_mm256_dpwsud_avx_epi32  (__v8si __A, __v8si __B, __v8si __C)
+        {
+	   return __builtin_ia32_vpdpwsud256 (__A, __B, __C);
+	}
+    } "-O0 -mavxvnniint16" ]
+}
+
+# Return 1 if sm3 instructions can be compiled.
+proc check_effective_target_sm3 { } {
+    return [check_no_compiler_messages sm3 object {
+	typedef long long __m128i __attribute__ ((__vector_size__ (16)));
+	typedef int __v4si __attribute__ ((__vector_size__ (16)));
+	__m128i
+	_mm_sm3msg1_epi32 (__m128i __A, __m128i __B, __m128i __C)
+	{
+	  return (__m128i) __builtin_ia32_vsm3msg1 ((__v4si) __A,
+						    (__v4si) __B,
+						    (__v4si) __C);
+	}
+    } "-msm3" ]
+}
+
+# Return 1 if sha512 instructions can be compiled.
+proc check_effective_target_sha512 { } {
+    return [check_no_compiler_messages sha512 object {
+	typedef long long __m256i __attribute__ ((__vector_size__ (32)));
+	typedef long long __v4di __attribute__ ((__vector_size__ (32)));
+	__m256i
+	_mm256_sha512msg2_epi64 (__m256i __A, __m256i __B)
+        {
+	   return (__m256i) __builtin_ia32_vsha512msg2 ((__v4di) __A,
+							(__v4di) __B);
+	}
+    } "-msha512" ]
+}
+
+# Return 1 if sm4 instructions can be compiled.
+proc check_effective_target_sm4 { } {
+    return [check_no_compiler_messages sm4 object {
+        typedef long long __m128i __attribute__ ((__vector_size__ (16)));
+        typedef int __v4si __attribute__ ((__vector_size__ (16)));
+        __m128i
+        _mm_sm4key4_epi32 (__m128i __A, __m128i __B)
+        {
+          return (__m128i) __builtin_ia32_vsm4key4128 ((__v4si) __A,
+						       (__v4si) __B);
+        }
+    } "-msm4" ]
+}
+
 # Return 1 if sse instructions can be compiled.
 proc check_effective_target_sse { } {
     return [check_no_compiler_messages sse object {
