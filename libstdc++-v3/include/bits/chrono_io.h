@@ -486,11 +486,6 @@ namespace __format
 	_M_format(const _Tp& __t, _FormatContext& __fc,
 		  bool __is_neg = false) const
 	{
-	  if constexpr (__is_specialization_of<_Tp, chrono::hh_mm_ss>)
-	    __is_neg = __t.is_negative();
-	  else if constexpr (!chrono::__is_duration_v<_Tp>)
-	    __is_neg = false;
-
 	  auto __first = _M_spec._M_chrono_specs.begin();
 	  const auto __last = _M_spec._M_chrono_specs.end();
 	  if (__first == __last)
@@ -513,12 +508,19 @@ namespace __format
 	  else
 	    __out = __sink.out();
 
+	  // formatter<duration> passes the correct value of __is_neg
+	  // for durations but for hh_mm_ss we decide it here.
+	  if constexpr (__is_specialization_of<_Tp, chrono::hh_mm_ss>)
+	    __is_neg = __t.is_negative();
+
 	  auto __print_sign = [&__is_neg, &__out] {
-	    if (__is_neg)
-	      {
-		*__out++ = _S_plus_minus[1];
-		__is_neg = false;
-	      }
+	    if constexpr (chrono::__is_duration_v<_Tp>
+			    || __is_specialization_of<_Tp, chrono::hh_mm_ss>)
+	      if (__is_neg)
+		{
+		  *__out++ = _S_plus_minus[1];
+		  __is_neg = false;
+		}
 	    return std::move(__out);
 	  };
 
@@ -708,8 +710,9 @@ namespace __format
 		__os << __t._M_date << ' ' << __t._M_time;
 	      else
 		{
-		  if (__is_neg) [[unlikely]]
-		    __os << _S_plus_minus[1];
+		  if constexpr (chrono::__is_duration_v<_Tp>)
+		    if (__is_neg) [[unlikely]]
+		      __os << _S_plus_minus[1];
 		  __os << __t;
 		}
 
@@ -1144,11 +1147,11 @@ namespace __format
 
 	  __out = __format::__write(std::move(__out),
 				    _S_two_digits(__hms.seconds().count()));
-	  using rep = typename decltype(__hms)::precision::rep;
 	  if constexpr (__hms.fractional_width != 0)
 	    {
 	      locale __loc = _M_locale(__ctx);
 	      auto __ss = __hms.subseconds();
+	      using rep = typename decltype(__ss)::rep;
 	      if constexpr (is_floating_point_v<rep>)
 		{
 		  __out = std::format_to(__loc, std::move(__out),
@@ -1546,11 +1549,21 @@ namespace __format
 	_S_floor_seconds(const _Tp& __t)
 	{
 	  using chrono::__detail::__local_time_fmt;
-	  if constexpr (chrono::__is_time_point_v<_Tp>)
-	    if constexpr (_Tp::period::den != 1)
-	      return chrono::floor<chrono::seconds>(__t);
-	    else
-	      return __t;
+	  if constexpr (chrono::__is_time_point_v<_Tp>
+			  || chrono::__is_duration_v<_Tp>)
+	    {
+	      if constexpr (_Tp::period::den != 1)
+		return chrono::floor<chrono::seconds>(__t);
+	      else
+		return __t;
+	    }
+	  else if constexpr (__is_specialization_of<_Tp, chrono::hh_mm_ss>)
+	    {
+	      if constexpr (_Tp::fractional_width != 0)
+		return chrono::floor<chrono::seconds>(__t.to_duration());
+	      else
+		return __t;
+	    }
 	  else if constexpr (__is_specialization_of<_Tp, __local_time_fmt>)
 	    return _S_floor_seconds(__t._M_time);
 	  else
