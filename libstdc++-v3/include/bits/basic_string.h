@@ -4148,12 +4148,30 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
   stod(const string& __str, size_t* __idx = 0)
   { return __gnu_cxx::__stoa(&std::strtod, "stod", __str.c_str(), __idx); }
 
-#if _GLIBCXX_USE_C99_STDLIB
+#if _GLIBCXX_USE_C99_STDLIB || _GLIBCXX_HAVE_STRTOF
   // NB: strtof vs strtod.
   inline float
   stof(const string& __str, size_t* __idx = 0)
   { return __gnu_cxx::__stoa(&std::strtof, "stof", __str.c_str(), __idx); }
+#else
+  inline float
+  stof(const string& __str, size_t* __idx = 0)
+  {
+    double __d = std::stod(__str, __idx);
+    if (__builtin_isfinite(__d))
+      {
+	double __abs_d = __builtin_fabs(__d);
+	if (__abs_d < __FLT_MIN__ || __abs_d > __FLT_MAX__)
+	  {
+	    errno = ERANGE;
+	    std::__throw_out_of_range("stof");
+	  }
+      }
+    return __d;
+  }
+#endif
 
+#if _GLIBCXX_USE_C99_STDLIB || _GLIBCXX_HAVE_STRTOLD
   inline long double
   stold(const string& __str, size_t* __idx = 0)
   { return __gnu_cxx::__stoa(&std::strtold, "stold", __str.c_str(), __idx); }
@@ -4161,7 +4179,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
   inline long double
   stold(const string& __str, size_t* __idx = 0)
   { return std::stod(__str, __idx); }
-#endif // _GLIBCXX_USE_C99_STDLIB
+#endif
 
   // DR 1261. Insufficent overloads for to_string / to_wstring
 
