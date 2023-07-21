@@ -22,24 +22,24 @@
 ;; == Loads/Stores
 ;; =========================================================================
 
-(define_expand "len_maskload<mode><vm>"
+(define_expand "mask_len_load<mode><vm>"
   [(match_operand:V 0 "register_operand")
    (match_operand:V 1 "memory_operand")
-   (match_operand 2 "autovec_length_operand")
-   (match_operand 3 "const_0_operand")
-   (match_operand:<VM> 4 "vector_mask_operand")]
+   (match_operand:<VM> 2 "vector_mask_operand")
+   (match_operand 3 "autovec_length_operand")
+   (match_operand 4 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_load_store (operands, true);
   DONE;
 })
 
-(define_expand "len_maskstore<mode><vm>"
+(define_expand "mask_len_store<mode><vm>"
   [(match_operand:V 0 "memory_operand")
    (match_operand:V 1 "register_operand")
-   (match_operand 2 "autovec_length_operand")
-   (match_operand 3 "const_0_operand")
-   (match_operand:<VM> 4 "vector_mask_operand")]
+   (match_operand:<VM> 2 "vector_mask_operand")
+   (match_operand 3 "autovec_length_operand")
+   (match_operand 4 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_load_store (operands, false);
@@ -61,90 +61,90 @@
 ;; == Gather Load
 ;; =========================================================================
 
-(define_expand "len_mask_gather_load<RATIO64:mode><RATIO64I:mode>"
+(define_expand "mask_len_gather_load<RATIO64:mode><RATIO64I:mode>"
   [(match_operand:RATIO64 0 "register_operand")
    (match_operand 1 "pmode_reg_or_0_operand")
    (match_operand:RATIO64I 2 "register_operand")
    (match_operand 3 "<RATIO64:gs_extension>")
    (match_operand 4 "<RATIO64:gs_scale>")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO64:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO64:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, true);
   DONE;
 })
 
-(define_expand "len_mask_gather_load<RATIO32:mode><RATIO32I:mode>"
+(define_expand "mask_len_gather_load<RATIO32:mode><RATIO32I:mode>"
   [(match_operand:RATIO32 0 "register_operand")
    (match_operand 1 "pmode_reg_or_0_operand")
    (match_operand:RATIO32I 2 "register_operand")
    (match_operand 3 "<RATIO32:gs_extension>")
    (match_operand 4 "<RATIO32:gs_scale>")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO32:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO32:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, true);
   DONE;
 })
 
-(define_expand "len_mask_gather_load<RATIO16:mode><RATIO16I:mode>"
+(define_expand "mask_len_gather_load<RATIO16:mode><RATIO16I:mode>"
   [(match_operand:RATIO16 0 "register_operand")
    (match_operand 1 "pmode_reg_or_0_operand")
    (match_operand:RATIO16I 2 "register_operand")
    (match_operand 3 "<RATIO16:gs_extension>")
    (match_operand 4 "<RATIO16:gs_scale>")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO16:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO16:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, true);
   DONE;
 })
 
-(define_expand "len_mask_gather_load<RATIO8:mode><RATIO8I:mode>"
+(define_expand "mask_len_gather_load<RATIO8:mode><RATIO8I:mode>"
   [(match_operand:RATIO8 0 "register_operand")
    (match_operand 1 "pmode_reg_or_0_operand")
    (match_operand:RATIO8I 2 "register_operand")
    (match_operand 3 "<RATIO8:gs_extension>")
    (match_operand 4 "<RATIO8:gs_scale>")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO8:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO8:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, true);
   DONE;
 })
 
-(define_expand "len_mask_gather_load<RATIO4:mode><RATIO4I:mode>"
+(define_expand "mask_len_gather_load<RATIO4:mode><RATIO4I:mode>"
   [(match_operand:RATIO4 0 "register_operand")
    (match_operand 1 "pmode_reg_or_0_operand")
    (match_operand:RATIO4I 2 "register_operand")
    (match_operand 3 "<RATIO4:gs_extension>")
    (match_operand 4 "<RATIO4:gs_scale>")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO4:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO4:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, true);
   DONE;
 })
 
-(define_expand "len_mask_gather_load<RATIO2:mode><RATIO2I:mode>"
+(define_expand "mask_len_gather_load<RATIO2:mode><RATIO2I:mode>"
   [(match_operand:RATIO2 0 "register_operand")
    (match_operand 1 "pmode_reg_or_0_operand")
    (match_operand:RATIO2I 2 "register_operand")
    (match_operand 3 "<RATIO2:gs_extension>")
    (match_operand 4 "<RATIO2:gs_scale>")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO2:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO2:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, true);
@@ -155,15 +155,15 @@
 ;; larger SEW. Since RVV indexed load/store support zero extend
 ;; implicitly and not support scaling, we should only allow
 ;; operands[3] and operands[4] to be const_1_operand.
-(define_expand "len_mask_gather_load<RATIO1:mode><RATIO1:mode>"
+(define_expand "mask_len_gather_load<RATIO1:mode><RATIO1:mode>"
   [(match_operand:RATIO1 0 "register_operand")
    (match_operand 1 "pmode_reg_or_0_operand")
    (match_operand:RATIO1 2 "register_operand")
    (match_operand 3 "<RATIO1:gs_extension>")
    (match_operand 4 "<RATIO1:gs_scale>")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO1:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO1:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, true);
@@ -174,90 +174,90 @@
 ;; == Scatter Store
 ;; =========================================================================
 
-(define_expand "len_mask_scatter_store<RATIO64:mode><RATIO64I:mode>"
+(define_expand "mask_len_scatter_store<RATIO64:mode><RATIO64I:mode>"
   [(match_operand 0 "pmode_reg_or_0_operand")
    (match_operand:RATIO64I 1 "register_operand")
    (match_operand 2 "<RATIO64:gs_extension>")
    (match_operand 3 "<RATIO64:gs_scale>")
    (match_operand:RATIO64 4 "register_operand")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO64:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO64:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, false);
   DONE;
 })
 
-(define_expand "len_mask_scatter_store<RATIO32:mode><RATIO32I:mode>"
+(define_expand "mask_len_scatter_store<RATIO32:mode><RATIO32I:mode>"
   [(match_operand 0 "pmode_reg_or_0_operand")
    (match_operand:RATIO32I 1 "register_operand")
    (match_operand 2 "<RATIO32:gs_extension>")
    (match_operand 3 "<RATIO32:gs_scale>")
    (match_operand:RATIO32 4 "register_operand")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO32:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO32:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, false);
   DONE;
 })
 
-(define_expand "len_mask_scatter_store<RATIO16:mode><RATIO16I:mode>"
+(define_expand "mask_len_scatter_store<RATIO16:mode><RATIO16I:mode>"
   [(match_operand 0 "pmode_reg_or_0_operand")
    (match_operand:RATIO16I 1 "register_operand")
    (match_operand 2 "<RATIO16:gs_extension>")
    (match_operand 3 "<RATIO16:gs_scale>")
    (match_operand:RATIO16 4 "register_operand")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO16:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO16:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, false);
   DONE;
 })
 
-(define_expand "len_mask_scatter_store<RATIO8:mode><RATIO8I:mode>"
+(define_expand "mask_len_scatter_store<RATIO8:mode><RATIO8I:mode>"
   [(match_operand 0 "pmode_reg_or_0_operand")
    (match_operand:RATIO8I 1 "register_operand")
    (match_operand 2 "<RATIO8:gs_extension>")
    (match_operand 3 "<RATIO8:gs_scale>")
    (match_operand:RATIO8 4 "register_operand")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO8:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO8:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, false);
   DONE;
 })
 
-(define_expand "len_mask_scatter_store<RATIO4:mode><RATIO4I:mode>"
+(define_expand "mask_len_scatter_store<RATIO4:mode><RATIO4I:mode>"
   [(match_operand 0 "pmode_reg_or_0_operand")
    (match_operand:RATIO4I 1 "register_operand")
    (match_operand 2 "<RATIO4:gs_extension>")
    (match_operand 3 "<RATIO4:gs_scale>")
    (match_operand:RATIO4 4 "register_operand")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO4:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO4:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, false);
   DONE;
 })
 
-(define_expand "len_mask_scatter_store<RATIO2:mode><RATIO2I:mode>"
+(define_expand "mask_len_scatter_store<RATIO2:mode><RATIO2I:mode>"
   [(match_operand 0 "pmode_reg_or_0_operand")
    (match_operand:RATIO2I 1 "register_operand")
    (match_operand 2 "<RATIO2:gs_extension>")
    (match_operand 3 "<RATIO2:gs_scale>")
    (match_operand:RATIO2 4 "register_operand")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO2:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO2:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, false);
@@ -268,15 +268,15 @@
 ;; larger SEW. Since RVV indexed load/store support zero extend
 ;; implicitly and not support scaling, we should only allow
 ;; operands[3] and operands[4] to be const_1_operand.
-(define_expand "len_mask_scatter_store<RATIO1:mode><RATIO1:mode>"
+(define_expand "mask_len_scatter_store<RATIO1:mode><RATIO1:mode>"
   [(match_operand 0 "pmode_reg_or_0_operand")
    (match_operand:RATIO1 1 "register_operand")
    (match_operand 2 "<RATIO1:gs_extension>")
    (match_operand 3 "<RATIO1:gs_scale>")
    (match_operand:RATIO1 4 "register_operand")
-   (match_operand 5 "autovec_length_operand")
-   (match_operand 6 "const_0_operand")
-   (match_operand:<RATIO1:VM> 7 "vector_mask_operand")]
+   (match_operand:<RATIO1:VM> 5 "vector_mask_operand")
+   (match_operand 6 "autovec_length_operand")
+   (match_operand 7 "const_0_operand")]
   "TARGET_VECTOR"
 {
   riscv_vector::expand_gather_scatter (operands, false);
