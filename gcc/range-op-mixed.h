@@ -408,6 +408,8 @@ class operator_abs : public range_operator
   bool op1_range (frange &r, tree type,
 		  const frange &lhs, const frange &op2,
 		  relation_trio rel = TRIO_VARYING) const final override;
+  void update_bitmask (irange &r, const irange &lh,
+		       const irange &rh) const final override;
 private:
   void wi_fold (irange &r, tree type, const wide_int &lh_lb,
 		const wide_int &lh_ub, const wide_int &rh_lb,
@@ -551,6 +553,8 @@ public:
   bool op1_range (irange &r, tree type,
 		  const irange &lhs, const irange &op2,
 		  relation_trio rel = TRIO_VARYING) const final override;
+  void update_bitmask (irange &r, const irange &lh,
+		       const irange &rh) const final override;
 };
 
 class operator_bitwise_xor : public range_operator

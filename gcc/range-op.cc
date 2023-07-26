@@ -385,15 +385,29 @@ update_known_bitmask (irange &r, tree_code code,
   irange_bitmask lh_bits = lh.get_bitmask ();
   irange_bitmask rh_bits = rh.get_bitmask ();
 
-  bit_value_binop (code, sign, prec, &widest_value, &widest_mask,
-		   TYPE_SIGN (lh.type ()),
-		   TYPE_PRECISION (lh.type ()),
-		   widest_int::from (lh_bits.value (), sign),
-		   widest_int::from (lh_bits.mask (), sign),
-		   TYPE_SIGN (rh.type ()),
-		   TYPE_PRECISION (rh.type ()),
-		   widest_int::from (rh_bits.value (), sign),
-		   widest_int::from (rh_bits.mask (), sign));
+  switch (get_gimple_rhs_class (code))
+    {
+    case GIMPLE_UNARY_RHS:
+      bit_value_unop (code, sign, prec, &widest_value, &widest_mask,
+		      TYPE_SIGN (lh.type ()),
+		      TYPE_PRECISION (lh.type ()),
+		      widest_int::from (lh_bits.value (), sign),
+		      widest_int::from (lh_bits.mask (), sign));
+      break;
+    case GIMPLE_BINARY_RHS:
+      bit_value_binop (code, sign, prec, &widest_value, &widest_mask,
+		       TYPE_SIGN (lh.type ()),
+		       TYPE_PRECISION (lh.type ()),
+		       widest_int::from (lh_bits.value (), sign),
+		       widest_int::from (lh_bits.mask (), sign),
+		       TYPE_SIGN (rh.type ()),
+		       TYPE_PRECISION (rh.type ()),
+		       widest_int::from (rh_bits.value (), sign),
+		       widest_int::from (rh_bits.mask (), sign));
+      break;
+    default:
+      gcc_unreachable ();
+    }
 
   wide_int mask = wide_int::from (widest_mask, prec, sign);
   wide_int value = wide_int::from (widest_value, prec, sign);
@@ -4013,6 +4027,13 @@ operator_bitwise_not::op1_range (irange &r, tree type,
   return fold_range (r, type, lhs, op2);
 }
 
+void
+operator_bitwise_not::update_bitmask (irange &r, const irange &lh,
+				      const irange &rh) const
+{
+  update_known_bitmask (r, BIT_NOT_EXPR, lh, rh);
+}
+
 
 bool
 operator_cst::fold_range (irange &r, tree type ATTRIBUTE_UNUSED,
@@ -4187,6 +4208,12 @@ operator_abs::op1_range (irange &r, tree type,
   return true;
 }
 
+void
+operator_abs::update_bitmask (irange &r, const irange &lh,
+			      const irange &rh) const
+{
+  update_known_bitmask (r, ABS_EXPR, lh, rh);
+}
 
 class operator_absu : public range_operator
 {
@@ -4194,6 +4221,8 @@ class operator_absu : public range_operator
   virtual void wi_fold (irange &r, tree type,
 			const wide_int &lh_lb, const wide_int &lh_ub,
 			const wide_int &rh_lb, const wide_int &rh_ub) const;
+  virtual void update_bitmask (irange &r, const irange &lh,
+			       const irange &rh) const final override;
 } op_absu;
 
 void
@@ -4229,6 +4258,13 @@ operator_absu::wi_fold (irange &r, tree type,
 
   gcc_checking_assert (TYPE_UNSIGNED (type));
   r = int_range<1> (type, new_lb, new_ub);
+}
+
+void
+operator_absu::update_bitmask (irange &r, const irange &lh,
+			      const irange &rh) const
+{
+  update_known_bitmask (r, ABSU_EXPR, lh, rh);
 }
 
 
