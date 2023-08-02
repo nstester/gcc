@@ -5803,21 +5803,21 @@
 ;; But this doesn't seem useful in practice.
 
 (define_expand "vec_fmaddsub<mode>4"
-  [(set (match_operand:VF 0 "register_operand")
-	(unspec:VF
-	  [(match_operand:VF 1 "nonimmediate_operand")
-	   (match_operand:VF 2 "nonimmediate_operand")
-	   (match_operand:VF 3 "nonimmediate_operand")]
+  [(set (match_operand:VFH 0 "register_operand")
+	(unspec:VFH
+	  [(match_operand:VFH 1 "nonimmediate_operand")
+	   (match_operand:VFH 2 "nonimmediate_operand")
+	   (match_operand:VFH 3 "nonimmediate_operand")]
 	  UNSPEC_FMADDSUB))]
   "TARGET_FMA || TARGET_FMA4 || (<MODE_SIZE> == 64 || TARGET_AVX512VL)")
 
 (define_expand "vec_fmsubadd<mode>4"
-  [(set (match_operand:VF 0 "register_operand")
-	(unspec:VF
-	  [(match_operand:VF 1 "nonimmediate_operand")
-	   (match_operand:VF 2 "nonimmediate_operand")
-	   (neg:VF
-	     (match_operand:VF 3 "nonimmediate_operand"))]
+  [(set (match_operand:VFH 0 "register_operand")
+	(unspec:VFH
+	  [(match_operand:VFH 1 "nonimmediate_operand")
+	   (match_operand:VFH 2 "nonimmediate_operand")
+	   (neg:VFH
+	     (match_operand:VFH 3 "nonimmediate_operand"))]
 	  UNSPEC_FMADDSUB))]
   "TARGET_FMA || TARGET_FMA4 || (<MODE_SIZE> == 64 || TARGET_AVX512VL)")
 
@@ -5877,11 +5877,11 @@
    (set_attr "mode" "<MODE>")])
 
 (define_insn "<sd_mask_codefor>fma_fmaddsub_<mode><sd_maskz_name><round_name>"
-  [(set (match_operand:VFH_SF_AVX512VL 0 "register_operand" "=v,v,v")
-	(unspec:VFH_SF_AVX512VL
-	  [(match_operand:VFH_SF_AVX512VL 1 "<round_nimm_predicate>" "%0,0,v")
-	   (match_operand:VFH_SF_AVX512VL 2 "<round_nimm_predicate>" "<round_constraint>,v,<round_constraint>")
-	   (match_operand:VFH_SF_AVX512VL 3 "<round_nimm_predicate>" "v,<round_constraint>,0")]
+  [(set (match_operand:VFH_AVX512VL 0 "register_operand" "=v,v,v")
+	(unspec:VFH_AVX512VL
+	  [(match_operand:VFH_AVX512VL 1 "<round_nimm_predicate>" "%0,0,v")
+	   (match_operand:VFH_AVX512VL 2 "<round_nimm_predicate>" "<round_constraint>,v,<round_constraint>")
+	   (match_operand:VFH_AVX512VL 3 "<round_nimm_predicate>" "v,<round_constraint>,0")]
 	  UNSPEC_FMADDSUB))]
   "TARGET_AVX512F && <sd_mask_mode512bit_condition> && <round_mode512bit_condition>"
   "@
@@ -5943,12 +5943,12 @@
    (set_attr "mode" "<MODE>")])
 
 (define_insn "<sd_mask_codefor>fma_fmsubadd_<mode><sd_maskz_name><round_name>"
-  [(set (match_operand:VFH_SF_AVX512VL 0 "register_operand" "=v,v,v")
-	(unspec:VFH_SF_AVX512VL
-	  [(match_operand:VFH_SF_AVX512VL   1 "<round_nimm_predicate>" "%0,0,v")
-	   (match_operand:VFH_SF_AVX512VL   2 "<round_nimm_predicate>" "<round_constraint>,v,<round_constraint>")
-	   (neg:VFH_SF_AVX512VL
-	     (match_operand:VFH_SF_AVX512VL 3 "<round_nimm_predicate>" "v,<round_constraint>,0"))]
+  [(set (match_operand:VFH_AVX512VL 0 "register_operand" "=v,v,v")
+	(unspec:VFH_AVX512VL
+	  [(match_operand:VFH_AVX512VL   1 "<round_nimm_predicate>" "%0,0,v")
+	   (match_operand:VFH_AVX512VL   2 "<round_nimm_predicate>" "<round_constraint>,v,<round_constraint>")
+	   (neg:VFH_AVX512VL
+	     (match_operand:VFH_AVX512VL 3 "<round_nimm_predicate>" "v,<round_constraint>,0"))]
 	  UNSPEC_FMADDSUB))]
   "TARGET_AVX512F && <sd_mask_mode512bit_condition> && <round_mode512bit_condition>"
   "@
@@ -26608,6 +26608,24 @@
    (set_attr "prefix_extra" "1")
    (set_attr "prefix" "vex,evex,evex")
    (set_attr "mode" "OI")])
+
+;; optimize vlddqu + vinserti128 to vbroadcasti128, the former will use
+;; extra shuffle port in addition to load port than the latter.
+;; For latency perspective,vbroadcasti is no worse.
+(define_insn_and_split "avx2_lddqu_inserti_to_bcasti"
+  [(set (match_operand:V4DI 0 "register_operand" "=x,v,v")
+	(vec_concat:V4DI
+	  (subreg:V2DI
+	    (unspec:V16QI [(match_operand:V16QI 1 "memory_operand")]
+			  UNSPEC_LDDQU) 0)
+	  (subreg:V2DI (unspec:V16QI [(match_dup 1)]
+			  UNSPEC_LDDQU) 0)))]
+  "TARGET_AVX2 && ix86_pre_reload_split ()"
+  "#"
+  "&& 1"
+  [(set (match_dup 0)
+	(vec_concat:V4DI (match_dup 1) (match_dup 1)))]
+  "operands[1] = adjust_address_nv (operands[1], V2DImode, 0);")
 
 ;; Modes handled by AVX vec_dup patterns.
 (define_mode_iterator AVX_VEC_DUP_MODE
