@@ -279,6 +279,7 @@ public:
    - vfadd
    - vfsub
    - vfmul
+   - vfdiv
 */
 template<rtx_code CODE>
 class binop_frm : public function_base
@@ -302,6 +303,7 @@ public:
 
 /* Implements below instructions for frm
    - vfrsub
+   - vfrdiv
 */
 template<rtx_code CODE>
 class reverse_binop_frm : public function_base
@@ -320,6 +322,7 @@ public:
 /* Implements below instructions for frm
    - vfwadd
    - vfwsub
+   - vfwmul
 */
 template<rtx_code CODE>
 class widen_binop_frm : public function_base
@@ -350,6 +353,29 @@ public:
       default:
 	gcc_unreachable ();
       }
+  }
+};
+
+/* Implements below instructions for frm
+   - vfmacc
+*/
+class vfmacc_frm : public function_base
+{
+public:
+  bool has_rounding_mode_operand_p () const override { return true; }
+
+  bool has_merge_operand_p () const override { return false; }
+
+  rtx expand (function_expander &e) const override
+  {
+    if (e.op_info->op == OP_TYPE_vf)
+      return e.use_ternop_insn (true,
+				code_for_pred_mul_scalar (PLUS,
+							  e.vector_mode ()));
+    if (e.op_info->op == OP_TYPE_vv)
+      return e.use_ternop_insn (true,
+				code_for_pred_mul (PLUS, e.vector_mode ()));
+    gcc_unreachable ();
   }
 };
 
@@ -2107,9 +2133,13 @@ static CONSTEXPR const widen_binop_frm<MINUS> vfwsub_frm_obj;
 static CONSTEXPR const binop<MULT> vfmul_obj;
 static CONSTEXPR const binop_frm<MULT> vfmul_frm_obj;
 static CONSTEXPR const binop<DIV> vfdiv_obj;
+static CONSTEXPR const binop_frm<DIV> vfdiv_frm_obj;
 static CONSTEXPR const reverse_binop<DIV> vfrdiv_obj;
+static CONSTEXPR const reverse_binop_frm<DIV> vfrdiv_frm_obj;
 static CONSTEXPR const widen_binop<MULT> vfwmul_obj;
+static CONSTEXPR const widen_binop_frm<MULT> vfwmul_frm_obj;
 static CONSTEXPR const vfmacc vfmacc_obj;
+static CONSTEXPR const vfmacc_frm vfmacc_frm_obj;
 static CONSTEXPR const vfnmsac vfnmsac_obj;
 static CONSTEXPR const vfmadd vfmadd_obj;
 static CONSTEXPR const vfnmsub vfnmsub_obj;
@@ -2339,9 +2369,13 @@ BASE (vfwsub_frm)
 BASE (vfmul)
 BASE (vfmul_frm)
 BASE (vfdiv)
+BASE (vfdiv_frm)
 BASE (vfrdiv)
+BASE (vfrdiv_frm)
 BASE (vfwmul)
+BASE (vfwmul_frm)
 BASE (vfmacc)
+BASE (vfmacc_frm)
 BASE (vfnmsac)
 BASE (vfmadd)
 BASE (vfnmsub)
