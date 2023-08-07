@@ -2483,7 +2483,7 @@
    vp<maxmin_int><mmxvecsize>\t{%2, %1, %0|%0, %1, %2}"
   [(set_attr "isa" "noavx,noavx,avx")
    (set_attr "type" "sseiadd")
-   (set_attr "prefix_extra" "1,1,*")
+   (set_attr "prefix_extra" "1")
    (set_attr "prefix" "orig,orig,vex")
    (set_attr "mode" "TI")])
 
@@ -2532,7 +2532,7 @@
    vp<maxmin_int>b\t{%2, %1, %0|%0, %1, %2}"
   [(set_attr "isa" "noavx,noavx,avx")
    (set_attr "type" "sseiadd")
-   (set_attr "prefix_extra" "1,1,*")
+   (set_attr "prefix_extra" "1")
    (set_attr "prefix" "orig,orig,vex")
    (set_attr "mode" "TI")])
 
@@ -2561,7 +2561,7 @@
    vp<maxmin_int><mmxvecsize>\t{%2, %1, %0|%0, %1, %2}"
   [(set_attr "isa" "noavx,noavx,avx")
    (set_attr "type" "sseiadd")
-   (set_attr "prefix_extra" "1,1,*")
+   (set_attr "prefix_extra" "1")
    (set_attr "prefix" "orig,orig,vex")
    (set_attr "mode" "TI")])
 
@@ -2623,7 +2623,7 @@
    vp<maxmin_int>w\t{%2, %1, %0|%0, %1, %2}"
   [(set_attr "isa" "noavx,noavx,avx")
    (set_attr "type" "sseiadd")
-   (set_attr "prefix_extra" "1,1,*")
+   (set_attr "prefix_extra" "1")
    (set_attr "prefix" "orig,orig,vex")
    (set_attr "mode" "TI")])
 
@@ -2909,10 +2909,6 @@
   "TARGET_XOP"
   "vpcom%Y1<mmxvecsize>\t{%3, %2, %0|%0, %2, %3}"
   [(set_attr "type" "sse4arg")
-   (set_attr "prefix_data16" "0")
-   (set_attr "prefix_rep" "0")
-   (set_attr "prefix_extra" "2")
-   (set_attr "length_immediate" "1")
    (set_attr "mode" "TI")])
 
 (define_insn "*xop_maskcmp<mode>3"
@@ -2923,10 +2919,6 @@
   "TARGET_XOP"
   "vpcom%Y1<mmxvecsize>\t{%3, %2, %0|%0, %2, %3}"
   [(set_attr "type" "sse4arg")
-   (set_attr "prefix_data16" "0")
-   (set_attr "prefix_rep" "0")
-   (set_attr "prefix_extra" "2")
-   (set_attr "length_immediate" "1")
    (set_attr "mode" "TI")])
 
 (define_insn "*xop_maskcmp_uns<mode>3"
@@ -2936,11 +2928,7 @@
 	  (match_operand:MMXMODEI 3 "register_operand" "x")]))]
   "TARGET_XOP"
   "vpcom%Y1u<mmxvecsize>\t{%3, %2, %0|%0, %2, %3}"
-  [(set_attr "type" "ssecmp")
-   (set_attr "prefix_data16" "0")
-   (set_attr "prefix_rep" "0")
-   (set_attr "prefix_extra" "2")
-   (set_attr "length_immediate" "1")
+  [(set_attr "type" "sse4arg")
    (set_attr "mode" "TI")])
 
 (define_insn "*xop_maskcmp_uns<mode>3"
@@ -2950,11 +2938,7 @@
 	  (match_operand:VI_16_32 3 "register_operand" "x")]))]
   "TARGET_XOP"
   "vpcom%Y1u<mmxvecsize>\t{%3, %2, %0|%0, %2, %3}"
-  [(set_attr "type" "ssecmp")
-   (set_attr "prefix_data16" "0")
-   (set_attr "prefix_rep" "0")
-   (set_attr "prefix_extra" "2")
-   (set_attr "length_immediate" "1")
+  [(set_attr "type" "sse4arg")
    (set_attr "mode" "TI")])
 
 (define_expand "vec_cmp<mode><mode>"
@@ -3110,7 +3094,7 @@
   [(set_attr "isa" "noavx,noavx,avx")
    (set_attr "type" "ssemov")
    (set_attr "prefix_extra" "1")
-   (set_attr "length_immediate" "*,*,1")
+   (set_attr "length_immediate" "1")
    (set_attr "prefix" "orig,orig,vex")
    (set_attr "btver2_decode" "vector")
    (set_attr "mode" "TI")])
@@ -3130,7 +3114,7 @@
   [(set_attr "isa" "noavx,noavx,avx")
    (set_attr "type" "ssemov")
    (set_attr "prefix_extra" "1")
-   (set_attr "length_immediate" "*,*,1")
+   (set_attr "length_immediate" "1")
    (set_attr "prefix" "orig,orig,vex")
    (set_attr "btver2_decode" "vector")
    (set_attr "mode" "TI")])
@@ -3144,7 +3128,8 @@
           (match_operand:MMXMODE124 2 "register_operand" "x")))]
   "TARGET_XOP && TARGET_MMX_WITH_SSE"
   "vpcmov\t{%3, %2, %1, %0|%0, %1, %2, %3}"
-  [(set_attr "type" "sse4arg")])
+  [(set_attr "type" "sse4arg")
+   (set_attr "mode" "TI")])
 
 (define_insn "*xop_pcmov_<mode>"
   [(set (match_operand:VI_16_32 0 "register_operand" "=x")
@@ -3154,7 +3139,8 @@
           (match_operand:VI_16_32 2 "register_operand" "x")))]
   "TARGET_XOP"
   "vpcmov\t{%3, %2, %1, %0|%0, %1, %2, %3}"
-  [(set_attr "type" "sse4arg")])
+  [(set_attr "type" "sse4arg")
+   (set_attr "mode" "TI")])
 
 ;; XOP permute instructions
 (define_insn "mmx_ppermv64"
@@ -3877,7 +3863,6 @@
     }
 }
   [(set_attr "isa" "noavx,avx")
-   (set_attr "prefix_data16" "1")
    (set_attr "prefix_extra" "1")
    (set_attr "type" "sselog")
    (set_attr "length_immediate" "1")
@@ -3964,7 +3949,6 @@
 }
   [(set_attr "isa" "noavx,avx")
    (set_attr "type" "sselog")
-   (set_attr "prefix_data16" "1")
    (set_attr "prefix_extra" "1")
    (set_attr "length_immediate" "1")
    (set_attr "prefix" "orig,vex")
@@ -4016,7 +4000,6 @@
    %vpextrb\t{%2, %1, %k0|%k0, %1, %2}
    %vpextrb\t{%2, %1, %0|%0, %1, %2}"
   [(set_attr "type" "sselog1")
-   (set_attr "prefix_data16" "1")
    (set_attr "prefix_extra" "1")
    (set_attr "length_immediate" "1")
    (set_attr "prefix" "maybe_vex")
@@ -4031,7 +4014,6 @@
   "TARGET_SSE4_1 && TARGET_MMX_WITH_SSE"
   "%vpextrb\t{%2, %1, %k0|%k0, %1, %2}"
   [(set_attr "type" "sselog1")
-   (set_attr "prefix_data16" "1")
    (set_attr "prefix_extra" "1")
    (set_attr "length_immediate" "1")
    (set_attr "prefix" "maybe_vex")
@@ -4049,7 +4031,6 @@
    vpshufb\t{%2, %1, %0|%0, %1, %2}"
   [(set_attr "isa" "noavx,avx")
    (set_attr "type" "sselog1")
-   (set_attr "prefix_data16" "1,*")
    (set_attr "prefix_extra" "1")
    (set_attr "prefix" "orig,maybe_evex")
    (set_attr "btver2_decode" "vector")
@@ -4067,7 +4048,6 @@
    vpshufb\t{%2, %1, %0|%0, %1, %2}"
   [(set_attr "isa" "noavx,avx")
    (set_attr "type" "sselog1")
-   (set_attr "prefix_data16" "1,*")
    (set_attr "prefix_extra" "1")
    (set_attr "prefix" "orig,maybe_evex")
    (set_attr "btver2_decode" "vector")
@@ -4205,7 +4185,6 @@
    (set_attr "mmx_isa" "native,*")
    (set_attr "type" "mmxcvt,sselog1")
    (set_attr "prefix_extra" "1,*")
-   (set_attr "prefix_data16" "*,1")
    (set_attr "length_immediate" "*,1")
    (set_attr "mode" "DI,TI")])
 
@@ -4545,7 +4524,6 @@
 }
   [(set_attr "isa" "noavx,avx")
    (set_attr "type" "sselog")
-   (set_attr "prefix_data16" "1")
    (set_attr "prefix_extra" "1")
    (set_attr "length_immediate" "1")
    (set_attr "prefix" "orig,vex")
@@ -4589,7 +4567,6 @@
    %vpextrb\t{%2, %1, %k0|%k0, %1, %2}
    %vpextrb\t{%2, %1, %0|%0, %1, %2}"
   [(set_attr "type" "sselog1")
-   (set_attr "prefix_data16" "1")
    (set_attr "prefix_extra" "1")
    (set_attr "length_immediate" "1")
    (set_attr "prefix" "maybe_vex")
@@ -4604,7 +4581,6 @@
   "TARGET_SSE4_1"
   "%vpextrb\t{%2, %1, %k0|%k0, %1, %2}"
   [(set_attr "type" "sselog1")
-   (set_attr "prefix_data16" "1")
    (set_attr "prefix_extra" "1")
    (set_attr "length_immediate" "1")
    (set_attr "prefix" "maybe_vex")
