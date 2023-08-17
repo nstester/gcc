@@ -1930,7 +1930,7 @@
 
 // from version.def line 1577
 #if !defined(__cpp_lib_string_resize_and_overwrite)
-# if (__cplusplus >= 202302L) && _GLIBCXX_USE_CXX11_ABI && _GLIBCXX_HOSTED
+# if (__cplusplus >= 202302L) && _GLIBCXX_HOSTED
 #  define __glibcxx_string_resize_and_overwrite 202110L
 #  if defined(__glibcxx_want_all) || defined(__glibcxx_want_string_resize_and_overwrite)
 #   define __cpp_lib_string_resize_and_overwrite 202110L
@@ -1938,5 +1938,16 @@
 # endif
 #endif /* !defined(__cpp_lib_string_resize_and_overwrite) && defined(__glibcxx_want_string_resize_and_overwrite) */
 #undef __glibcxx_want_string_resize_and_overwrite
+
+// from version.def line 1586
+#if !defined(__cpp_lib_to_string)
+# if (__cplusplus >  202302L) && _GLIBCXX_HOSTED && (__glibcxx_to_chars)
+#  define __glibcxx_to_string 202306L
+#  if defined(__glibcxx_want_all) || defined(__glibcxx_want_to_string)
+#   define __cpp_lib_to_string 202306L
+#  endif
+# endif
+#endif /* !defined(__cpp_lib_to_string) && defined(__glibcxx_want_to_string) */
+#undef __glibcxx_want_to_string
 
 #undef __glibcxx_want_all
