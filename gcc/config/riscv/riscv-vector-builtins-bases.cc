@@ -1759,10 +1759,15 @@ public:
 };
 
 /* Implements vfncvt.x.  */
-template<int UNSPEC>
+template<int UNSPEC, enum frm_op_type FRM_OP = NO_FRM>
 class vfncvt_x : public function_base
 {
 public:
+  bool has_rounding_mode_operand_p () const override
+  {
+    return FRM_OP == HAS_FRM;
+  }
+
   rtx expand (function_expander &e) const override
   {
     return e.use_exact_insn (
@@ -1781,9 +1786,15 @@ public:
   }
 };
 
+template<enum frm_op_type FRM_OP = NO_FRM>
 class vfncvt_f : public function_base
 {
 public:
+  bool has_rounding_mode_operand_p () const override
+  {
+    return FRM_OP == HAS_FRM;
+  }
+
   rtx expand (function_expander &e) const override
   {
     if (e.op_info->op == OP_TYPE_f_w)
@@ -1836,10 +1847,15 @@ public:
 };
 
 /* Implements floating-point reduction instructions.  */
-template<int UNSPEC>
+template<int UNSPEC, enum frm_op_type FRM_OP = NO_FRM >
 class freducop : public function_base
 {
 public:
+  bool has_rounding_mode_operand_p () const override
+  {
+    return FRM_OP == HAS_FRM;
+  }
+
   bool apply_mask_policy_p () const override { return false; }
 
   rtx expand (function_expander &e) const override
@@ -1850,10 +1866,15 @@ public:
 };
 
 /* Implements widening floating-point reduction instructions.  */
-template<int UNSPEC>
+template<int UNSPEC, enum frm_op_type FRM_OP = NO_FRM>
 class widen_freducop : public function_base
 {
 public:
+  bool has_rounding_mode_operand_p () const override
+  {
+    return FRM_OP == HAS_FRM;
+  }
+
   bool apply_mask_policy_p () const override { return false; }
 
   rtx expand (function_expander &e) const override
@@ -2502,10 +2523,13 @@ static CONSTEXPR const vfwcvt_rtz_x<FIX> vfwcvt_rtz_x_obj;
 static CONSTEXPR const vfwcvt_rtz_x<UNSIGNED_FIX> vfwcvt_rtz_xu_obj;
 static CONSTEXPR const vfwcvt_f vfwcvt_f_obj;
 static CONSTEXPR const vfncvt_x<UNSPEC_VFCVT> vfncvt_x_obj;
+static CONSTEXPR const vfncvt_x<UNSPEC_VFCVT, HAS_FRM> vfncvt_x_frm_obj;
 static CONSTEXPR const vfncvt_x<UNSPEC_UNSIGNED_VFCVT> vfncvt_xu_obj;
+static CONSTEXPR const vfncvt_x<UNSPEC_UNSIGNED_VFCVT, HAS_FRM> vfncvt_xu_frm_obj;
 static CONSTEXPR const vfncvt_rtz_x<FIX> vfncvt_rtz_x_obj;
 static CONSTEXPR const vfncvt_rtz_x<UNSIGNED_FIX> vfncvt_rtz_xu_obj;
-static CONSTEXPR const vfncvt_f vfncvt_f_obj;
+static CONSTEXPR const vfncvt_f<NO_FRM> vfncvt_f_obj;
+static CONSTEXPR const vfncvt_f<HAS_FRM> vfncvt_f_frm_obj;
 static CONSTEXPR const vfncvt_rod_f vfncvt_rod_f_obj;
 static CONSTEXPR const reducop<PLUS> vredsum_obj;
 static CONSTEXPR const reducop<UMAX> vredmaxu_obj;
@@ -2518,11 +2542,14 @@ static CONSTEXPR const reducop<XOR> vredxor_obj;
 static CONSTEXPR const widen_reducop<UNSPEC_WREDUC_SUM> vwredsum_obj;
 static CONSTEXPR const widen_reducop<UNSPEC_WREDUC_USUM> vwredsumu_obj;
 static CONSTEXPR const freducop<UNSPEC_UNORDERED> vfredusum_obj;
+static CONSTEXPR const freducop<UNSPEC_UNORDERED, HAS_FRM> vfredusum_frm_obj;
 static CONSTEXPR const freducop<UNSPEC_ORDERED> vfredosum_obj;
+static CONSTEXPR const freducop<UNSPEC_ORDERED, HAS_FRM> vfredosum_frm_obj;
 static CONSTEXPR const reducop<SMAX> vfredmax_obj;
 static CONSTEXPR const reducop<SMIN> vfredmin_obj;
 static CONSTEXPR const widen_freducop<UNSPEC_UNORDERED> vfwredusum_obj;
 static CONSTEXPR const widen_freducop<UNSPEC_ORDERED> vfwredosum_obj;
+static CONSTEXPR const widen_freducop<UNSPEC_ORDERED, HAS_FRM> vfwredosum_frm_obj;
 static CONSTEXPR const vmv vmv_x_obj;
 static CONSTEXPR const vmv_s vmv_s_obj;
 static CONSTEXPR const vmv vfmv_f_obj;
@@ -2756,10 +2783,13 @@ BASE (vfwcvt_rtz_x)
 BASE (vfwcvt_rtz_xu)
 BASE (vfwcvt_f)
 BASE (vfncvt_x)
+BASE (vfncvt_x_frm)
 BASE (vfncvt_xu)
+BASE (vfncvt_xu_frm)
 BASE (vfncvt_rtz_x)
 BASE (vfncvt_rtz_xu)
 BASE (vfncvt_f)
+BASE (vfncvt_f_frm)
 BASE (vfncvt_rod_f)
 BASE (vredsum)
 BASE (vredmaxu)
@@ -2772,10 +2802,13 @@ BASE (vredxor)
 BASE (vwredsum)
 BASE (vwredsumu)
 BASE (vfredusum)
+BASE (vfredusum_frm)
 BASE (vfredosum)
+BASE (vfredosum_frm)
 BASE (vfredmax)
 BASE (vfredmin)
 BASE (vfwredosum)
+BASE (vfwredosum_frm)
 BASE (vfwredusum)
 BASE (vmv_x)
 BASE (vmv_s)
