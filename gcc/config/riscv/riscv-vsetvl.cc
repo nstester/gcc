@@ -1423,8 +1423,14 @@ static bool
 ge_sew_ratio_unavailable_p (const vector_insn_info &info1,
 			    const vector_insn_info &info2)
 {
-  if (!info2.demand_p (DEMAND_LMUL) && info2.demand_p (DEMAND_GE_SEW))
-    return info1.get_sew () < info2.get_sew ();
+  if (!info2.demand_p (DEMAND_LMUL))
+    {
+      if (info2.demand_p (DEMAND_GE_SEW))
+	return info1.get_sew () < info2.get_sew ();
+      /* Demand GE_SEW should be available for non-demand SEW.  */
+      else if (!info2.demand_p (DEMAND_SEW))
+	return false;
+    }
   return true;
 }
 
@@ -4377,7 +4383,7 @@ pass_vsetvl::global_eliminate_vsetvl_insn (const bb_info *bb) const
 
   unsigned int bb_index;
   sbitmap_iterator sbi;
-  rtx avl = get_avl (dem.get_insn ()->rtl ());
+  rtx avl = dem.get_avl ();
   hash_set<set_info *> sets
     = get_all_sets (dem.get_avl_source (), true, false, false);
   /* Condition 2: All VL/VTYPE available in are all compatible.  */
@@ -4401,7 +4407,10 @@ pass_vsetvl::global_eliminate_vsetvl_insn (const bb_info *bb) const
     {
       sbitmap avout = m_vector_manager->vector_avout[e->src->index];
       if (e->src == ENTRY_BLOCK_PTR_FOR_FN (cfun)
-	  || e->src == EXIT_BLOCK_PTR_FOR_FN (cfun) || bitmap_empty_p (avout))
+	  || e->src == EXIT_BLOCK_PTR_FOR_FN (cfun)
+	  || (unsigned int) e->src->index
+	       >= m_vector_manager->vector_block_infos.length ()
+	  || bitmap_empty_p (avout))
 	return false;
 
       EXECUTE_IF_SET_IN_BITMAP (avout, 0, bb_index, sbi)
