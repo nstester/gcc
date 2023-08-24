@@ -541,7 +541,6 @@ kf_memcpy_memmove::impl_call_pre (const call_details &cd) const
   const svalue *num_bytes_sval = cd.get_arg_svalue (2);
 
   region_model *model = cd.get_model ();
-  region_model_manager *mgr = cd.get_manager ();
 
   const region *dest_reg
     = model->deref_rvalue (dest_ptr_sval, cd.get_arg_tree (0), cd.get_ctxt ());
@@ -550,15 +549,10 @@ kf_memcpy_memmove::impl_call_pre (const call_details &cd) const
 
   cd.maybe_set_lhs (dest_ptr_sval);
 
-  const region *sized_src_reg
-    = mgr->get_sized_region (src_reg, NULL_TREE, num_bytes_sval);
-  const region *sized_dest_reg
-    = mgr->get_sized_region (dest_reg, NULL_TREE, num_bytes_sval);
-  const svalue *src_contents_sval
-    = model->get_store_value (sized_src_reg, cd.get_ctxt ());
-  model->check_for_poison (src_contents_sval, cd.get_arg_tree (1),
-			   sized_src_reg, cd.get_ctxt ());
-  model->set_value (sized_dest_reg, src_contents_sval, cd.get_ctxt ());
+  model->copy_bytes (dest_reg,
+		     src_reg, cd.get_arg_tree (1),
+		     num_bytes_sval,
+		     cd.get_ctxt ());
 }
 
 /* Handler for "memset" and "__builtin_memset".  */
@@ -1112,6 +1106,61 @@ public:
   /* Currently a no-op.  */
 };
 
+/* Handler for "strcat" and "__builtin_strcat_chk".  */
+
+class kf_strcat : public known_function
+{
+public:
+  kf_strcat (unsigned int num_args) : m_num_args (num_args) {}
+  bool matches_call_types_p (const call_details &cd) const final override
+  {
+    return (cd.num_args () == m_num_args
+	    && cd.arg_is_pointer_p (0)
+	    && cd.arg_is_pointer_p (1));
+  }
+
+  void impl_call_pre (const call_details &cd) const final override
+  {
+    region_model *model = cd.get_model ();
+    region_model_manager *mgr = cd.get_manager ();
+
+    const svalue *dest_sval = cd.get_arg_svalue (0);
+    const region *dest_reg = model->deref_rvalue (dest_sval, cd.get_arg_tree (0),
+						  cd.get_ctxt ());
+
+    const svalue *dst_strlen_sval
+      = cd.check_for_null_terminated_string_arg (0, false, nullptr);
+    if (!dst_strlen_sval)
+      {
+	if (cd.get_ctxt ())
+	  cd.get_ctxt ()->terminate_path ();
+	return;
+      }
+
+    const svalue *bytes_to_copy;
+    const svalue *num_src_bytes_read_sval
+      = cd.check_for_null_terminated_string_arg (1, true, &bytes_to_copy);
+    if (!num_src_bytes_read_sval)
+      {
+	if (cd.get_ctxt ())
+	  cd.get_ctxt ()->terminate_path ();
+	return;
+      }
+
+    cd.maybe_set_lhs (dest_sval);
+
+    const region *offset_reg
+      = mgr->get_offset_region (dest_reg, NULL_TREE, dst_strlen_sval);
+    model->write_bytes (offset_reg,
+			num_src_bytes_read_sval,
+			bytes_to_copy,
+			cd.get_ctxt ());
+  }
+
+private:
+  unsigned int m_num_args;
+};
+
 /* Handler for "strcpy" and "__builtin_strcpy_chk".  */
 
 class kf_strcpy : public known_function
@@ -1135,29 +1184,25 @@ void
 kf_strcpy::impl_call_pre (const call_details &cd) const
 {
   region_model *model = cd.get_model ();
-  region_model_manager *mgr = cd.get_manager ();
+  region_model_context *ctxt = cd.get_ctxt ();
 
   const svalue *dest_sval = cd.get_arg_svalue (0);
   const region *dest_reg = model->deref_rvalue (dest_sval, cd.get_arg_tree (0),
-					 cd.get_ctxt ());
-  const svalue *src_sval = cd.get_arg_svalue (1);
-  const region *src_reg = model->deref_rvalue (src_sval, cd.get_arg_tree (1),
-					cd.get_ctxt ());
-  const svalue *src_contents_sval = model->get_store_value (src_reg,
-							    cd.get_ctxt ());
-  cd.check_for_null_terminated_string_arg (1);
-
+						    ctxt);
+  /* strcpy returns the initial param.  */
   cd.maybe_set_lhs (dest_sval);
 
-  /* Try to get the string size if SRC_REG is a string_region.  */
-  const svalue *copied_bytes_sval = model->get_string_size (src_reg);
-  /* Otherwise, check if the contents of SRC_REG is a string.  */
-  if (copied_bytes_sval->get_kind () == SK_UNKNOWN)
-    copied_bytes_sval = model->get_string_size (src_contents_sval);
-
-  const region *sized_dest_reg
-    = mgr->get_sized_region (dest_reg, NULL_TREE, copied_bytes_sval);
-  model->set_value (sized_dest_reg, src_contents_sval, cd.get_ctxt ());
+  const svalue *bytes_to_copy;
+  if (const svalue *num_bytes_read_sval
+      = cd.check_for_null_terminated_string_arg (1, true, &bytes_to_copy))
+    {
+      model->write_bytes (dest_reg, num_bytes_read_sval, bytes_to_copy, ctxt);
+    }
+  else
+    {
+      if (cd.get_ctxt ())
+	cd.get_ctxt ()->terminate_path ();
+    }
 }
 
 /* Handler for "strdup" and "__builtin_strdup".  */
@@ -1198,16 +1243,10 @@ public:
   }
   void impl_call_pre (const call_details &cd) const final override
   {
-    if (const svalue *bytes_read = cd.check_for_null_terminated_string_arg (0))
-      if (bytes_read->get_kind () != SK_UNKNOWN)
+    if (const svalue *strlen_sval
+	  = cd.check_for_null_terminated_string_arg (0, false, nullptr))
+      if (strlen_sval->get_kind () != SK_UNKNOWN)
 	{
-	  region_model_manager *mgr = cd.get_manager ();
-	  /* strlen is (bytes_read - 1).  */
-	  const svalue *one = mgr->get_or_create_int_cst (size_type_node, 1);
-	  const svalue *strlen_sval = mgr->get_or_create_binop (size_type_node,
-								MINUS_EXPR,
-								bytes_read,
-								one);
 	  cd.maybe_set_lhs (strlen_sval);
 	  return;
 	}
@@ -1425,6 +1464,8 @@ register_known_functions (known_function_manager &kfm)
     kfm.add (BUILT_IN_SPRINTF, make_unique<kf_sprintf> ());
     kfm.add (BUILT_IN_STACK_RESTORE, make_unique<kf_stack_restore> ());
     kfm.add (BUILT_IN_STACK_SAVE, make_unique<kf_stack_save> ());
+    kfm.add (BUILT_IN_STRCAT, make_unique<kf_strcat> (2));
+    kfm.add (BUILT_IN_STRCAT_CHK, make_unique<kf_strcat> (3));
     kfm.add (BUILT_IN_STRCHR, make_unique<kf_strchr> ());
     kfm.add (BUILT_IN_STRCPY, make_unique<kf_strcpy> (2));
     kfm.add (BUILT_IN_STRCPY_CHK, make_unique<kf_strcpy> (3));
@@ -1439,6 +1480,7 @@ register_known_functions (known_function_manager &kfm)
   /* Known builtins and C standard library functions.  */
   {
     kfm.add ("memset", make_unique<kf_memset> ());
+    kfm.add ("strcat", make_unique<kf_strcat> (2));
     kfm.add ("strdup", make_unique<kf_strdup> ());
     kfm.add ("strndup", make_unique<kf_strndup> ());
   }

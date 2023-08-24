@@ -2794,35 +2794,6 @@ region_model::get_capacity (const region *reg) const
   return m_mgr->get_or_create_unknown_svalue (sizetype);
 }
 
-/* Return the string size, including the 0-terminator, if SVAL is a
-   constant_svalue holding a string.  Otherwise, return an unknown_svalue.  */
-
-const svalue *
-region_model::get_string_size (const svalue *sval) const
-{
-  tree cst = sval->maybe_get_constant ();
-  if (!cst || TREE_CODE (cst) != STRING_CST)
-    return m_mgr->get_or_create_unknown_svalue (size_type_node);
-
-  tree out = build_int_cst (size_type_node, TREE_STRING_LENGTH (cst));
-  return m_mgr->get_or_create_constant_svalue (out);
-}
-
-/* Return the string size, including the 0-terminator, if REG is a
-   string_region.  Otherwise, return an unknown_svalue.  */
-
-const svalue *
-region_model::get_string_size (const region *reg) const
-{
-  const string_region *str_reg = dyn_cast <const string_region *> (reg);
-  if (!str_reg)
-    return m_mgr->get_or_create_unknown_svalue (size_type_node);
-
-  tree cst = str_reg->get_string_cst ();
-  tree out = build_int_cst (size_type_node, TREE_STRING_LENGTH (cst));
-  return m_mgr->get_or_create_constant_svalue (out);
-}
-
 /* If CTXT is non-NULL, use it to warn about any problems accessing REG,
    using DIR to determine if this access is a read or write.
    Return TRUE if an OOB access was detected.
@@ -3339,27 +3310,10 @@ struct fragment
 	  switch (TREE_CODE (cst))
 	    {
 	    case STRING_CST:
-	      {
-		/* Look for the first 0 byte within STRING_CST
-		   from START_READ_OFFSET onwards.  */
-		const HOST_WIDE_INT num_bytes_to_search
-		  = std::min<HOST_WIDE_INT> ((TREE_STRING_LENGTH (cst)
-					      - rel_start_read_offset_hwi),
-					     available_bytes_hwi);
-		const char *start = (TREE_STRING_POINTER (cst)
-				     + rel_start_read_offset_hwi);
-		if (num_bytes_to_search >= 0)
-		  if (const void *p = memchr (start, 0,
-					      num_bytes_to_search))
-		    {
-		      *out_bytes_read = (const char *)p - start + 1;
-		      return tristate (true);
-		    }
-
-		*out_bytes_read = available_bytes;
-		return tristate (false);
-	      }
-	      break;
+	      return string_cst_has_null_terminator (cst,
+						     rel_start_read_offset_hwi,
+						     available_bytes_hwi,
+						     out_bytes_read);
 	    case INTEGER_CST:
 	      if (rel_start_read_offset_hwi == 0
 		  && integer_onep (TYPE_SIZE_UNIT (TREE_TYPE (cst))))
@@ -3386,10 +3340,72 @@ struct fragment
 	    }
 	}
 	break;
+
+      case SK_INITIAL:
+	{
+	  const initial_svalue *initial_sval = (const initial_svalue *)m_sval;
+	  const region *reg = initial_sval->get_region ();
+	  if (const string_region *string_reg = reg->dyn_cast_string_region ())
+	    {
+	      tree string_cst = string_reg->get_string_cst ();
+	      return string_cst_has_null_terminator (string_cst,
+						     rel_start_read_offset_hwi,
+						     available_bytes_hwi,
+						     out_bytes_read);
+	    }
+	  return tristate::TS_UNKNOWN;
+	}
+	break;
+
+      case SK_BITS_WITHIN:
+	{
+	  const bits_within_svalue *bits_within_sval
+	    = (const bits_within_svalue *)m_sval;
+	  byte_range bytes (0, 0);
+	  if (bits_within_sval->get_bits ().as_byte_range (&bytes))
+	    {
+	      const svalue *inner_sval = bits_within_sval->get_inner_svalue ();
+	      fragment f (byte_range
+			  (start_read_offset - bytes.get_start_bit_offset (),
+			   std::max<byte_size_t> (bytes.m_size_in_bytes,
+						  available_bytes)),
+			  inner_sval);
+	      return f.has_null_terminator (start_read_offset, out_bytes_read);
+	    }
+	}
+	break;
+
       default:
 	// TODO: it may be possible to handle other cases here.
-	return tristate::TS_UNKNOWN;
+	break;
       }
+    return tristate::TS_UNKNOWN;
+  }
+
+  static tristate
+  string_cst_has_null_terminator (tree string_cst,
+				  HOST_WIDE_INT rel_start_read_offset_hwi,
+				  HOST_WIDE_INT available_bytes_hwi,
+				  byte_offset_t *out_bytes_read)
+  {
+    /* Look for the first 0 byte within STRING_CST
+       from START_READ_OFFSET onwards.  */
+    const HOST_WIDE_INT num_bytes_to_search
+      = std::min<HOST_WIDE_INT> ((TREE_STRING_LENGTH (string_cst)
+				  - rel_start_read_offset_hwi),
+				 available_bytes_hwi);
+    const char *start = (TREE_STRING_POINTER (string_cst)
+			 + rel_start_read_offset_hwi);
+    if (num_bytes_to_search >= 0)
+      if (const void *p = memchr (start, 0,
+				  num_bytes_to_search))
+	{
+	  *out_bytes_read = (const char *)p - start + 1;
+	  return tristate (true);
+	}
+
+    *out_bytes_read = available_bytes_hwi;
+    return tristate (false);
   }
 
   byte_range m_byte_range;
@@ -3420,6 +3436,8 @@ public:
 	    if (concrete_key->get_byte_range (&fragment_bytes))
 	      m_fragments.safe_push (fragment (fragment_bytes, sval));
 	  }
+	else
+	  m_symbolic_bindings.safe_push (key);
       }
     m_fragments.qsort (fragment::cmp_ptrs);
   }
@@ -3440,8 +3458,14 @@ public:
     return false;
   }
 
+  bool has_symbolic_bindings_p () const
+  {
+    return !m_symbolic_bindings.is_empty ();
+  }
+
 private:
   auto_vec<fragment> m_fragments;
+  auto_vec<const binding_key *> m_symbolic_bindings;
 };
 
 /* Simulate reading the bytes at BYTES from BASE_REG.
@@ -3452,6 +3476,13 @@ region_model::get_store_bytes (const region *base_reg,
 			       const byte_range &bytes,
 			       region_model_context *ctxt) const
 {
+  /* Shortcut reading all of a string_region.  */
+  if (bytes.get_start_byte_offset () == 0)
+    if (const string_region *string_reg = base_reg->dyn_cast_string_region ())
+      if (bytes.m_size_in_bytes
+	  == TREE_STRING_LENGTH (string_reg->get_string_cst ()))
+	return m_mgr->get_or_create_initial_value (base_reg);
+
   const svalue *index_sval
     = m_mgr->get_or_create_int_cst (size_type_node,
 				    bytes.get_start_byte_offset ());
@@ -3525,14 +3556,14 @@ region_model::scan_for_null_terminator (const region *reg,
   if (offset.symbolic_p ())
     {
       if (out_sval)
-	*out_sval = m_mgr->get_or_create_unknown_svalue (NULL_TREE);
+	*out_sval = get_store_value (reg, nullptr);
       return m_mgr->get_or_create_unknown_svalue (size_type_node);
     }
   byte_offset_t src_byte_offset;
   if (!offset.get_concrete_byte_offset (&src_byte_offset))
     {
       if (out_sval)
-	*out_sval = m_mgr->get_or_create_unknown_svalue (NULL_TREE);
+	*out_sval = get_store_value (reg, nullptr);
       return m_mgr->get_or_create_unknown_svalue (size_type_node);
     }
   const byte_offset_t initial_src_byte_offset = src_byte_offset;
@@ -3574,7 +3605,7 @@ region_model::scan_for_null_terminator (const region *reg,
 	  if (is_terminated.is_unknown ())
 	    {
 	      if (out_sval)
-		*out_sval = m_mgr->get_or_create_unknown_svalue (NULL_TREE);
+		*out_sval = get_store_value (reg, nullptr);
 	      return m_mgr->get_or_create_unknown_svalue (size_type_node);
 	    }
 
@@ -3610,6 +3641,13 @@ region_model::scan_for_null_terminator (const region *reg,
   /* No binding for this base_region, or no binding at src_byte_offset
      (or a symbolic binding).  */
 
+  if (c.has_symbolic_bindings_p ())
+    {
+      if (out_sval)
+	*out_sval = get_store_value (reg, nullptr);
+      return m_mgr->get_or_create_unknown_svalue (size_type_node);
+    }
+
   /* TODO: the various special-cases seen in
      region_model::get_store_value.  */
 
@@ -3623,7 +3661,7 @@ region_model::scan_for_null_terminator (const region *reg,
   if (base_reg->can_have_initial_svalue_p ())
     {
       if (out_sval)
-	*out_sval = m_mgr->get_or_create_unknown_svalue (NULL_TREE);
+	*out_sval = get_store_value (reg, nullptr);
       return m_mgr->get_or_create_unknown_svalue (size_type_node);
     }
   else
@@ -3641,9 +3679,41 @@ region_model::scan_for_null_terminator (const region *reg,
    - the buffer pointed to has any uninitalized bytes before any 0-terminator
    - any of the reads aren't within the bounds of the underlying base region
 
-   Otherwise, return a svalue for the number of bytes read (strlen + 1),
-   and, if OUT_SVAL is non-NULL, write to *OUT_SVAL with an svalue
-   representing the content of the buffer up to and including the terminator.
+   Otherwise, return a svalue for strlen of the buffer (*not* including
+   the null terminator).
+
+   TODO: we should also complain if:
+   - the pointer is NULL (or could be).  */
+
+void
+region_model::check_for_null_terminated_string_arg (const call_details &cd,
+						    unsigned arg_idx)
+{
+  check_for_null_terminated_string_arg (cd,
+					arg_idx,
+					false, /* include_terminator */
+					nullptr); // out_sval
+}
+
+
+/* Check that argument ARG_IDX (0-based) to the call described by CD
+   is a pointer to a valid null-terminated string.
+
+   Simulate scanning through the buffer, reading until we find a 0 byte
+   (equivalent to calling strlen).
+
+   Complain and return NULL if:
+   - the buffer pointed to isn't null-terminated
+   - the buffer pointed to has any uninitalized bytes before any 0-terminator
+   - any of the reads aren't within the bounds of the underlying base region
+
+   Otherwise, return a svalue.  This will be the number of bytes read
+   (including the null terminator) if INCLUDE_TERMINATOR is true, or strlen
+   of the buffer (not including the null terminator) if it is false.
+
+   Also, when returning an svalue, if OUT_SVAL is non-NULL, write to
+   *OUT_SVAL with an svalue representing the content of the buffer up to
+   and including the terminator.
 
    TODO: we should also complain if:
    - the pointer is NULL (or could be).  */
@@ -3651,6 +3721,7 @@ region_model::scan_for_null_terminator (const region *reg,
 const svalue *
 region_model::check_for_null_terminated_string_arg (const call_details &cd,
 						    unsigned arg_idx,
+						    bool include_terminator,
 						    const svalue **out_sval)
 {
   class null_terminator_check_event : public custom_event
@@ -3748,10 +3819,26 @@ region_model::check_for_null_terminated_string_arg (const call_details &cd,
   const region *buf_reg
     = deref_rvalue (arg_sval, cd.get_arg_tree (arg_idx), &my_ctxt);
 
-  return scan_for_null_terminator (buf_reg,
-				   cd.get_arg_tree (arg_idx),
-				   out_sval,
-				   &my_ctxt);
+  if (const svalue *num_bytes_read_sval
+      = scan_for_null_terminator (buf_reg,
+				  cd.get_arg_tree (arg_idx),
+				  out_sval,
+				  &my_ctxt))
+    {
+      if (include_terminator)
+	return num_bytes_read_sval;
+      else
+	{
+	  /* strlen is (bytes_read - 1).  */
+	  const svalue *one = m_mgr->get_or_create_int_cst (size_type_node, 1);
+	  return m_mgr->get_or_create_binop (size_type_node,
+					     MINUS_EXPR,
+					     num_bytes_read_sval,
+					     one);
+	}
+    }
+  else
+    return nullptr;
 }
 
 /* Remove all bindings overlapping REG within the store.  */
@@ -3784,6 +3871,56 @@ void
 region_model::zero_fill_region (const region *reg)
 {
   m_store.zero_fill_region (m_mgr->get_store_manager(), reg);
+}
+
+/* Copy NUM_BYTES_SVAL of SVAL to DEST_REG.
+   Use CTXT to report any warnings associated with the copy
+   (e.g. out-of-bounds writes).  */
+
+void
+region_model::write_bytes (const region *dest_reg,
+			   const svalue *num_bytes_sval,
+			   const svalue *sval,
+			   region_model_context *ctxt)
+{
+  const region *sized_dest_reg
+    = m_mgr->get_sized_region (dest_reg, NULL_TREE, num_bytes_sval);
+  set_value (sized_dest_reg, sval, ctxt);
+}
+
+/* Read NUM_BYTES_SVAL from SRC_REG.
+   Use CTXT to report any warnings associated with the copy
+   (e.g. out-of-bounds reads, copying of uninitialized values, etc).  */
+
+const svalue *
+region_model::read_bytes (const region *src_reg,
+			  tree src_ptr_expr,
+			  const svalue *num_bytes_sval,
+			  region_model_context *ctxt) const
+{
+  const region *sized_src_reg
+    = m_mgr->get_sized_region (src_reg, NULL_TREE, num_bytes_sval);
+  const svalue *src_contents_sval = get_store_value (sized_src_reg, ctxt);
+  check_for_poison (src_contents_sval, src_ptr_expr,
+		    sized_src_reg, ctxt);
+  return src_contents_sval;
+}
+
+/* Copy NUM_BYTES_SVAL bytes from SRC_REG to DEST_REG.
+   Use CTXT to report any warnings associated with the copy
+   (e.g. out-of-bounds reads/writes, copying of uninitialized values,
+   etc).  */
+
+void
+region_model::copy_bytes (const region *dest_reg,
+			  const region *src_reg,
+			  tree src_ptr_expr,
+			  const svalue *num_bytes_sval,
+			  region_model_context *ctxt)
+{
+  const svalue *data_sval
+    = read_bytes (src_reg, src_ptr_expr, num_bytes_sval, ctxt);
+  write_bytes (dest_reg, num_bytes_sval, data_sval, ctxt);
 }
 
 /* Mark REG as having unknown content.  */

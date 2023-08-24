@@ -367,6 +367,19 @@ class region_model
   void purge_region (const region *reg);
   void fill_region (const region *reg, const svalue *sval);
   void zero_fill_region (const region *reg);
+  void write_bytes (const region *dest_reg,
+		    const svalue *num_bytes_sval,
+		    const svalue *sval,
+		    region_model_context *ctxt);
+  const svalue *read_bytes (const region *src_reg,
+			    tree src_ptr_expr,
+			    const svalue *num_bytes_sval,
+			    region_model_context *ctxt) const;
+  void copy_bytes (const region *dest_reg,
+		   const region *src_reg,
+		   tree src_ptr_expr,
+		   const svalue *num_bytes_sval,
+		   region_model_context *ctxt);
   void mark_region_as_unknown (const region *reg, uncertainty_t *uncertainty);
 
   tristate eval_condition (const svalue *lhs,
@@ -465,9 +478,6 @@ class region_model
 
   const svalue *get_capacity (const region *reg) const;
 
-  const svalue *get_string_size (const svalue *sval) const;
-  const svalue *get_string_size (const region *reg) const;
-
   bool replay_call_summary (call_summary_replay &r,
 			    const region_model &summary);
 
@@ -509,10 +519,14 @@ class region_model
 			       const svalue *sval_hint,
 			       region_model_context *ctxt) const;
 
+  void
+  check_for_null_terminated_string_arg (const call_details &cd,
+					unsigned idx);
   const svalue *
   check_for_null_terminated_string_arg (const call_details &cd,
 					unsigned idx,
-					const svalue **out_sval = nullptr);
+					bool include_terminator,
+					const svalue **out_sval);
 
 private:
   const region *get_lvalue_1 (path_var pv, region_model_context *ctxt) const;
