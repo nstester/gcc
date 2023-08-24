@@ -65,6 +65,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "cfgloop.h"
 #include "cfgrtl.h"
 #include "sel-sched.h"
+#include "sched-int.h"
 #include "fold-const.h"
 #include "gimple-iterator.h"
 #include "gimple-expr.h"
@@ -4954,7 +4955,8 @@ riscv_print_operand (FILE *file, rtx op, int letter)
 	    else if (satisfies_constraint_Wc0 (op))
 	      asm_fprintf (file, "0");
 	    else if (satisfies_constraint_vi (op)
-		     || satisfies_constraint_vj (op))
+		     || satisfies_constraint_vj (op)
+		     || satisfies_constraint_vk (op))
 	      asm_fprintf (file, "%wd", INTVAL (elt));
 	    else
 	      output_operand_lossage ("invalid vector constant");
@@ -7095,6 +7097,10 @@ riscv_option_override (void)
     sorry (
       "Current RISC-V GCC cannot support VLEN greater than 4096bit for 'V' Extension");
 
+  SET_OPTION_IF_UNSET (&global_options, &global_options_set,
+		       param_sched_pressure_algorithm,
+		       SCHED_PRESSURE_MODEL);
+
   /* Convert -march to a chunks count.  */
   riscv_vector_chunks = riscv_convert_vector_bits ();
 }
@@ -8419,24 +8425,6 @@ riscv_vectorize_vec_perm_const (machine_mode vmode, machine_mode op_mode,
   return false;
 }
 
-/* Implement TARGET_PREFERRED_ELSE_VALUE.  For binary operations,
-   prefer to use the first arithmetic operand as the else value if
-   the else value doesn't matter, since that exactly matches the RVV
-   destructive merging form.  For ternary operations we could either
-   pick the first operand and use VMADD-like instructions or the last
-   operand and use VMACC-like instructions; the latter seems more
-   natural.
-
-   TODO: Currently, the return value is not ideal for RVV since it will
-   let VSETVL PASS use MU or TU. We will suport undefine value that allows
-   VSETVL PASS use TA/MA in the future.  */
-
-static tree
-riscv_preferred_else_value (unsigned, tree, unsigned int nops, tree *ops)
-{
-  return nops == 3 ? ops[2] : ops[0];
-}
-
 static bool
 riscv_frame_pointer_required (void)
 {
@@ -8746,9 +8734,6 @@ riscv_frame_pointer_required (void)
 
 #undef TARGET_VECTORIZE_VEC_PERM_CONST
 #define TARGET_VECTORIZE_VEC_PERM_CONST riscv_vectorize_vec_perm_const
-
-#undef TARGET_PREFERRED_ELSE_VALUE
-#define TARGET_PREFERRED_ELSE_VALUE riscv_preferred_else_value
 
 #undef TARGET_FRAME_POINTER_REQUIRED
 #define TARGET_FRAME_POINTER_REQUIRED riscv_frame_pointer_required
