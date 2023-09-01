@@ -747,3 +747,239 @@
                                   riscv_vector::BINARY_OP, operands);
   DONE;
 })
+
+;; Combine sign_extend/zero_extend(vf2) and vcond_mask
+(define_insn_and_split "*cond_<optab><v_double_trunc><mode>"
+  [(set (match_operand:VWEXTI 0 "register_operand")
+        (if_then_else:VWEXTI
+          (match_operand:<VM> 1 "register_operand")
+          (any_extend:VWEXTI (match_operand:<V_DOUBLE_TRUNC> 2 "register_operand"))
+          (match_operand:VWEXTI 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred_vf2 (<CODE>, <MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine sign_extend/zero_extend(vf4) and vcond_mask
+(define_insn_and_split "*cond_<optab><v_quad_trunc><mode>"
+  [(set (match_operand:VQEXTI 0 "register_operand")
+        (if_then_else:VQEXTI
+          (match_operand:<VM> 1 "register_operand")
+          (any_extend:VQEXTI (match_operand:<V_QUAD_TRUNC> 2 "register_operand"))
+          (match_operand:VQEXTI 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred_vf4 (<CODE>, <MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine sign_extend/zero_extend(vf8) and vcond_mask
+(define_insn_and_split "*cond_<optab><v_oct_trunc><mode>"
+  [(set (match_operand:VOEXTI 0 "register_operand")
+        (if_then_else:VOEXTI
+          (match_operand:<VM> 1 "register_operand")
+          (any_extend:VOEXTI (match_operand:<V_OCT_TRUNC> 2 "register_operand"))
+          (match_operand:VOEXTI 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred_vf8 (<CODE>, <MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine trunc(vf2) + vcond_mask
+(define_insn_and_split "*cond_trunc<mode><v_double_trunc>"
+  [(set (match_operand:<V_DOUBLE_TRUNC> 0 "register_operand")
+    (if_then_else:<V_DOUBLE_TRUNC>
+          (match_operand:<VM> 1 "register_operand")
+          (truncate:<V_DOUBLE_TRUNC>
+            (match_operand:VWEXTI 2 "register_operand"))
+          (match_operand:<V_DOUBLE_TRUNC> 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred_trunc (<MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine FP sign_extend/zero_extend(vf2) and vcond_mask
+(define_insn_and_split "*cond_extend<v_double_trunc><mode>"
+  [(set (match_operand:VWEXTF_ZVFHMIN 0 "register_operand")
+        (if_then_else:VWEXTF_ZVFHMIN
+          (match_operand:<VM> 1 "register_operand")
+          (float_extend:VWEXTF_ZVFHMIN (match_operand:<V_DOUBLE_TRUNC> 2 "register_operand"))
+          (match_operand:VWEXTF_ZVFHMIN 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred_extend (<MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine FP trunc(vf2) + vcond_mask
+(define_insn_and_split "*cond_trunc<mode><v_double_trunc>"
+  [(set (match_operand:<V_DOUBLE_TRUNC> 0 "register_operand")
+    (if_then_else:<V_DOUBLE_TRUNC>
+          (match_operand:<VM> 1 "register_operand")
+          (float_truncate:<V_DOUBLE_TRUNC>
+            (match_operand:VWEXTF_ZVFHMIN 2 "register_operand"))
+          (match_operand:<V_DOUBLE_TRUNC> 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred_trunc (<MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine convert(FP->INT) + vcond_mask
+(define_insn_and_split "*cond_<optab><mode><vconvert>"
+  [(set (match_operand:<VCONVERT> 0 "register_operand")
+        (if_then_else:<VCONVERT>
+          (match_operand:<VM> 1 "register_operand")
+          (any_fix:<VCONVERT>
+            (match_operand:VF 2 "register_operand"))
+          (match_operand:<VCONVERT> 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred (<CODE>, <MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine convert(INT->FP) + vcond_mask
+(define_insn_and_split "*cond_<float_cvt><vconvert><mode>"
+  [(set (match_operand:VF 0 "register_operand")
+        (if_then_else:VF
+          (match_operand:<VM> 1 "register_operand")
+          (any_float:VF
+            (match_operand:<VCONVERT> 2 "register_operand"))
+          (match_operand:VF 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred (<CODE>, <MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine convert(FP->2xINT) + vcond_mask
+(define_insn_and_split "*cond_<optab><vnconvert><mode>"
+  [(set (match_operand:VWCONVERTI 0 "register_operand")
+        (if_then_else:VWCONVERTI
+          (match_operand:<VM> 1 "register_operand")
+	  (any_fix:VWCONVERTI
+	    (match_operand:<VNCONVERT> 2 "register_operand"))
+          (match_operand:VWCONVERTI 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred_widen (<CODE>, <MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine convert(INT->2xFP) + vcond_mask
+(define_insn_and_split "*cond_<float_cvt><vnconvert><mode>"
+  [(set (match_operand:VF 0 "register_operand")
+        (if_then_else:VF
+          (match_operand:<VM> 1 "register_operand")
+          (any_float:VF
+            (match_operand:<VNCONVERT> 2 "register_operand"))
+          (match_operand:VF 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred_widen (<CODE>, <MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine convert(2xFP->INT) + vcond_mask
+(define_insn_and_split "*cond_<optab><mode><vnconvert>"
+  [(set (match_operand:<VNCONVERT> 0 "register_operand")
+        (if_then_else:<VNCONVERT>
+          (match_operand:<VM> 1 "register_operand")
+          (any_fix:<VNCONVERT>
+            (match_operand:VF 2 "register_operand"))
+          (match_operand:<VNCONVERT> 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred_narrow (<CODE>, <MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})
+
+;; Combine convert(2xINT->FP) + vcond_mask
+(define_insn_and_split "*cond_<float_cvt><mode><vnconvert>2"
+  [(set (match_operand:<VNCONVERT> 0 "register_operand")
+        (if_then_else:<VNCONVERT>
+          (match_operand:<VM> 1 "register_operand")
+	  (any_float:<VNCONVERT>
+	    (match_operand:VWCONVERTI 2 "register_operand"))
+          (match_operand:<VNCONVERT> 3 "register_operand")))]
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  insn_code icode = code_for_pred_narrow (<CODE>, <MODE>mode);
+  rtx ops[] = {operands[0], operands[1], operands[2], operands[3],
+               gen_int_mode (GET_MODE_NUNITS (<MODE>mode), Pmode)};
+  riscv_vector::expand_cond_len_unop (icode, ops);
+  DONE;
+})

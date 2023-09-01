@@ -633,22 +633,28 @@
   [(set_attr "type" "vext")
    (set_attr "mode" "<MODE>")])
 
-(define_expand "<optab><v_quad_trunc><mode>2"
+(define_insn_and_split "<optab><v_quad_trunc><mode>2"
   [(set (match_operand:VQEXTI 0 "register_operand")
     (any_extend:VQEXTI
      (match_operand:<V_QUAD_TRUNC> 1 "register_operand")))]
-  "TARGET_VECTOR"
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
 {
   insn_code icode = code_for_pred_vf4 (<CODE>, <MODE>mode);
   riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, operands);
   DONE;
 })
 
-(define_expand "<optab><v_oct_trunc><mode>2"
+(define_insn_and_split "<optab><v_oct_trunc><mode>2"
   [(set (match_operand:VOEXTI 0 "register_operand")
     (any_extend:VOEXTI
      (match_operand:<V_OCT_TRUNC> 1 "register_operand")))]
-  "TARGET_VECTOR"
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
 {
   insn_code icode = code_for_pred_vf8 (<CODE>, <MODE>mode);
   riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, operands);
@@ -687,13 +693,8 @@
   "TARGET_VECTOR"
 {
   rtx half = gen_reg_rtx (<V_DOUBLE_TRUNC>mode);
-  rtx opshalf[] = {half, operands[1]};
-  insn_code icode = code_for_pred_trunc (<MODE>mode);
-  riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, opshalf);
-
-  rtx ops[] = {operands[0], half};
-  icode = code_for_pred_trunc (<V_DOUBLE_TRUNC>mode);
-  riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, ops);
+  emit_insn (gen_trunc<mode><v_double_trunc>2 (half, operands[1]));
+  emit_insn (gen_trunc<v_double_trunc><v_quad_trunc>2 (operands[0], half));
   DONE;
 })
 
@@ -707,19 +708,9 @@
      (match_operand:VOEXTI 1 "register_operand")))]
   "TARGET_VECTOR"
 {
-  rtx half = gen_reg_rtx (<V_DOUBLE_TRUNC>mode);
-  rtx opshalf[] = {half, operands[1]};
-  insn_code icode = code_for_pred_trunc (<MODE>mode);
-  riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, opshalf);
-
   rtx quarter = gen_reg_rtx (<V_QUAD_TRUNC>mode);
-  rtx opsquarter[] = {quarter, half};
-  icode = code_for_pred_trunc (<V_DOUBLE_TRUNC>mode);
-  riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, opsquarter);
-
-  rtx ops[] = {operands[0], quarter};
-  icode = code_for_pred_trunc (<V_QUAD_TRUNC>mode);
-  riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, ops);
+  emit_insn (gen_trunc<mode><v_quad_trunc>2 (quarter, operands[1]));
+  emit_insn (gen_trunc<v_quad_trunc><v_oct_trunc>2 (operands[0], quarter));
   DONE;
 })
 
@@ -751,13 +742,8 @@
   "TARGET_VECTOR && (TARGET_ZVFHMIN || TARGET_ZVFH)"
 {
   rtx dblw = gen_reg_rtx (<V_DOUBLE_TRUNC>mode);
-  insn_code icode = code_for_pred_extend (<V_DOUBLE_TRUNC>mode);
-  rtx ops1[] = {dblw, operands[1]};
-  riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, ops1);
-
-  icode = code_for_pred_extend (<MODE>mode);
-  rtx ops2[] = {operands[0], dblw};
-  riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, ops2);
+  emit_insn (gen_extend<v_quad_trunc><v_double_trunc>2 (dblw, operands[1]));
+  emit_insn (gen_extend<v_double_trunc><mode>2 (operands[0], dblw));
   DONE;
 })
 
@@ -800,9 +786,7 @@
   insn_code icode = code_for_pred_rod_trunc (<MODE>mode);
   riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, opshalf);
 
-  rtx ops[] = {operands[0], half};
-  icode = code_for_pred_trunc (<V_DOUBLE_TRUNC>mode);
-  riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP_FRM_DYN, ops);
+  emit_insn (gen_trunc<v_double_trunc><v_quad_trunc>2 (operands[0], half));
   DONE;
 })
 
@@ -819,11 +803,14 @@
 ;; - vfcvt.rtz.x.f.v
 ;; -------------------------------------------------------------------------
 
-(define_expand "<optab><mode><vconvert>2"
+(define_insn_and_split "<optab><mode><vconvert>2"
   [(set (match_operand:<VCONVERT> 0 "register_operand")
 	(any_fix:<VCONVERT>
 	  (match_operand:VF 1 "register_operand")))]
-  "TARGET_VECTOR"
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
 {
   insn_code icode = code_for_pred (<CODE>, <MODE>mode);
   riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, operands);
@@ -838,11 +825,14 @@
 ;; - vfcvt.f.x.v
 ;; -------------------------------------------------------------------------
 
-(define_expand "<float_cvt><vconvert><mode>2"
+(define_insn_and_split "<float_cvt><vconvert><mode>2"
   [(set (match_operand:VF 0 "register_operand")
 	(any_float:VF
 	  (match_operand:<VCONVERT> 1 "register_operand")))]
-  "TARGET_VECTOR"
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
 {
   insn_code icode = code_for_pred (<CODE>, <MODE>mode);
   riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP_FRM_DYN, operands);
@@ -860,11 +850,14 @@
 ;; - vfwcvt.rtz.xu.f.v
 ;; - vfwcvt.rtz.x.f.v
 ;; -------------------------------------------------------------------------
-(define_expand "<optab><vnconvert><mode>2"
+(define_insn_and_split "<optab><vnconvert><mode>2"
   [(set (match_operand:VWCONVERTI 0 "register_operand")
 	(any_fix:VWCONVERTI
 	  (match_operand:<VNCONVERT> 1 "register_operand")))]
-  "TARGET_VECTOR"
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
 {
   insn_code icode = code_for_pred_widen (<CODE>, <MODE>mode);
   riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, operands);
@@ -878,11 +871,14 @@
 ;; - vfwcvt.f.xu.v
 ;; - vfwcvt.f.x.v
 ;; -------------------------------------------------------------------------
-(define_expand "<float_cvt><vnconvert><mode>2"
+(define_insn_and_split "<float_cvt><vnconvert><mode>2"
   [(set (match_operand:VF 0 "register_operand")
 	(any_float:VF
 	  (match_operand:<VNCONVERT> 1 "register_operand")))]
-  "TARGET_VECTOR"
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
 {
   insn_code icode = code_for_pred_widen (<CODE>, <MODE>mode);
   riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, operands);
@@ -896,11 +892,14 @@
 ;; - vfncvt.rtz.xu.f.v
 ;; - vfncvt.rtz.x.f.v
 ;; -------------------------------------------------------------------------
-(define_expand "<optab><mode><vnconvert>2"
+(define_insn_and_split "<optab><mode><vnconvert>2"
   [(set (match_operand:<VNCONVERT> 0 "register_operand")
 	(any_fix:<VNCONVERT>
 	  (match_operand:VF 1 "register_operand")))]
-  "TARGET_VECTOR"
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
 {
   insn_code icode = code_for_pred_narrow (<CODE>, <MODE>mode);
   riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP, operands);
@@ -914,11 +913,14 @@
 ;; - vfncvt.f.xu.w
 ;; - vfncvt.f.x.w
 ;; -------------------------------------------------------------------------
-(define_expand "<float_cvt><mode><vnconvert>2"
+(define_insn_and_split "<float_cvt><mode><vnconvert>2"
   [(set (match_operand:<VNCONVERT> 0 "register_operand")
 	(any_float:<VNCONVERT>
 	  (match_operand:VWCONVERTI 1 "register_operand")))]
-  "TARGET_VECTOR"
+  "TARGET_VECTOR && can_create_pseudo_p ()"
+  "#"
+  "&& 1"
+  [(const_int 0)]
 {
   insn_code icode = code_for_pred_narrow (<CODE>, <MODE>mode);
   riscv_vector::emit_vlmax_insn (icode, riscv_vector::UNARY_OP_FRM_DYN, operands);
@@ -1587,7 +1589,8 @@
    (match_operand 5 "const_0_operand")]
   "TARGET_VECTOR"
 {
-  riscv_vector::expand_cond_len_unop (<CODE>, operands);
+  insn_code icode = code_for_pred (<CODE>, <MODE>mode);
+  riscv_vector::expand_cond_len_unop (icode, operands);
   DONE;
 })
 
@@ -1624,7 +1627,8 @@
    (match_operand 5 "const_0_operand")]
   "TARGET_VECTOR"
 {
-  riscv_vector::expand_cond_len_unop (<CODE>, operands);
+  insn_code icode = code_for_pred (<CODE>, <MODE>mode);
+  riscv_vector::expand_cond_len_unop (icode, operands);
   DONE;
 })
 
@@ -1663,7 +1667,8 @@
    (match_operand 6 "const_0_operand")]
   "TARGET_VECTOR"
 {
-  riscv_vector::expand_cond_len_binop (<CODE>, operands);
+  insn_code icode = code_for_pred (<CODE>, <MODE>mode);
+  riscv_vector::expand_cond_len_binop (icode, operands);
   DONE;
 })
 
@@ -1703,7 +1708,8 @@
    (match_operand 6 "const_0_operand")]
   "TARGET_VECTOR"
 {
-  riscv_vector::expand_cond_len_binop (<CODE>, operands);
+  insn_code icode = code_for_pred (<CODE>, <MODE>mode);
+  riscv_vector::expand_cond_len_binop (icode, operands);
   DONE;
 })
 
@@ -1743,7 +1749,8 @@
    (match_operand 6 "const_0_operand")]
   "TARGET_VECTOR"
 {
-  riscv_vector::expand_cond_len_binop (<CODE>, operands);
+  insn_code icode = code_for_pred (<CODE>, <MODE>mode);
+  riscv_vector::expand_cond_len_binop (icode, operands);
   DONE;
 })
 
@@ -1781,7 +1788,8 @@
    (match_operand 6 "const_0_operand")]
   "TARGET_VECTOR"
 {
-  riscv_vector::expand_cond_len_binop (<CODE>, operands);
+  insn_code icode = code_for_pred (<CODE>, <MODE>mode);
+  riscv_vector::expand_cond_len_binop (icode, operands);
   DONE;
 })
 
