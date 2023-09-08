@@ -4414,7 +4414,7 @@ riscv_pass_in_vector_p (const_tree type)
 {
   static int warned = 0;
 
-  if (type && riscv_v_ext_mode_p (TYPE_MODE (type)) && !warned)
+  if (type && riscv_vector::lookup_vector_type_attribute (type) && !warned)
     {
       warning (OPT_Wpsabi,
 	       "ABI for the vector type is currently in experimental stage and "
@@ -7548,7 +7548,7 @@ riscv_hard_regno_nregs (unsigned int regno, machine_mode mode)
   /* For VLS modes, we allocate registers according to TARGET_MIN_VLEN.  */
   if (riscv_v_ext_vls_mode_p (mode))
     {
-      int size = GET_MODE_SIZE (mode).to_constant ();
+      int size = GET_MODE_BITSIZE (mode).to_constant ();
       if (size < TARGET_MIN_VLEN)
 	return 1;
       else
