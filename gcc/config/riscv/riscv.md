@@ -316,6 +316,9 @@
 ;; condmove	conditional moves
 ;; cbo    cache block instructions
 ;; crypto cryptography instructions
+;; pushpop    zc push and pop instructions
+;; mvpair    zc move pair instructions
+;; zicond    zicond instructions
 ;; Classification of RVV instructions which will be added to each RVV .md pattern and used by scheduler.
 ;; rdvlenb     vector byte length vlenb csrr read
 ;; rdvl        vector length vl csrr read
@@ -425,8 +428,8 @@
    mtc,mfc,const,arith,logical,shift,slt,imul,idiv,move,fmove,fadd,fmul,
    fmadd,fdiv,fcmp,fcvt,fsqrt,multi,auipc,sfb_alu,nop,trap,ghost,bitmanip,
    rotate,clmul,min,max,minu,maxu,clz,ctz,cpop,
-   atomic,condmove,cbo,crypto,rdvlenb,rdvl,wrvxrm,wrfrm,rdfrm,vsetvl,
-   vlde,vste,vldm,vstm,vlds,vsts,
+   atomic,condmove,cbo,crypto,pushpop,mvpair,zicond,rdvlenb,rdvl,wrvxrm,wrfrm,
+   rdfrm,vsetvl,vlde,vste,vldm,vstm,vlds,vsts,
    vldux,vldox,vstux,vstox,vldff,vldr,vstr,
    vlsegde,vssegte,vlsegds,vssegts,vlsegdux,vlsegdox,vssegtux,vssegtox,vlsegdff,
    vialu,viwalu,vext,vicalu,vshift,vnshift,vicmp,viminmax,
@@ -2225,6 +2228,7 @@
   "TARGET_HARD_FLOAT && !TARGET_64BIT && TARGET_ZFA"
   "fmv.x.w\t%0,%1"
   [(set_attr "move_type" "fmove")
+   (set_attr "type" "fmove")
    (set_attr "mode" "DF")])
 
 
@@ -2237,6 +2241,7 @@
   "TARGET_HARD_FLOAT && !TARGET_64BIT && TARGET_ZFA"
   "fmvh.x.d\t%0,%1"
   [(set_attr "move_type" "fmove")
+   (set_attr "type" "fmove")
    (set_attr "mode" "DF")])
 
 (define_insn "movdfsisi3_rv32"
@@ -2249,6 +2254,7 @@
   "TARGET_HARD_FLOAT && !TARGET_64BIT && TARGET_ZFA"
   "fmvp.d.x\t%0,%2,%1"
   [(set_attr "move_type" "fmove")
+   (set_attr "type" "fmove")
    (set_attr "mode" "DF")])
 
 (define_split
