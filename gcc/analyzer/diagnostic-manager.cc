@@ -516,7 +516,7 @@ process_worklist_item (feasible_worklist *worklist,
 	}
 
       feasibility_state succ_state (fnode->get_state ());
-      rejected_constraint *rc = NULL;
+      std::unique_ptr<rejected_constraint> rc;
       if (succ_state.maybe_update_for_edge (logger, succ_eedge, &rc))
 	{
 	  gcc_assert (rc == NULL);
@@ -560,7 +560,7 @@ process_worklist_item (feasible_worklist *worklist,
 	  gcc_assert (rc);
 	  fg->add_feasibility_problem (fnode,
 				       succ_eedge,
-				       rc);
+				       std::move (rc));
 
 	  /* Give up if there have been too many infeasible edges.  */
 	  if (fg->get_num_infeasible ()
@@ -966,6 +966,14 @@ compatible_epath_p (const exploded_path *lhs_path,
       /* A superedge was found for only one of the two paths.  */
       return false;
     }
+
+  /* A superedge was found for only one of the two paths.  */
+  if (lhs_eedge_idx >= 0 || rhs_eedge_idx >= 0)
+    return false;
+
+  /* Both paths were drained up entirely.
+     No discriminant was found.  */
+  return true;
 }
 
 
