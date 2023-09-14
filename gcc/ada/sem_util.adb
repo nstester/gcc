@@ -16509,8 +16509,13 @@ package body Sem_Util is
             --  False (it could be a function selector in a prefix form call
             --  occurring in an iterator specification).
 
-            if Ekind (Entity (Selector_Name (Object))) not in
-                 E_Component | E_Discriminant
+            if (Present (Entity (Selector_Name (Object)))
+                  and then Ekind (Entity (Selector_Name (Object))) not in
+                             E_Component | E_Discriminant)
+              or else
+                (Inside_A_Generic
+                   and then Nkind (Parent (Selector_Name (Object)))
+                              = N_Function_Call)
             then
                return False;
             end if;
@@ -22575,7 +22580,9 @@ package body Sem_Util is
                      Ityp : Entity_Id;
 
                   begin
-                     if Is_Array_Type (Comp_Type) then
+                     if Present (Comp_Type)
+                       and then Is_Array_Type (Comp_Type)
+                     then
                         Indx := First_Index (Comp_Type);
 
                         while Present (Indx) loop
