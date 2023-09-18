@@ -23990,8 +23990,7 @@ try_class_unification (tree tparms, tree targs, tree parm, tree arg,
     return NULL_TREE;
   else if (TREE_CODE (parm) == BOUND_TEMPLATE_TEMPLATE_PARM)
     /* Matches anything.  */;
-  else if (most_general_template (CLASSTYPE_TI_TEMPLATE (arg))
-	   != most_general_template (CLASSTYPE_TI_TEMPLATE (parm)))
+  else if (CLASSTYPE_TI_TEMPLATE (arg) != CLASSTYPE_TI_TEMPLATE (parm))
     return NULL_TREE;
 
   /* We need to make a new template argument vector for the call to
@@ -24032,8 +24031,10 @@ try_class_unification (tree tparms, tree targs, tree parm, tree arg,
   if (TREE_CODE (parm) == BOUND_TEMPLATE_TEMPLATE_PARM)
     err = unify_bound_ttp_args (tparms, targs, parm, arg, explain_p);
   else
-    err = unify (tparms, targs, CLASSTYPE_TI_ARGS (parm),
-		 CLASSTYPE_TI_ARGS (arg), UNIFY_ALLOW_NONE, explain_p);
+    err = unify (tparms, targs,
+		 INNERMOST_TEMPLATE_ARGS (CLASSTYPE_TI_ARGS (parm)),
+		 INNERMOST_TEMPLATE_ARGS (CLASSTYPE_TI_ARGS (arg)),
+		 UNIFY_ALLOW_NONE, explain_p);
 
   return err ? NULL_TREE : arg;
 }
@@ -24559,7 +24560,8 @@ unify (tree tparms, tree targs, tree parm, tree arg, int strict,
      even if ARG == PARM, since we won't record unifications for the
      template parameters.  We might need them if we're trying to
      figure out which of two things is more specialized.  */
-  if (arg == parm && !uses_template_parms (parm))
+  if (arg == parm
+      && (DECL_P (parm) || !uses_template_parms (parm)))
     return unify_success (explain_p);
 
   /* Handle init lists early, so the rest of the function can assume
@@ -25158,8 +25160,13 @@ unify (tree tparms, tree targs, tree parm, tree arg, int strict,
 	    /* There's no chance of unification succeeding.  */
 	    return unify_type_mismatch (explain_p, parm, arg);
 
-	  return unify (tparms, targs, CLASSTYPE_TI_ARGS (parm),
-			CLASSTYPE_TI_ARGS (t), UNIFY_ALLOW_NONE, explain_p);
+	  if (PRIMARY_TEMPLATE_P (CLASSTYPE_TI_TEMPLATE (t)))
+	    return unify (tparms, targs,
+			  INNERMOST_TEMPLATE_ARGS (CLASSTYPE_TI_ARGS (parm)),
+			  INNERMOST_TEMPLATE_ARGS (CLASSTYPE_TI_ARGS (t)),
+			  UNIFY_ALLOW_NONE, explain_p);
+	  else
+	    return unify_success (explain_p);
 	}
       else if (!same_type_ignoring_top_level_qualifiers_p (parm, arg))
 	return unify_type_mismatch (explain_p, parm, arg);
@@ -25278,11 +25285,8 @@ unify (tree tparms, tree targs, tree parm, tree arg, int strict,
 		    strict, explain_p);
 
     case CONST_DECL:
-      if (DECL_TEMPLATE_PARM_P (parm))
-	return unify (tparms, targs, DECL_INITIAL (parm), arg, strict, explain_p);
-      if (arg != scalar_constant_value (parm))
-	return unify_template_argument_mismatch (explain_p, parm, arg);
-      return unify_success (explain_p);
+      /* CONST_DECL should already have been folded to its DECL_INITIAL.  */
+      gcc_unreachable ();
 
     case FIELD_DECL:
     case TEMPLATE_DECL:
