@@ -373,7 +373,7 @@
 ;; -------------------------------------------------------------------------
 
 (define_expand "vec_init<mode><vel>"
-  [(match_operand:V 0 "register_operand")
+  [(match_operand:V_VLS 0 "register_operand")
    (match_operand 1 "")]
   "TARGET_VECTOR"
   {
@@ -2241,7 +2241,7 @@
 (define_insn_and_split "fold_left_plus_<mode>"
   [(set (match_operand:<VEL> 0 "register_operand")
         (unspec:<VEL> [
-             (match_operand:VF 2 "register_operand")
+             (match_operand:V_VLSF 2 "register_operand")
              (match_operand:<VEL> 1 "register_operand")
         ] UNSPEC_REDUC_SUM_ORDERED))]
   "TARGET_VECTOR && can_create_pseudo_p ()"
