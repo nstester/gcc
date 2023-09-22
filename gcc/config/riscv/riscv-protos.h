@@ -341,6 +341,7 @@ enum insn_type : unsigned int
 
   /* For vreduce, no mask policy operand. */
   REDUCE_OP = __NORMAL_OP_TA | BINARY_OP_P | VTYPE_MODE_FROM_OP1_P,
+  REDUCE_OP_M = __MASK_OP_TA | BINARY_OP_P | VTYPE_MODE_FROM_OP1_P,
   REDUCE_OP_FRM_DYN = REDUCE_OP | FRM_DYN_P | VTYPE_MODE_FROM_OP1_P,
   REDUCE_OP_M_FRM_DYN
   = __MASK_OP_TA | BINARY_OP_P | FRM_DYN_P | VTYPE_MODE_FROM_OP1_P,
@@ -368,10 +369,27 @@ enum vlmul_type
   NUM_LMUL = 8
 };
 
+/* The RISC-V vsetvli pass uses "known vlmax" operations for optimization.
+   Whether or not an instruction actually is a vlmax operation is not
+   recognizable from the length operand alone but the avl_type operand
+   is used instead.  In general, there are two cases:
+
+    - Emit a vlmax operation by calling emit_vlmax_insn[_lra].  Here we emit
+      a vsetvli with vlmax configuration and set the avl_type to VLMAX for
+      VLA modes or VLS for VLS modes.
+    - Emit an operation that uses the existing (last-set) length and
+      set the avl_type to NONVLMAX.
+
+    Sometimes we also need to set the VLMAX or VLS avl_type to an operation that
+    already uses a given length register.  This can happen during or after
+    register allocation when we are not allowed to create a new register.
+    For that case we also allow to set the avl_type to VLMAX or VLS.
+*/
 enum avl_type
 {
-  NONVLMAX,
-  VLMAX,
+  NONVLMAX = 0,
+  VLMAX = 1,
+  VLS = 2,
 };
 /* Routines implemented in riscv-vector-builtins.cc.  */
 void init_builtins (void);
