@@ -5100,36 +5100,53 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
  (switch
   (if (integer_zerop (@2))
    (switch
-    /* a ? 1 : 0 -> a if 0 and 1 are integral types. */
+    /* a ? 1 : 0 -> a if 0 and 1 are integral types.  */
     (if (integer_onep (@1))
      (convert (convert:boolean_type_node @0)))
+    /* a ? -1 : 0 -> -a.  */
+    (if (INTEGRAL_TYPE_P (type) && integer_all_onesp (@1))
+     (if (TYPE_PRECISION (type) == 1)
+      /* For signed 1-bit precision just cast bool to the type.  */
+      (convert (convert:boolean_type_node @0))
+      (if (TREE_CODE (type) == BOOLEAN_TYPE)
+       (with {
+	  tree intt = build_nonstandard_integer_type (TYPE_PRECISION (type),
+						      TYPE_UNSIGNED (type));
+	}
+	(convert (negate (convert:intt (convert:boolean_type_node @0)))))
+       (negate (convert:type (convert:boolean_type_node @0))))))
     /* a ? powerof2cst : 0 -> a << (log2(powerof2cst)) */
     (if (INTEGRAL_TYPE_P (type) && integer_pow2p (@1))
      (with {
        tree shift = build_int_cst (integer_type_node, tree_log2 (@1));
       }
-      (lshift (convert (convert:boolean_type_node @0)) { shift; })))
-    /* a ? -1 : 0 -> -a.  No need to check the TYPE_PRECISION not being 1
-       here as the powerof2cst case above will handle that case correctly.  */
-    (if (INTEGRAL_TYPE_P (type) && integer_all_onesp (@1))
-     (negate (convert:type (convert:boolean_type_node @0))))))
+      (lshift (convert (convert:boolean_type_node @0)) { shift; })))))
   (if (integer_zerop (@1))
    (switch
-    /* a ? 0 : 1 -> !a. */
+    /* a ? 0 : 1 -> !a.  */
     (if (integer_onep (@2))
      (convert (bit_xor (convert:boolean_type_node @0) { boolean_true_node; })))
-    /* a ? powerof2cst : 0 -> (!a) << (log2(powerof2cst)) */
+    /* a ? 0 : -1 -> -(!a).  */
+    (if (INTEGRAL_TYPE_P (type) && integer_all_onesp (@2))
+     (if (TYPE_PRECISION (type) == 1)
+      /* For signed 1-bit precision just cast bool to the type.  */
+      (convert (bit_xor (convert:boolean_type_node @0) { boolean_true_node; }))
+      (if (TREE_CODE (type) == BOOLEAN_TYPE)
+       (with {
+	  tree intt = build_nonstandard_integer_type (TYPE_PRECISION (type),
+						      TYPE_UNSIGNED (type));
+	}
+	(convert (negate (convert:intt (bit_xor (convert:boolean_type_node @0)
+						{ boolean_true_node; })))))
+       (negate (convert:type (bit_xor (convert:boolean_type_node @0)
+				      { boolean_true_node; }))))))
+    /* a ? 0 : powerof2cst -> (!a) << (log2(powerof2cst)) */
     (if (INTEGRAL_TYPE_P (type) && integer_pow2p (@2))
      (with {
        tree shift = build_int_cst (integer_type_node, tree_log2 (@2));
       }
       (lshift (convert (bit_xor (convert:boolean_type_node @0)
-				{ boolean_true_node; })) { shift; })))
-    /* a ? -1 : 0 -> -(!a).  No need to check the TYPE_PRECISION not being 1
-       here as the powerof2cst case above will handle that case correctly.  */
-    (if (INTEGRAL_TYPE_P (type) && integer_all_onesp (@2))
-     (negate (convert:type (bit_xor (convert:boolean_type_node @0)
-				    { boolean_true_node; }))))))))
+				{ boolean_true_node; })) { shift; })))))))
 
 /* (a > 1) ? 0 : (cast)a is the same as (cast)(a == 1)
    for unsigned types. */
@@ -5161,7 +5178,7 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 
 /* Optimize
    # x_5 in range [cst1, cst2] where cst2 = cst1 + 1
-   x_5 ? cstN ? cst4 : cst3
+   x_5 == cstN ? cst4 : cst3
    # op is == or != and N is 1 or 2
    to r_6 = x_5 + (min (cst3, cst4) - cst1) or
    r_6 = (min (cst3, cst4) + cst1) - x_5 depending on op, N and which
@@ -5197,7 +5214,8 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 	 type1 = type;
        auto prec = TYPE_PRECISION (type1);
        auto unsign = TYPE_UNSIGNED (type1);
-       type1 = build_nonstandard_integer_type (prec, unsign);
+       if (TREE_CODE (type1) == BOOLEAN_TYPE)
+	type1 = build_nonstandard_integer_type (prec, unsign);
        min = wide_int::from (min, prec,
 			     TYPE_SIGN (TREE_TYPE (@0)));
        wide_int a = wide_int::from (wi::to_wide (arg0), prec,
@@ -5236,14 +5254,7 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
       }
       (if (code == PLUS_EXPR)
        (convert (plus (convert:type1 @0) { arg; }))
-       (convert (minus { arg; } (convert:type1 @0)))
-      )
-     )
-    )
-   )
-  )
- )
-)
+       (convert (minus { arg; } (convert:type1 @0))))))))))
 #endif
 
 (simplify
@@ -6741,13 +6752,11 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
  (with { bool wascmp; }
   (if (INTEGRAL_TYPE_P (type)
        && bitwise_inverted_equal_p (@1, @2, wascmp)
-       && (!wascmp || element_precision (type) == 1))
-   (with {
-     auto prec = TYPE_PRECISION (type);
-     auto unsign = TYPE_UNSIGNED (type);
-     tree inttype = build_nonstandard_integer_type (prec, unsign);
-    }
-    (convert (bit_xor (negate (convert:inttype @0)) (convert:inttype @2)))))))
+       && (!wascmp || TYPE_PRECISION (type) == 1))
+   (if ((!TYPE_UNSIGNED (type) && TREE_CODE (type) == BOOLEAN_TYPE)
+	|| TYPE_PRECISION (type) == 1)
+    (bit_xor (convert:type @0) @2)
+    (bit_xor (negate (convert:type @0)) @2)))))
 #endif
 
 /* Simplify pointer equality compares using PTA.  */
