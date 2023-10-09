@@ -183,19 +183,24 @@ relation_transitive (relation_kind r1, relation_kind r2)
   return relation_kind (rr_transitive_table[r1][r2]);
 }
 
-// When operands of a statement are identical ssa_names, return the
-// approriate relation between operands for NAME == NAME, given RANGE.
-//
-relation_kind
-get_identity_relation (tree name, vrange &range ATTRIBUTE_UNUSED)
-{
-  // Return VREL_UNEQ when it is supported for floats as appropriate.
-  if (frange::supports_p (TREE_TYPE (name)))
-    return VREL_EQ;
+// When one name is an equivalence of another, ensure the equivalence
+// range is correct.  Specifically for floating point, a +0 is also
+// equivalent to a -0 which may not be reflected.  See PR 111694.
 
-  // Otherwise return VREL_EQ.
-  return VREL_EQ;
-}
+void
+adjust_equivalence_range (vrange &range)
+{
+  if (range.undefined_p () || !is_a<frange> (range))
+    return;
+
+  frange fr = as_a<frange> (range);
+  // If range includes 0 make sure both signs of zero are included.
+  if (fr.contains_p (dconst0) || fr.contains_p (dconstm0))
+    {
+      frange zeros (range.type (), dconstm0, dconst0);
+      range.union_ (zeros);
+    }
+ }
 
 // This vector maps a relation to the equivalent tree code.
 
