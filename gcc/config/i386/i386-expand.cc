@@ -611,6 +611,7 @@ ix86_broadcast_from_constant (machine_mode mode, rtx op)
      avx512 embed broadcast is available.  */
   if (GET_MODE_INNER (mode) == DImode && !TARGET_64BIT
       && (!TARGET_AVX512F
+	  || (GET_MODE_SIZE (mode) == 64 && !TARGET_EVEX512)
 	  || (GET_MODE_SIZE (mode) < 64 && !TARGET_AVX512VL)))
     return nullptr;
 
@@ -3942,7 +3943,7 @@ ix86_valid_mask_cmp_mode (machine_mode mode)
   if ((inner_mode == QImode || inner_mode == HImode) && !TARGET_AVX512BW)
     return false;
 
-  return vector_size == 64 || TARGET_AVX512VL;
+  return (vector_size == 64 && TARGET_EVEX512) || TARGET_AVX512VL;
 }
 
 /* Return true if integer mask comparison should be used.  */
@@ -4772,7 +4773,7 @@ ix86_expand_int_sse_cmp (rtx dest, enum rtx_code code, rtx cop0, rtx cop1,
 	      && GET_MODE_SIZE (GET_MODE_INNER (mode)) >= 4
 	      /* Don't do it if not using integer masks and we'd end up with
 		 the right values in the registers though.  */
-	      && (GET_MODE_SIZE (mode) == 64
+	      && ((GET_MODE_SIZE (mode) == 64 && TARGET_EVEX512)
 		  || !vector_all_ones_operand (optrue, data_mode)
 		  || opfalse != CONST0_RTX (data_mode))))
 	{
@@ -15637,6 +15638,7 @@ ix86_expand_vector_init_duplicate (bool mmx_ok, machine_mode mode,
     case E_V32HFmode:
     case E_V32BFmode:
     case E_V64QImode:
+      gcc_assert (TARGET_EVEX512);
       if (TARGET_AVX512BW)
 	return ix86_vector_duplicate_value (mode, target, val);
       else
@@ -15687,6 +15689,9 @@ ix86_expand_vector_init_one_nonzero (bool mmx_ok, machine_mode mode,
   rtx x, tmp;
   bool use_vector_set = false;
   rtx (*gen_vec_set_0) (rtx, rtx, rtx) = NULL;
+
+  if (GET_MODE_SIZE (mode) == 64 && !TARGET_EVEX512)
+    return false;
 
   switch (mode)
     {
@@ -18308,7 +18313,7 @@ ix86_emit_swsqrtsf (rtx res, rtx a, machine_mode mode, bool recip)
 
   unsigned vector_size = GET_MODE_SIZE (mode);
   if (TARGET_FMA
-      || (TARGET_AVX512F && vector_size == 64)
+      || (TARGET_AVX512F && TARGET_EVEX512 && vector_size == 64)
       || (TARGET_AVX512VL && (vector_size == 32 || vector_size == 16)))
     emit_insn (gen_rtx_SET (e2,
 			    gen_rtx_FMA (mode, e0, x0, mthree)));
@@ -23025,6 +23030,9 @@ ix86_vectorize_vec_perm_const (machine_mode vmode, machine_mode op_mode,
   unsigned int i, nelt, which;
   bool two_args;
 
+  if (GET_MODE_SIZE (vmode) == 64 && !TARGET_EVEX512)
+    return false;
+
   /* For HF mode vector, convert it to HI using subreg.  */
   if (GET_MODE_INNER (vmode) == HFmode)
     {
@@ -23526,7 +23534,7 @@ ix86_expand_vecop_qihi2 (enum rtx_code code, rtx dest, rtx op1, rtx op2)
   bool uns_p = code != ASHIFTRT;
 
   if ((qimode == V16QImode && !TARGET_AVX2)
-      || (qimode == V32QImode && !TARGET_AVX512BW)
+      || (qimode == V32QImode && (!TARGET_AVX512BW || !TARGET_EVEX512))
       /* There are no V64HImode instructions.  */
       || qimode == V64QImode)
      return false;
@@ -24022,7 +24030,7 @@ ix86_expand_sse2_mulvxdi3 (rtx op0, rtx op1, rtx op2)
   machine_mode mode = GET_MODE (op0);
   rtx t1, t2, t3, t4, t5, t6;
 
-  if (TARGET_AVX512DQ && mode == V8DImode)
+  if (TARGET_AVX512DQ && TARGET_EVEX512 && mode == V8DImode)
     emit_insn (gen_avx512dq_mulv8di3 (op0, op1, op2));
   else if (TARGET_AVX512DQ && TARGET_AVX512VL && mode == V4DImode)
     emit_insn (gen_avx512dq_mulv4di3 (op0, op1, op2));
