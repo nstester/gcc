@@ -951,138 +951,6 @@ cfun_returns (tree decl)
   return false;
 }
 
-/* Function vect_model_store_cost
-
-   Models cost for stores.  In the case of grouped accesses, one access
-   has the overhead of the grouped access attributed to it.  */
-
-static void
-vect_model_store_cost (vec_info *vinfo, stmt_vec_info stmt_info, int ncopies,
-		       vect_memory_access_type memory_access_type,
-		       gather_scatter_info *gs_info,
-		       dr_alignment_support alignment_support_scheme,
-		       int misalignment,
-		       vec_load_store_type vls_type, slp_tree slp_node,
-		       stmt_vector_for_cost *cost_vec)
-{
-  unsigned int inside_cost = 0, prologue_cost = 0;
-  stmt_vec_info first_stmt_info = stmt_info;
-  bool grouped_access_p = STMT_VINFO_GROUPED_ACCESS (stmt_info);
-
-  /* ???  Somehow we need to fix this at the callers.  */
-  if (slp_node)
-    ncopies = SLP_TREE_NUMBER_OF_VEC_STMTS (slp_node);
-
-  if (vls_type == VLS_STORE_INVARIANT)
-    {
-      if (!slp_node)
-	prologue_cost += record_stmt_cost (cost_vec, 1, scalar_to_vec,
-					   stmt_info, 0, vect_prologue);
-    }
-
-  /* Grouped stores update all elements in the group at once,
-     so we want the DR for the first statement.  */
-  if (!slp_node && grouped_access_p)
-    first_stmt_info = DR_GROUP_FIRST_ELEMENT (stmt_info);
-
-  /* True if we should include any once-per-group costs as well as
-     the cost of the statement itself.  For SLP we only get called
-     once per group anyhow.  */
-  bool first_stmt_p = (first_stmt_info == stmt_info);
-
-  /* We assume that the cost of a single store-lanes instruction is
-     equivalent to the cost of DR_GROUP_SIZE separate stores.  If a grouped
-     access is instead being provided by a permute-and-store operation,
-     include the cost of the permutes.  */
-  if (first_stmt_p
-      && memory_access_type == VMAT_CONTIGUOUS_PERMUTE)
-    {
-      /* Uses a high and low interleave or shuffle operations for each
-	 needed permute.  */
-      int group_size = DR_GROUP_SIZE (first_stmt_info);
-      int nstmts = ncopies * ceil_log2 (group_size) * group_size;
-      inside_cost = record_stmt_cost (cost_vec, nstmts, vec_perm,
-				      stmt_info, 0, vect_body);
-
-      if (dump_enabled_p ())
-        dump_printf_loc (MSG_NOTE, vect_location,
-                         "vect_model_store_cost: strided group_size = %d .\n",
-                         group_size);
-    }
-
-  tree vectype = STMT_VINFO_VECTYPE (stmt_info);
-  /* Costs of the stores.  */
-  if (memory_access_type == VMAT_ELEMENTWISE
-      || memory_access_type == VMAT_GATHER_SCATTER)
-    {
-      unsigned int assumed_nunits = vect_nunits_for_cost (vectype);
-      if (memory_access_type == VMAT_GATHER_SCATTER
-	  && gs_info->ifn == IFN_LAST && !gs_info->decl)
-	/* For emulated scatter N offset vector element extracts
-	   (we assume the scalar scaling and ptr + offset add is consumed by
-	   the load).  */
-	inside_cost += record_stmt_cost (cost_vec, ncopies * assumed_nunits,
-					 vec_to_scalar, stmt_info, 0,
-					 vect_body);
-      /* N scalar stores plus extracting the elements.  */
-      inside_cost += record_stmt_cost (cost_vec,
-				       ncopies * assumed_nunits,
-				       scalar_store, stmt_info, 0, vect_body);
-    }
-  else
-    vect_get_store_cost (vinfo, stmt_info, ncopies, alignment_support_scheme,
-			 misalignment, &inside_cost, cost_vec);
-
-  if (memory_access_type == VMAT_ELEMENTWISE
-      || memory_access_type == VMAT_STRIDED_SLP
-      || (memory_access_type == VMAT_GATHER_SCATTER
-	  && gs_info->ifn == IFN_LAST && !gs_info->decl))
-    {
-      /* N scalar stores plus extracting the elements.  */
-      unsigned int assumed_nunits = vect_nunits_for_cost (vectype);
-      inside_cost += record_stmt_cost (cost_vec,
-				       ncopies * assumed_nunits,
-				       vec_to_scalar, stmt_info, 0, vect_body);
-    }
-
-  /* When vectorizing a store into the function result assign
-     a penalty if the function returns in a multi-register location.
-     In this case we assume we'll end up with having to spill the
-     vector result and do piecewise loads as a conservative estimate.  */
-  tree base = get_base_address (STMT_VINFO_DATA_REF (stmt_info)->ref);
-  if (base
-      && (TREE_CODE (base) == RESULT_DECL
-	  || (DECL_P (base) && cfun_returns (base)))
-      && !aggregate_value_p (base, cfun->decl))
-    {
-      rtx reg = hard_function_value (TREE_TYPE (base), cfun->decl, 0, 1);
-      /* ???  Handle PARALLEL in some way.  */
-      if (REG_P (reg))
-	{
-	  int nregs = hard_regno_nregs (REGNO (reg), GET_MODE (reg));
-	  /* Assume that a single reg-reg move is possible and cheap,
-	     do not account for vector to gp register move cost.  */
-	  if (nregs > 1)
-	    {
-	      /* Spill.  */
-	      prologue_cost += record_stmt_cost (cost_vec, ncopies,
-						 vector_store,
-						 stmt_info, 0, vect_epilogue);
-	      /* Loads.  */
-	      prologue_cost += record_stmt_cost (cost_vec, ncopies * nregs,
-						 scalar_load,
-						 stmt_info, 0, vect_epilogue);
-	    }
-	}
-    }
-
-  if (dump_enabled_p ())
-    dump_printf_loc (MSG_NOTE, vect_location,
-                     "vect_model_store_cost: inside_cost = %d, "
-                     "prologue_cost = %d .\n", inside_cost, prologue_cost);
-}
-
-
 /* Calculate cost of DR's memory access.  */
 void
 vect_get_store_cost (vec_info *, stmt_vec_info stmt_info, int ncopies,
@@ -2999,7 +2867,8 @@ vect_build_gather_load_calls (vec_info *vinfo, stmt_vec_info stmt_info,
 static void
 vect_build_scatter_store_calls (vec_info *vinfo, stmt_vec_info stmt_info,
 				gimple_stmt_iterator *gsi, gimple **vec_stmt,
-				gather_scatter_info *gs_info, tree mask)
+				gather_scatter_info *gs_info, tree mask,
+				stmt_vector_for_cost *cost_vec)
 {
   loop_vec_info loop_vinfo = dyn_cast<loop_vec_info> (vinfo);
   tree vectype = STMT_VINFO_VECTYPE (stmt_info);
@@ -3008,6 +2877,30 @@ vect_build_scatter_store_calls (vec_info *vinfo, stmt_vec_info stmt_info,
   enum { NARROW, NONE, WIDEN } modifier;
   poly_uint64 scatter_off_nunits
     = TYPE_VECTOR_SUBPARTS (gs_info->offset_vectype);
+
+  /* FIXME: Keep the previous costing way in vect_model_store_cost by
+     costing N scalar stores, but it should be tweaked to use target
+     specific costs on related scatter store calls.  */
+  if (cost_vec)
+    {
+      tree op = vect_get_store_rhs (stmt_info);
+      enum vect_def_type dt;
+      gcc_assert (vect_is_simple_use (op, vinfo, &dt));
+      unsigned int inside_cost, prologue_cost = 0;
+      if (dt == vect_constant_def || dt == vect_external_def)
+	prologue_cost += record_stmt_cost (cost_vec, 1, scalar_to_vec,
+					   stmt_info, 0, vect_prologue);
+      unsigned int assumed_nunits = vect_nunits_for_cost (vectype);
+      inside_cost = record_stmt_cost (cost_vec, ncopies * assumed_nunits,
+				      scalar_store, stmt_info, 0, vect_body);
+
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "vect_model_store_cost: inside_cost = %d, "
+			 "prologue_cost = %d .\n",
+			 inside_cost, prologue_cost);
+      return;
+    }
 
   tree perm_mask = NULL_TREE, mask_halfvectype = NULL_TREE;
   if (known_eq (nunits, scatter_off_nunits))
@@ -8372,7 +8265,8 @@ vectorizable_store (vec_info *vinfo,
 	return false;
     }
 
-  if (!vec_stmt) /* transformation not required.  */
+  bool costing_p = !vec_stmt;
+  if (costing_p) /* transformation not required.  */
     {
       STMT_VINFO_MEMORY_ACCESS_TYPE (stmt_info) = memory_access_type;
 
@@ -8401,11 +8295,17 @@ vectorizable_store (vec_info *vinfo,
 			 "Vectorizing an unaligned access.\n");
 
       STMT_VINFO_TYPE (stmt_info) = store_vec_info_type;
-      vect_model_store_cost (vinfo, stmt_info, ncopies,
-			     memory_access_type, &gs_info,
-			     alignment_support_scheme,
-			     misalignment, vls_type, slp_node, cost_vec);
-      return true;
+
+      /* As function vect_transform_stmt shows, for interleaving stores
+	 the whole chain is vectorized when the last store in the chain
+	 is reached, the other stores in the group are skipped.  So we
+	 want to only cost the last one here, but it's not trivial to
+	 get the last, as it's equivalent to use the first one for
+	 costing, use the first one instead.  */
+      if (grouped_store
+	  && !slp
+	  && first_stmt_info != stmt_info)
+	return true;
     }
   gcc_assert (memory_access_type == STMT_VINFO_MEMORY_ACCESS_TYPE (stmt_info));
 
@@ -8415,12 +8315,34 @@ vectorizable_store (vec_info *vinfo,
 
   if (memory_access_type == VMAT_GATHER_SCATTER && gs_info.decl)
     {
-      vect_build_scatter_store_calls (vinfo, stmt_info, gsi, vec_stmt,
-				      &gs_info, mask);
+      vect_build_scatter_store_calls (vinfo, stmt_info, gsi, vec_stmt, &gs_info,
+				      mask, cost_vec);
       return true;
     }
   else if (STMT_VINFO_SIMD_LANE_ACCESS_P (stmt_info) >= 3)
-    return vectorizable_scan_store (vinfo, stmt_info, gsi, vec_stmt, ncopies);
+    {
+      gcc_assert (memory_access_type == VMAT_CONTIGUOUS);
+      gcc_assert (!slp);
+      if (costing_p)
+	{
+	  unsigned int inside_cost = 0, prologue_cost = 0;
+	  if (vls_type == VLS_STORE_INVARIANT)
+	    prologue_cost += record_stmt_cost (cost_vec, 1, scalar_to_vec,
+					       stmt_info, 0, vect_prologue);
+	  vect_get_store_cost (vinfo, stmt_info, ncopies,
+			       alignment_support_scheme, misalignment,
+			       &inside_cost, cost_vec);
+
+	  if (dump_enabled_p ())
+	    dump_printf_loc (MSG_NOTE, vect_location,
+			     "vect_model_store_cost: inside_cost = %d, "
+			     "prologue_cost = %d .\n",
+			     inside_cost, prologue_cost);
+
+	  return true;
+	}
+      return vectorizable_scan_store (vinfo, stmt_info, gsi, vec_stmt, ncopies);
+    }
 
   if (grouped_store)
     {
@@ -8449,13 +8371,39 @@ vectorizable_store (vec_info *vinfo,
   else
     ref_type = reference_alias_ptr_type (DR_REF (first_dr_info->dr));
 
-  if (dump_enabled_p ())
-    dump_printf_loc (MSG_NOTE, vect_location,
-                     "transform store. ncopies = %d\n", ncopies);
+  if (!costing_p && dump_enabled_p ())
+    dump_printf_loc (MSG_NOTE, vect_location, "transform store. ncopies = %d\n",
+		     ncopies);
+
+  /* Check if we need to update prologue cost for invariant,
+     and update it accordingly if so.  If it's not for
+     interleaving store, we can just check vls_type; but if
+     it's for interleaving store, need to check the def_type
+     of the stored value since the current vls_type is just
+     for first_stmt_info.  */
+  auto update_prologue_cost = [&](unsigned *prologue_cost, tree store_rhs)
+  {
+    gcc_assert (costing_p);
+    if (slp)
+      return;
+    if (grouped_store)
+      {
+	gcc_assert (store_rhs);
+	enum vect_def_type cdt;
+	gcc_assert (vect_is_simple_use (store_rhs, vinfo, &cdt));
+	if (cdt != vect_constant_def && cdt != vect_external_def)
+	  return;
+      }
+    else if (vls_type != VLS_STORE_INVARIANT)
+      return;
+    *prologue_cost += record_stmt_cost (cost_vec, 1, scalar_to_vec, stmt_info,
+					0, vect_prologue);
+  };
 
   if (memory_access_type == VMAT_ELEMENTWISE
       || memory_access_type == VMAT_STRIDED_SLP)
     {
+      unsigned inside_cost = 0, prologue_cost = 0;
       gimple_stmt_iterator incr_gsi;
       bool insert_after;
       gimple *incr;
@@ -8463,7 +8411,7 @@ vectorizable_store (vec_info *vinfo,
       tree ivstep;
       tree running_off;
       tree stride_base, stride_step, alias_off;
-      tree vec_oprnd;
+      tree vec_oprnd = NULL_TREE;
       tree dr_offset;
       unsigned int g;
       /* Checked by get_load_store_type.  */
@@ -8558,29 +8506,41 @@ vectorizable_store (vec_info *vinfo,
 	  else if (group_size >= const_nunits
 		   && group_size % const_nunits == 0)
 	    {
-	      nstores = 1;
-	      lnel = const_nunits;
-	      ltype = vectype;
-	      lvectype = vectype;
+	      int mis_align = dr_misalignment (first_dr_info, vectype);
+	      dr_alignment_support dr_align
+		= vect_supportable_dr_alignment (vinfo, dr_info, vectype,
+						 mis_align);
+	      if (dr_align == dr_aligned
+		  || dr_align == dr_unaligned_supported)
+		{
+		  nstores = 1;
+		  lnel = const_nunits;
+		  ltype = vectype;
+		  lvectype = vectype;
+		  alignment_support_scheme = dr_align;
+		  misalignment = mis_align;
+		}
 	    }
 	  ltype = build_aligned_type (ltype, TYPE_ALIGN (elem_type));
 	  ncopies = SLP_TREE_NUMBER_OF_VEC_STMTS (slp_node);
 	}
 
-      ivstep = stride_step;
-      ivstep = fold_build2 (MULT_EXPR, TREE_TYPE (ivstep), ivstep,
-			    build_int_cst (TREE_TYPE (ivstep), vf));
+      if (!costing_p)
+	{
+	  ivstep = stride_step;
+	  ivstep = fold_build2 (MULT_EXPR, TREE_TYPE (ivstep), ivstep,
+				build_int_cst (TREE_TYPE (ivstep), vf));
 
-      standard_iv_increment_position (loop, &incr_gsi, &insert_after);
+	  standard_iv_increment_position (loop, &incr_gsi, &insert_after);
 
-      stride_base = cse_and_gimplify_to_preheader (loop_vinfo, stride_base);
-      ivstep = cse_and_gimplify_to_preheader (loop_vinfo, ivstep);
-      create_iv (stride_base, PLUS_EXPR, ivstep, NULL,
-		 loop, &incr_gsi, insert_after,
-		 &offvar, NULL);
-      incr = gsi_stmt (incr_gsi);
+	  stride_base = cse_and_gimplify_to_preheader (loop_vinfo, stride_base);
+	  ivstep = cse_and_gimplify_to_preheader (loop_vinfo, ivstep);
+	  create_iv (stride_base, PLUS_EXPR, ivstep, NULL, loop, &incr_gsi,
+		     insert_after, &offvar, NULL);
+	  incr = gsi_stmt (incr_gsi);
 
-      stride_step = cse_and_gimplify_to_preheader (loop_vinfo, stride_step);
+	  stride_step = cse_and_gimplify_to_preheader (loop_vinfo, stride_step);
+	}
 
       alias_off = build_int_cst (ref_type, 0);
       stmt_vec_info next_stmt_info = first_stmt_info;
@@ -8588,39 +8548,70 @@ vectorizable_store (vec_info *vinfo,
       for (g = 0; g < group_size; g++)
 	{
 	  running_off = offvar;
-	  if (g)
+	  if (!costing_p)
 	    {
-	      tree size = TYPE_SIZE_UNIT (ltype);
-	      tree pos = fold_build2 (MULT_EXPR, sizetype, size_int (g),
-				      size);
-	      tree newoff = copy_ssa_name (running_off, NULL);
-	      incr = gimple_build_assign (newoff, POINTER_PLUS_EXPR,
-					  running_off, pos);
-	      vect_finish_stmt_generation (vinfo, stmt_info, incr, gsi);
-	      running_off = newoff;
+	      if (g)
+		{
+		  tree size = TYPE_SIZE_UNIT (ltype);
+		  tree pos
+		    = fold_build2 (MULT_EXPR, sizetype, size_int (g), size);
+		  tree newoff = copy_ssa_name (running_off, NULL);
+		  incr = gimple_build_assign (newoff, POINTER_PLUS_EXPR,
+					      running_off, pos);
+		  vect_finish_stmt_generation (vinfo, stmt_info, incr, gsi);
+		  running_off = newoff;
+		}
 	    }
 	  if (!slp)
 	    op = vect_get_store_rhs (next_stmt_info);
-	  vect_get_vec_defs (vinfo, next_stmt_info, slp_node, ncopies,
-			     op, &vec_oprnds);
+	  if (!costing_p)
+	    vect_get_vec_defs (vinfo, next_stmt_info, slp_node, ncopies, op,
+			       &vec_oprnds);
+	  else
+	    update_prologue_cost (&prologue_cost, op);
 	  unsigned int group_el = 0;
 	  unsigned HOST_WIDE_INT
 	    elsz = tree_to_uhwi (TYPE_SIZE_UNIT (TREE_TYPE (vectype)));
 	  for (j = 0; j < ncopies; j++)
 	    {
-	      vec_oprnd = vec_oprnds[j];
-	      /* Pun the vector to extract from if necessary.  */
-	      if (lvectype != vectype)
+	      if (!costing_p)
 		{
-		  tree tem = make_ssa_name (lvectype);
-		  gimple *pun
-		    = gimple_build_assign (tem, build1 (VIEW_CONVERT_EXPR,
-							lvectype, vec_oprnd));
-		  vect_finish_stmt_generation (vinfo, stmt_info, pun, gsi);
-		  vec_oprnd = tem;
+		  vec_oprnd = vec_oprnds[j];
+		  /* Pun the vector to extract from if necessary.  */
+		  if (lvectype != vectype)
+		    {
+		      tree tem = make_ssa_name (lvectype);
+		      tree cvt
+			= build1 (VIEW_CONVERT_EXPR, lvectype, vec_oprnd);
+		      gimple *pun = gimple_build_assign (tem, cvt);
+		      vect_finish_stmt_generation (vinfo, stmt_info, pun, gsi);
+		      vec_oprnd = tem;
+		    }
 		}
 	      for (i = 0; i < nstores; i++)
 		{
+		  if (costing_p)
+		    {
+		      /* Only need vector extracting when there are more
+			 than one stores.  */
+		      if (nstores > 1)
+			inside_cost
+			  += record_stmt_cost (cost_vec, 1, vec_to_scalar,
+					       stmt_info, 0, vect_body);
+		      /* Take a single lane vector type store as scalar
+			 store to avoid ICE like 110776.  */
+		      if (VECTOR_TYPE_P (ltype)
+			  && known_ne (TYPE_VECTOR_SUBPARTS (ltype), 1U))
+			vect_get_store_cost (vinfo, stmt_info, 1,
+					     alignment_support_scheme,
+					     misalignment, &inside_cost,
+					     cost_vec);
+		      else
+			inside_cost
+			  += record_stmt_cost (cost_vec, 1, scalar_store,
+					       stmt_info, 0, vect_body);
+		      continue;
+		    }
 		  tree newref, newoff;
 		  gimple *incr, *assign;
 		  tree size = TYPE_SIZE (ltype);
@@ -8671,6 +8662,12 @@ vectorizable_store (vec_info *vinfo,
 	    break;
 	}
 
+      if (costing_p && dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "vect_model_store_cost: inside_cost = %d, "
+			 "prologue_cost = %d .\n",
+			 inside_cost, prologue_cost);
+
       return true;
     }
 
@@ -8710,8 +8707,9 @@ vectorizable_store (vec_info *vinfo,
   else if (memory_access_type == VMAT_GATHER_SCATTER)
     {
       aggr_type = elem_type;
-      vect_get_strided_load_store_ops (stmt_info, loop_vinfo, gsi, &gs_info,
-				       &bump, &vec_offset, loop_lens);
+      if (!costing_p)
+	vect_get_strided_load_store_ops (stmt_info, loop_vinfo, gsi, &gs_info,
+					 &bump, &vec_offset, loop_lens);
     }
   else
     {
@@ -8723,7 +8721,7 @@ vectorizable_store (vec_info *vinfo,
 					  memory_access_type, loop_lens);
     }
 
-  if (mask)
+  if (mask && !costing_p)
     LOOP_VINFO_HAS_MASK_STORE (loop_vinfo) = true;
 
   /* In case the vectorization factor (VF) is bigger than the number
@@ -8774,6 +8772,7 @@ vectorizable_store (vec_info *vinfo,
   if (memory_access_type == VMAT_LOAD_STORE_LANES)
     {
       gcc_assert (!slp && grouped_store);
+      unsigned inside_cost = 0, prologue_cost = 0;
       for (j = 0; j < ncopies; j++)
 	{
 	  gimple *new_stmt;
@@ -8789,29 +8788,39 @@ vectorizable_store (vec_info *vinfo,
 		     DR_GROUP_SIZE is the exact number of stmts in the
 		     chain. Therefore, NEXT_STMT_INFO can't be NULL_TREE.  */
 		  op = vect_get_store_rhs (next_stmt_info);
-		  vect_get_vec_defs_for_operand (vinfo, next_stmt_info, ncopies,
-						 op, gvec_oprnds[i]);
-		  vec_oprnd = (*gvec_oprnds[i])[0];
-		  dr_chain.quick_push (vec_oprnd);
+		  if (costing_p)
+		    update_prologue_cost (&prologue_cost, op);
+		  else
+		    {
+		      vect_get_vec_defs_for_operand (vinfo, next_stmt_info,
+						     ncopies, op,
+						     gvec_oprnds[i]);
+		      vec_oprnd = (*gvec_oprnds[i])[0];
+		      dr_chain.quick_push (vec_oprnd);
+		    }
 		  next_stmt_info = DR_GROUP_NEXT_ELEMENT (next_stmt_info);
 		}
-	      if (mask)
-		{
-		  vect_get_vec_defs_for_operand (vinfo, stmt_info, ncopies,
-						 mask, &vec_masks,
-						 mask_vectype);
-		  vec_mask = vec_masks[0];
-		}
 
-	      /* We should have catched mismatched types earlier.  */
-	      gcc_assert (
-		useless_type_conversion_p (vectype, TREE_TYPE (vec_oprnd)));
-	      dataref_ptr
-		= vect_create_data_ref_ptr (vinfo, first_stmt_info, aggr_type,
-					    NULL, offset, &dummy, gsi,
-					    &ptr_incr, false, bump);
+	      if (!costing_p)
+		{
+		  if (mask)
+		    {
+		      vect_get_vec_defs_for_operand (vinfo, stmt_info, ncopies,
+						     mask, &vec_masks,
+						     mask_vectype);
+		      vec_mask = vec_masks[0];
+		    }
+
+		  /* We should have catched mismatched types earlier.  */
+		  gcc_assert (
+		    useless_type_conversion_p (vectype, TREE_TYPE (vec_oprnd)));
+		  dataref_ptr
+		    = vect_create_data_ref_ptr (vinfo, first_stmt_info,
+						aggr_type, NULL, offset, &dummy,
+						gsi, &ptr_incr, false, bump);
+		}
 	    }
-	  else
+	  else if (!costing_p)
 	    {
 	      gcc_assert (!LOOP_VINFO_USING_SELECT_VL_P (loop_vinfo));
 	      /* DR_CHAIN is then used as an input to
@@ -8825,6 +8834,15 @@ vectorizable_store (vec_info *vinfo,
 		vec_mask = vec_masks[j];
 	      dataref_ptr = bump_vector_ptr (vinfo, dataref_ptr, ptr_incr, gsi,
 					     stmt_info, bump);
+	    }
+
+	  if (costing_p)
+	    {
+	      for (i = 0; i < vec_num; i++)
+		vect_get_store_cost (vinfo, stmt_info, 1,
+				     alignment_support_scheme, misalignment,
+				     &inside_cost, cost_vec);
+	      continue;
 	    }
 
 	  /* Get an array into which we can store the individual vectors.  */
@@ -8913,6 +8931,12 @@ vectorizable_store (vec_info *vinfo,
 	  STMT_VINFO_VEC_STMTS (stmt_info).safe_push (new_stmt);
 	}
 
+      if (costing_p && dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "vect_model_store_cost: inside_cost = %d, "
+			 "prologue_cost = %d .\n",
+			 inside_cost, prologue_cost);
+
       return true;
     }
 
@@ -8920,41 +8944,49 @@ vectorizable_store (vec_info *vinfo,
     {
       gcc_assert (!slp && !grouped_store);
       auto_vec<tree> vec_offsets;
+      unsigned int inside_cost = 0, prologue_cost = 0;
       for (j = 0; j < ncopies; j++)
 	{
 	  gimple *new_stmt;
 	  if (j == 0)
 	    {
-	      /* Since the store is not grouped, DR_GROUP_SIZE is 1, and
-		 DR_CHAIN is of size 1.  */
-	      gcc_assert (group_size == 1);
-	      op = vect_get_store_rhs (first_stmt_info);
-	      vect_get_vec_defs_for_operand (vinfo, first_stmt_info, ncopies,
-					     op, gvec_oprnds[0]);
-	      vec_oprnd = (*gvec_oprnds[0])[0];
-	      dr_chain.quick_push (vec_oprnd);
-	      if (mask)
+	      if (costing_p && vls_type == VLS_STORE_INVARIANT)
+		prologue_cost += record_stmt_cost (cost_vec, 1, scalar_to_vec,
+						   stmt_info, 0, vect_prologue);
+	      else if (!costing_p)
 		{
-		  vect_get_vec_defs_for_operand (vinfo, stmt_info, ncopies,
-						 mask, &vec_masks,
-						 mask_vectype);
-		  vec_mask = vec_masks[0];
-		}
+		  /* Since the store is not grouped, DR_GROUP_SIZE is 1, and
+		     DR_CHAIN is of size 1.  */
+		  gcc_assert (group_size == 1);
+		  op = vect_get_store_rhs (first_stmt_info);
+		  vect_get_vec_defs_for_operand (vinfo, first_stmt_info,
+						 ncopies, op, gvec_oprnds[0]);
+		  vec_oprnd = (*gvec_oprnds[0])[0];
+		  dr_chain.quick_push (vec_oprnd);
+		  if (mask)
+		    {
+		      vect_get_vec_defs_for_operand (vinfo, stmt_info, ncopies,
+						     mask, &vec_masks,
+						     mask_vectype);
+		      vec_mask = vec_masks[0];
+		    }
 
-	      /* We should have catched mismatched types earlier.  */
-	      gcc_assert (useless_type_conversion_p (vectype,
-						     TREE_TYPE (vec_oprnd)));
-	      if (STMT_VINFO_GATHER_SCATTER_P (stmt_info))
-		vect_get_gather_scatter_ops (loop_vinfo, loop, stmt_info,
-					     slp_node, &gs_info, &dataref_ptr,
-					     &vec_offsets);
-	      else
-		dataref_ptr
-		  = vect_create_data_ref_ptr (vinfo, first_stmt_info, aggr_type,
-					      NULL, offset, &dummy, gsi,
-					      &ptr_incr, false, bump);
+		  /* We should have catched mismatched types earlier.  */
+		  gcc_assert (
+		    useless_type_conversion_p (vectype, TREE_TYPE (vec_oprnd)));
+		  if (STMT_VINFO_GATHER_SCATTER_P (stmt_info))
+		    vect_get_gather_scatter_ops (loop_vinfo, loop, stmt_info,
+						 slp_node, &gs_info,
+						 &dataref_ptr, &vec_offsets);
+		  else
+		    dataref_ptr
+		      = vect_create_data_ref_ptr (vinfo, first_stmt_info,
+						  aggr_type, NULL, offset,
+						  &dummy, gsi, &ptr_incr, false,
+						  bump);
+		}
 	    }
-	  else
+	  else if (!costing_p)
 	    {
 	      gcc_assert (!LOOP_VINFO_USING_SELECT_VL_P (loop_vinfo));
 	      vec_oprnd = (*gvec_oprnds[0])[j];
@@ -8971,15 +9003,27 @@ vectorizable_store (vec_info *vinfo,
 	  tree final_mask = NULL_TREE;
 	  tree final_len = NULL_TREE;
 	  tree bias = NULL_TREE;
-	  if (loop_masks)
-	    final_mask = vect_get_loop_mask (loop_vinfo, gsi, loop_masks,
-					     ncopies, vectype, j);
-	  if (vec_mask)
-	    final_mask = prepare_vec_mask (loop_vinfo, mask_vectype, final_mask,
-					   vec_mask, gsi);
+	  if (!costing_p)
+	    {
+	      if (loop_masks)
+		final_mask = vect_get_loop_mask (loop_vinfo, gsi, loop_masks,
+						 ncopies, vectype, j);
+	      if (vec_mask)
+		final_mask = prepare_vec_mask (loop_vinfo, mask_vectype,
+					       final_mask, vec_mask, gsi);
+	    }
 
 	  if (gs_info.ifn != IFN_LAST)
 	    {
+	      if (costing_p)
+		{
+		  unsigned int cnunits = vect_nunits_for_cost (vectype);
+		  inside_cost
+		    += record_stmt_cost (cost_vec, cnunits, scalar_store,
+					 stmt_info, 0, vect_body);
+		  continue;
+		}
+
 	      if (STMT_VINFO_GATHER_SCATTER_P (stmt_info))
 		vec_offset = vec_offsets[j];
 	      tree scale = size_int (gs_info.scale);
@@ -9025,6 +9069,25 @@ vectorizable_store (vec_info *vinfo,
 	    {
 	      /* Emulated scatter.  */
 	      gcc_assert (!final_mask);
+	      if (costing_p)
+		{
+		  unsigned int cnunits = vect_nunits_for_cost (vectype);
+		  /* For emulated scatter N offset vector element extracts
+		     (we assume the scalar scaling and ptr + offset add is
+		     consumed by the load).  */
+		  inside_cost
+		    += record_stmt_cost (cost_vec, cnunits, vec_to_scalar,
+					 stmt_info, 0, vect_body);
+		  /* N scalar stores plus extracting the elements.  */
+		  inside_cost
+		    += record_stmt_cost (cost_vec, cnunits, vec_to_scalar,
+					 stmt_info, 0, vect_body);
+		  inside_cost
+		    += record_stmt_cost (cost_vec, cnunits, scalar_store,
+					 stmt_info, 0, vect_body);
+		  continue;
+		}
+
 	      unsigned HOST_WIDE_INT const_nunits = nunits.to_constant ();
 	      unsigned HOST_WIDE_INT const_offset_nunits
 		= TYPE_VECTOR_SUBPARTS (gs_info.offset_vectype).to_constant ();
@@ -9075,9 +9138,22 @@ vectorizable_store (vec_info *vinfo,
 	    *vec_stmt = new_stmt;
 	  STMT_VINFO_VEC_STMTS (stmt_info).safe_push (new_stmt);
 	}
+
+      if (costing_p && dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "vect_model_store_cost: inside_cost = %d, "
+			 "prologue_cost = %d .\n",
+			 inside_cost, prologue_cost);
+
       return true;
     }
 
+  gcc_assert (memory_access_type == VMAT_CONTIGUOUS
+	      || memory_access_type == VMAT_CONTIGUOUS_DOWN
+	      || memory_access_type == VMAT_CONTIGUOUS_PERMUTE
+	      || memory_access_type == VMAT_CONTIGUOUS_REVERSE);
+
+  unsigned inside_cost = 0, prologue_cost = 0;
   auto_vec<tree> result_chain (group_size);
   auto_vec<tree, 1> vec_oprnds;
   for (j = 0; j < ncopies; j++)
@@ -9085,7 +9161,7 @@ vectorizable_store (vec_info *vinfo,
       gimple *new_stmt;
       if (j == 0)
 	{
-	  if (slp)
+	  if (slp && !costing_p)
 	    {
 	      /* Get vectorized arguments for SLP_NODE.  */
 	      vect_get_vec_defs (vinfo, stmt_info, slp_node, 1, op,
@@ -9111,13 +9187,19 @@ vectorizable_store (vec_info *vinfo,
 		     that there is no interleaving, DR_GROUP_SIZE is 1,
 		     and only one iteration of the loop will be executed.  */
 		  op = vect_get_store_rhs (next_stmt_info);
-		  vect_get_vec_defs_for_operand (vinfo, next_stmt_info, ncopies,
-						 op, gvec_oprnds[i]);
-		  vec_oprnd = (*gvec_oprnds[i])[0];
-		  dr_chain.quick_push (vec_oprnd);
+		  if (costing_p)
+		    update_prologue_cost (&prologue_cost, op);
+		  else
+		    {
+		      vect_get_vec_defs_for_operand (vinfo, next_stmt_info,
+						     ncopies, op,
+						     gvec_oprnds[i]);
+		      vec_oprnd = (*gvec_oprnds[i])[0];
+		      dr_chain.quick_push (vec_oprnd);
+		    }
 		  next_stmt_info = DR_GROUP_NEXT_ELEMENT (next_stmt_info);
 		}
-	      if (mask)
+	      if (mask && !costing_p)
 		{
 		  vect_get_vec_defs_for_operand (vinfo, stmt_info, ncopies,
 						 mask, &vec_masks,
@@ -9127,11 +9209,13 @@ vectorizable_store (vec_info *vinfo,
 	    }
 
 	  /* We should have catched mismatched types earlier.  */
-	  gcc_assert (useless_type_conversion_p (vectype,
-						 TREE_TYPE (vec_oprnd)));
+	  gcc_assert (costing_p
+		      || useless_type_conversion_p (vectype,
+						    TREE_TYPE (vec_oprnd)));
 	  bool simd_lane_access_p
 	    = STMT_VINFO_SIMD_LANE_ACCESS_P (stmt_info) != 0;
-	  if (simd_lane_access_p
+	  if (!costing_p
+	      && simd_lane_access_p
 	      && !loop_masks
 	      && TREE_CODE (DR_BASE_ADDRESS (first_dr_info->dr)) == ADDR_EXPR
 	      && VAR_P (TREE_OPERAND (DR_BASE_ADDRESS (first_dr_info->dr), 0))
@@ -9143,14 +9227,14 @@ vectorizable_store (vec_info *vinfo,
 	      dataref_ptr = unshare_expr (DR_BASE_ADDRESS (first_dr_info->dr));
 	      dataref_offset = build_int_cst (ref_type, 0);
 	    }
-	  else
+	  else if (!costing_p)
 	    dataref_ptr
 	      = vect_create_data_ref_ptr (vinfo, first_stmt_info, aggr_type,
 					  simd_lane_access_p ? loop : NULL,
 					  offset, &dummy, gsi, &ptr_incr,
 					  simd_lane_access_p, bump);
 	}
-      else
+      else if (!costing_p)
 	{
 	  gcc_assert (!LOOP_VINFO_USING_SELECT_VL_P (loop_vinfo));
 	  /* DR_CHAIN is then used as an input to vect_permute_store_chain().
@@ -9172,15 +9256,78 @@ vectorizable_store (vec_info *vinfo,
 
       new_stmt = NULL;
       if (grouped_store)
-	/* Permute.  */
-	vect_permute_store_chain (vinfo, dr_chain, group_size, stmt_info, gsi,
-				  &result_chain);
+	{
+	  /* Permute.  */
+	  gcc_assert (memory_access_type == VMAT_CONTIGUOUS_PERMUTE);
+	  if (costing_p)
+	    {
+	      int group_size = DR_GROUP_SIZE (first_stmt_info);
+	      int nstmts = ceil_log2 (group_size) * group_size;
+	      inside_cost += record_stmt_cost (cost_vec, nstmts, vec_perm,
+					       stmt_info, 0, vect_body);
+	      if (dump_enabled_p ())
+		dump_printf_loc (MSG_NOTE, vect_location,
+				 "vect_model_store_cost: "
+				 "strided group_size = %d .\n",
+				 group_size);
+	    }
+	  else
+	    vect_permute_store_chain (vinfo, dr_chain, group_size, stmt_info,
+				      gsi, &result_chain);
+	}
 
       stmt_vec_info next_stmt_info = first_stmt_info;
       for (i = 0; i < vec_num; i++)
 	{
-	  unsigned misalign;
-	  unsigned HOST_WIDE_INT align;
+	  if (!costing_p)
+	    {
+	      if (slp)
+		vec_oprnd = vec_oprnds[i];
+	      else if (grouped_store)
+		/* For grouped stores vectorized defs are interleaved in
+		   vect_permute_store_chain().  */
+		vec_oprnd = result_chain[i];
+	    }
+
+	  if (memory_access_type == VMAT_CONTIGUOUS_REVERSE)
+	    {
+	      if (costing_p)
+		inside_cost += record_stmt_cost (cost_vec, 1, vec_perm,
+						 stmt_info, 0, vect_body);
+	      else
+		{
+		  tree perm_mask = perm_mask_for_reverse (vectype);
+		  tree perm_dest = vect_create_destination_var (
+		    vect_get_store_rhs (stmt_info), vectype);
+		  tree new_temp = make_ssa_name (perm_dest);
+
+		  /* Generate the permute statement.  */
+		  gimple *perm_stmt
+		    = gimple_build_assign (new_temp, VEC_PERM_EXPR, vec_oprnd,
+					   vec_oprnd, perm_mask);
+		  vect_finish_stmt_generation (vinfo, stmt_info, perm_stmt,
+					       gsi);
+
+		  perm_stmt = SSA_NAME_DEF_STMT (new_temp);
+		  vec_oprnd = new_temp;
+		}
+	    }
+
+	  if (costing_p)
+	    {
+	      vect_get_store_cost (vinfo, stmt_info, 1,
+				   alignment_support_scheme, misalignment,
+				   &inside_cost, cost_vec);
+
+	      if (!slp)
+		{
+		  next_stmt_info = DR_GROUP_NEXT_ELEMENT (next_stmt_info);
+		  if (!next_stmt_info)
+		    break;
+		}
+
+	      continue;
+	    }
 
 	  tree final_mask = NULL_TREE;
 	  tree final_len = NULL_TREE;
@@ -9200,13 +9347,8 @@ vectorizable_store (vec_info *vinfo,
 	    dataref_ptr = bump_vector_ptr (vinfo, dataref_ptr, ptr_incr, gsi,
 					   stmt_info, bump);
 
-	  if (slp)
-	    vec_oprnd = vec_oprnds[i];
-	  else if (grouped_store)
-	    /* For grouped stores vectorized defs are interleaved in
-	       vect_permute_store_chain().  */
-	    vec_oprnd = result_chain[i];
-
+	  unsigned misalign;
+	  unsigned HOST_WIDE_INT align;
 	  align = known_alignment (DR_TARGET_ALIGNMENT (first_dr_info));
 	  if (alignment_support_scheme == dr_aligned)
 	    misalign = 0;
@@ -9222,24 +9364,6 @@ vectorizable_store (vec_info *vinfo,
 	    set_ptr_info_alignment (get_ptr_info (dataref_ptr), align,
 				    misalign);
 	  align = least_bit_hwi (misalign | align);
-
-	  if (memory_access_type == VMAT_CONTIGUOUS_REVERSE)
-	    {
-	      tree perm_mask = perm_mask_for_reverse (vectype);
-	      tree perm_dest
-		= vect_create_destination_var (vect_get_store_rhs (stmt_info),
-					       vectype);
-	      tree new_temp = make_ssa_name (perm_dest);
-
-	      /* Generate the permute statement.  */
-	      gimple *perm_stmt
-		= gimple_build_assign (new_temp, VEC_PERM_EXPR, vec_oprnd,
-				       vec_oprnd, perm_mask);
-	      vect_finish_stmt_generation (vinfo, stmt_info, perm_stmt, gsi);
-
-	      perm_stmt = SSA_NAME_DEF_STMT (new_temp);
-	      vec_oprnd = new_temp;
-	    }
 
 	  /* Compute IFN when LOOP_LENS or final_mask valid.  */
 	  machine_mode vmode = TYPE_MODE (vectype);
@@ -9353,12 +9477,51 @@ vectorizable_store (vec_info *vinfo,
 	  if (!next_stmt_info)
 	    break;
 	}
-      if (!slp)
+      if (!slp && !costing_p)
 	{
 	  if (j == 0)
 	    *vec_stmt = new_stmt;
 	  STMT_VINFO_VEC_STMTS (stmt_info).safe_push (new_stmt);
 	}
+    }
+
+  if (costing_p)
+    {
+      /* When vectorizing a store into the function result assign
+	 a penalty if the function returns in a multi-register location.
+	 In this case we assume we'll end up with having to spill the
+	 vector result and do piecewise loads as a conservative estimate.  */
+      tree base = get_base_address (STMT_VINFO_DATA_REF (stmt_info)->ref);
+      if (base
+	  && (TREE_CODE (base) == RESULT_DECL
+	      || (DECL_P (base) && cfun_returns (base)))
+	  && !aggregate_value_p (base, cfun->decl))
+	{
+	  rtx reg = hard_function_value (TREE_TYPE (base), cfun->decl, 0, 1);
+	  /* ???  Handle PARALLEL in some way.  */
+	  if (REG_P (reg))
+	    {
+	      int nregs = hard_regno_nregs (REGNO (reg), GET_MODE (reg));
+	      /* Assume that a single reg-reg move is possible and cheap,
+		 do not account for vector to gp register move cost.  */
+	      if (nregs > 1)
+		{
+		  /* Spill.  */
+		  prologue_cost
+		    += record_stmt_cost (cost_vec, ncopies, vector_store,
+					 stmt_info, 0, vect_epilogue);
+		  /* Loads.  */
+		  prologue_cost
+		    += record_stmt_cost (cost_vec, ncopies * nregs, scalar_load,
+					 stmt_info, 0, vect_epilogue);
+		}
+	    }
+	}
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "vect_model_store_cost: inside_cost = %d, "
+			 "prologue_cost = %d .\n",
+			 inside_cost, prologue_cost);
     }
 
   return true;
