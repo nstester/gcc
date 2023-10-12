@@ -448,7 +448,8 @@ i[34567]86-*-* | x86_64-*-*)
 		       avxvnniint8intrin.h avxneconvertintrin.h
 		       cmpccxaddintrin.h amxfp16intrin.h prfchiintrin.h
 		       raointintrin.h amxcomplexintrin.h avxvnniint16intrin.h
-		       sm3intrin.h sha512intrin.h sm4intrin.h"
+		       sm3intrin.h sha512intrin.h sm4intrin.h
+		       usermsrintrin.h"
 	;;
 ia64-*-*)
 	extra_headers=ia64intrin.h
@@ -2525,7 +2526,7 @@ riscv*-*-freebsd*)
 
 loongarch*-*-linux*)
 	tm_file="elfos.h gnu-user.h linux.h linux-android.h glibc-stdint.h ${tm_file}"
-	tm_file="${tm_file} loongarch/gnu-user.h loongarch/linux.h"
+	tm_file="${tm_file} loongarch/gnu-user.h loongarch/linux.h loongarch/loongarch-driver.h"
 	extra_options="${extra_options} linux-android.opt"
 	tmake_file="${tmake_file} loongarch/t-multilib loongarch/t-linux"
 	gnu_ld=yes
@@ -2538,7 +2539,7 @@ loongarch*-*-linux*)
 
 loongarch*-*-elf*)
 	tm_file="elfos.h newlib-stdint.h ${tm_file}"
-	tm_file="${tm_file} loongarch/elf.h loongarch/linux.h"
+	tm_file="${tm_file} loongarch/elf.h loongarch/linux.h loongarch/loongarch-driver.h"
 	tmake_file="${tmake_file} loongarch/t-multilib loongarch/t-linux"
 	gnu_ld=yes
 	gas=yes
