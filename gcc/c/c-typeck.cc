@@ -3367,7 +3367,7 @@ convert_argument (location_t ploc, tree function, tree fundecl,
     {
       error_at (ploc, "type of formal parameter %d is incomplete",
 		parmnum + 1);
-      return val;
+      return error_mark_node;
     }
 
   /* Optionally warn about conversions that differ from the default
@@ -5960,6 +5960,9 @@ handle_warn_cast_qual (location_t loc, tree type, tree otype)
 static bool
 c_safe_arg_type_equiv_p (tree t1, tree t2)
 {
+  if (error_operand_p (t1) || error_operand_p (t2))
+    return true;
+
   t1 = TYPE_MAIN_VARIANT (t1);
   t2 = TYPE_MAIN_VARIANT (t2);
 
@@ -7446,6 +7449,7 @@ convert_for_assignment (location_t location, location_t expr_loc, tree type,
 
       /* See if the pointers point to incompatible scalar storage orders.  */
       if (warn_scalar_storage_order
+	  && !null_pointer_constant_p (rhs)
 	  && (AGGREGATE_TYPE_P (ttl) && TYPE_REVERSE_STORAGE_ORDER (ttl))
 	     != (AGGREGATE_TYPE_P (ttr) && TYPE_REVERSE_STORAGE_ORDER (ttr)))
 	{
