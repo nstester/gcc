@@ -4168,12 +4168,10 @@ expand_vec_lrint (rtx op_0, rtx op_1, machine_mode vec_fp_mode,
 
 void
 expand_vec_lround (rtx op_0, rtx op_1, machine_mode vec_fp_mode,
-		   machine_mode vec_long_mode)
+		   machine_mode vec_int_mode)
 {
-  gcc_assert (known_eq (GET_MODE_SIZE (vec_fp_mode),
-			GET_MODE_SIZE (vec_long_mode)));
-
-  emit_vec_cvt_x_f (op_0, op_1, UNARY_OP_FRM_RMM, vec_fp_mode);
+  emit_vec_rounding_to_integer (op_0, op_1, vec_fp_mode, vec_int_mode,
+				UNARY_OP_FRM_RMM);
 }
 
 void
@@ -4360,6 +4358,26 @@ count_regno_occurrences (rtx_insn *rinsn, unsigned int regno)
     if (refers_to_regno_p (regno, recog_data.operand[i]))
       count++;
   return count;
+}
+
+/* Return true if the OP can be directly broadcasted.  */
+bool
+can_be_broadcasted_p (rtx op)
+{
+  machine_mode mode = GET_MODE (op);
+  /* We don't allow RA (register allocation) reload generate
+    (vec_duplicate:DI reg) in RV32 system wheras we allow
+    (vec_duplicate:DI mem) in RV32 system.  */
+  if (!can_create_pseudo_p () && !FLOAT_MODE_P (mode)
+      && maybe_gt (GET_MODE_SIZE (mode), GET_MODE_SIZE (Pmode))
+      && !satisfies_constraint_Wdm (op))
+    return false;
+
+  if (satisfies_constraint_K (op) || register_operand (op, mode)
+      || satisfies_constraint_Wdm (op) || rtx_equal_p (op, CONST0_RTX (mode)))
+    return true;
+
+  return can_create_pseudo_p () && nonmemory_operand (op, mode);
 }
 
 } // namespace riscv_vector
