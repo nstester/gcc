@@ -95,14 +95,14 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
   plus minus
   mult trunc_div trunc_mod rdiv
   min max
-  IFN_FMIN IFN_FMAX
+  IFN_FMIN IFN_FMAX IFN_COPYSIGN
   bit_and bit_ior bit_xor
   lshift rshift)
 (define_operator_list COND_BINARY
   IFN_COND_ADD IFN_COND_SUB
   IFN_COND_MUL IFN_COND_DIV IFN_COND_MOD IFN_COND_RDIV
   IFN_COND_MIN IFN_COND_MAX
-  IFN_COND_FMIN IFN_COND_FMAX
+  IFN_COND_FMIN IFN_COND_FMAX IFN_COND_COPYSIGN
   IFN_COND_AND IFN_COND_IOR IFN_COND_XOR
   IFN_COND_SHL IFN_COND_SHR)
 (define_operator_list COND_LEN_BINARY
@@ -110,7 +110,7 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
   IFN_COND_LEN_MUL IFN_COND_LEN_DIV
   IFN_COND_LEN_MOD IFN_COND_LEN_RDIV
   IFN_COND_LEN_MIN IFN_COND_LEN_MAX
-  IFN_COND_LEN_FMIN IFN_COND_LEN_FMAX
+  IFN_COND_LEN_FMIN IFN_COND_LEN_FMAX IFN_COND_LEN_COPYSIGN
   IFN_COND_LEN_AND IFN_COND_LEN_IOR IFN_COND_LEN_XOR
   IFN_COND_LEN_SHL IFN_COND_LEN_SHR)
 
@@ -1086,45 +1086,49 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 
 /* cos(copysign(x, y)) -> cos(x).  Similarly for cosh.  */
 (for coss (COS COSH)
-     copysigns (COPYSIGN)
- (simplify
-  (coss (copysigns @0 @1))
-   (coss @0)))
+ (for copysigns (COPYSIGN)
+  (simplify
+   (coss (copysigns @0 @1))
+    (coss @0))))
 
 /* pow(copysign(x, y), z) -> pow(x, z) if z is an even integer.  */
 (for pows (POW)
-     copysigns (COPYSIGN)
- (simplify
-  (pows (copysigns @0 @2) REAL_CST@1)
-  (with { HOST_WIDE_INT n; }
-   (if (real_isinteger (&TREE_REAL_CST (@1), &n) && (n & 1) == 0)
-    (pows @0 @1)))))
+ (for copysigns (COPYSIGN)
+  (simplify
+   (pows (copysigns @0 @2) REAL_CST@1)
+   (with { HOST_WIDE_INT n; }
+    (if (real_isinteger (&TREE_REAL_CST (@1), &n) && (n & 1) == 0)
+     (pows @0 @1))))))
 /* Likewise for powi.  */
 (for pows (POWI)
-     copysigns (COPYSIGN)
- (simplify
-  (pows (copysigns @0 @2) INTEGER_CST@1)
-  (if ((wi::to_wide (@1) & 1) == 0)
-   (pows @0 @1))))
+ (for copysigns (COPYSIGN)
+  (simplify
+   (pows (copysigns @0 @2) INTEGER_CST@1)
+   (if ((wi::to_wide (@1) & 1) == 0)
+    (pows @0 @1)))))
 
 (for hypots (HYPOT)
-     copysigns (COPYSIGN)
- /* hypot(copysign(x, y), z) -> hypot(x, z).  */
- (simplify
-  (hypots (copysigns @0 @1) @2)
-  (hypots @0 @2))
- /* hypot(x, copysign(y, z)) -> hypot(x, y).  */
- (simplify
-  (hypots @0 (copysigns @1 @2))
-  (hypots @0 @1)))
+ (for copysigns (COPYSIGN)
+  /* hypot(copysign(x, y), z) -> hypot(x, z).  */
+  (simplify
+   (hypots (copysigns @0 @1) @2)
+   (hypots @0 @2))
+  /* hypot(x, copysign(y, z)) -> hypot(x, y).  */
+  (simplify
+   (hypots @0 (copysigns @1 @2))
+   (hypots @0 @1))))
 
-/* copysign(x, CST) -> [-]abs (x).  */
+/* copysign(x, CST) -> abs (x).  */
 (for copysigns (COPYSIGN_ALL)
  (simplify
   (copysigns @0 REAL_CST@1)
-  (if (REAL_VALUE_NEGATIVE (TREE_REAL_CST (@1)))
-   (negate (abs @0))
+  (if (!REAL_VALUE_NEGATIVE (TREE_REAL_CST (@1)))
    (abs @0))))
+
+/* Transform fneg (fabs (X)) -> copysign (X, -1).  */
+(simplify
+ (negate (abs @0))
+ (IFN_COPYSIGN @0 { build_minus_one_cst (type); }))
 
 /* copysign(copysign(x, y), z) -> copysign(x, z).  */
 (for copysigns (COPYSIGN_ALL)
