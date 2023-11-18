@@ -54,8 +54,11 @@ extern "C" {
 
 /* enum isa_base */
 extern const char* loongarch_isa_base_strings[];
+/* LoongArch V1.00.  */
 #define ISA_BASE_LA64V100     0
-#define N_ISA_BASE_TYPES      1
+/* LoongArch V1.10.  */
+#define ISA_BASE_LA64V110     1
+#define N_ISA_BASE_TYPES      2
 
 /* enum isa_ext_* */
 extern const char* loongarch_isa_ext_strings[];
@@ -141,8 +144,9 @@ struct loongarch_target
 #define CPU_ABI_DEFAULT   1
 #define CPU_LOONGARCH64	  2
 #define CPU_LA464	  3
-#define N_ARCH_TYPES	  4
-#define N_TUNE_TYPES	  4
+#define CPU_LA664	  4
+#define N_ARCH_TYPES	  5
+#define N_TUNE_TYPES	  5
 
 /* parallel tables.  */
 extern const char* loongarch_cpu_strings[];

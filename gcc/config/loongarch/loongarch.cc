@@ -3006,12 +3006,16 @@ loongarch_legitimize_call_address (rtx addr)
 
   enum loongarch_symbol_type symbol_type = loongarch_classify_symbol (addr);
 
-  /* Split function call insn 'bl sym' or 'bl %plt(sym)' to :
-     pcalau12i $rd, %pc_hi20(sym)
-     jr $rd, %pc_lo12(sym).  */
+  /* If add the compilation option '-cmodel=medium', and the assembler does
+     not support call36.  The following sequence of instructions will be
+     used for the function call:
+	pcalau12i $rd, %pc_hi20(sym)
+	jr $rd, %pc_lo12(sym)
+  */
 
   if (TARGET_CMODEL_MEDIUM
-      && TARGET_EXPLICIT_RELOCS
+      && !HAVE_AS_SUPPORT_CALL36
+      && (la_opt_explicit_relocs != EXPLICIT_RELOCS_NONE)
       && (SYMBOL_REF_P (addr) || LABEL_REF_P (addr))
       && (symbol_type == SYMBOL_PCREL
 	  || (symbol_type == SYMBOL_GOT_DISP && flag_plt)))
@@ -5813,16 +5817,12 @@ loongarch_print_operand_punct_valid_p (unsigned char code)
 static bool
 loongarch_memmodel_needs_rel_acq_fence (enum memmodel model)
 {
-  switch (model)
+  switch (memmodel_base (model))
     {
       case MEMMODEL_ACQ_REL:
       case MEMMODEL_SEQ_CST:
-      case MEMMODEL_SYNC_SEQ_CST:
       case MEMMODEL_RELEASE:
-      case MEMMODEL_SYNC_RELEASE:
       case MEMMODEL_ACQUIRE:
-      case MEMMODEL_CONSUME:
-      case MEMMODEL_SYNC_ACQUIRE:
 	return true;
 
       case MEMMODEL_RELAXED:
@@ -10173,6 +10173,7 @@ loongarch_cpu_sched_reassociation_width (struct loongarch_target *target,
     {
     case CPU_LOONGARCH64:
     case CPU_LA464:
+    case CPU_LA664:
       /* Vector part.  */
       if (LSX_SUPPORTED_MODE_P (mode) || LASX_SUPPORTED_MODE_P (mode))
 	{
