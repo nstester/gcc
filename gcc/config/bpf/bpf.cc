@@ -746,6 +746,15 @@ bpf_output_call (rtx target)
 	    xops[0] = GEN_INT (TREE_INT_CST_LOW (TREE_VALUE (attr_args)));
 	    output_asm_insn ("call\t%0", xops);
 	  }
+	else if (fndecl_built_in_p (decl))
+	  {
+	    /* For now lets report this as an error while we are not able to
+	       link eBPF object files.  In particular with libgcc.  */
+	    tree name = DECL_NAME (decl);
+	    error ("call to external builtin %s in function, which is not supported by "
+		   "eBPF", name != NULL_TREE ? IDENTIFIER_POINTER (name) : "(anon)");
+	    output_asm_insn ("call 0", NULL);
+	  }
 	else
 	  output_asm_insn ("call\t%0", &target);
 
@@ -764,6 +773,18 @@ bpf_output_call (rtx target)
 
   return "";
 }
+
+static void
+bpf_external_libcall (rtx fun)
+{
+  tree decl = SYMBOL_REF_DECL (fun);
+  tree name = DECL_NAME (decl);
+  error ("call to external libcall %s in function, which is not supported by "
+	 "eBPF", name != NULL_TREE ? IDENTIFIER_POINTER (name) : "(anon)");
+}
+
+#undef  TARGET_ASM_EXTERNAL_LIBCALL
+#define TARGET_ASM_EXTERNAL_LIBCALL bpf_external_libcall
 
 /* Print register name according to assembly dialect.  In normal
    syntax registers are printed like %rN where N is the register
@@ -1116,6 +1137,22 @@ bpf_small_register_classes_for_mode_p (machine_mode mode)
 #undef TARGET_SMALL_REGISTER_CLASSES_FOR_MODE_P
 #define TARGET_SMALL_REGISTER_CLASSES_FOR_MODE_P \
   bpf_small_register_classes_for_mode_p
+
+static bool
+bpf_use_by_pieces_infrastructure_p (unsigned HOST_WIDE_INT size,
+				    unsigned int align ATTRIBUTE_UNUSED,
+				    enum by_pieces_operation op,
+				    bool speed_p)
+{
+  if (op != COMPARE_BY_PIECES)
+    return default_use_by_pieces_infrastructure_p (size, align, op, speed_p);
+
+  return size <= COMPARE_MAX_PIECES;
+}
+
+#undef TARGET_USE_BY_PIECES_INFRASTRUCTURE_P
+#define TARGET_USE_BY_PIECES_INFRASTRUCTURE_P \
+  bpf_use_by_pieces_infrastructure_p
 
 /* Finally, build the GCC target.  */
 
