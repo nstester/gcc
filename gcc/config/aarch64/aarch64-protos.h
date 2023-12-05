@@ -767,6 +767,7 @@ bool aarch64_constant_address_p (rtx);
 bool aarch64_emit_approx_div (rtx, rtx, rtx);
 bool aarch64_emit_approx_sqrt (rtx, rtx, bool);
 tree aarch64_vector_load_decl (tree);
+rtx aarch64_gen_callee_cookie (aarch64_feature_flags, arm_pcs);
 void aarch64_expand_call (rtx, rtx, rtx, bool);
 bool aarch64_expand_cpymem_mops (rtx *, bool);
 bool aarch64_expand_cpymem (rtx *);
@@ -798,10 +799,17 @@ bool aarch64_sve_mode_p (machine_mode);
 HOST_WIDE_INT aarch64_fold_sve_cnt_pat (aarch64_svpattern, unsigned int);
 bool aarch64_sve_cnt_immediate_p (rtx);
 bool aarch64_sve_scalar_inc_dec_immediate_p (rtx);
+bool aarch64_sve_rdvl_immediate_p (rtx);
 bool aarch64_sve_addvl_addpl_immediate_p (rtx);
 bool aarch64_sve_vector_inc_dec_immediate_p (rtx);
 int aarch64_add_offset_temporaries (rtx);
 void aarch64_split_add_offset (scalar_int_mode, rtx, rtx, rtx, rtx, rtx);
+bool aarch64_rdsvl_immediate_p (const_rtx);
+rtx aarch64_sme_vq_immediate (machine_mode mode, HOST_WIDE_INT,
+			      aarch64_feature_flags);
+char *aarch64_output_rdsvl (const_rtx);
+bool aarch64_addsvl_addspl_immediate_p (const_rtx);
+char *aarch64_output_addsvl_addspl (rtx);
 bool aarch64_mov_operand_p (rtx, machine_mode);
 rtx aarch64_reverse_mask (machine_mode, unsigned int);
 bool aarch64_offset_7bit_signed_scaled_p (machine_mode, poly_int64);
@@ -810,6 +818,7 @@ char *aarch64_output_sve_prefetch (const char *, rtx, const char *);
 char *aarch64_output_sve_cnt_immediate (const char *, const char *, rtx);
 char *aarch64_output_sve_cnt_pat_immediate (const char *, const char *, rtx *);
 char *aarch64_output_sve_scalar_inc_dec (rtx);
+char *aarch64_output_sve_rdvl (rtx);
 char *aarch64_output_sve_addvl_addpl (rtx);
 char *aarch64_output_sve_vector_inc_dec (const char *, rtx);
 char *aarch64_output_scalar_simd_mov_immediate (rtx, scalar_int_mode);
@@ -849,8 +858,9 @@ bool aarch64_is_mov_xn_imm (unsigned HOST_WIDE_INT);
 bool aarch64_use_return_insn_p (void);
 const char *aarch64_output_casesi (rtx *);
 const char *aarch64_output_load_tp (rtx);
+const char *aarch64_output_sme_zero_za (rtx);
 
-unsigned int aarch64_tlsdesc_abi_id ();
+arm_pcs aarch64_tlsdesc_abi_id ();
 enum aarch64_symbol_type aarch64_classify_symbol (rtx, HOST_WIDE_INT);
 enum aarch64_symbol_type aarch64_classify_tls_symbol (rtx);
 enum reg_class aarch64_regno_regclass (unsigned);
@@ -862,7 +872,6 @@ machine_mode aarch64_hard_regno_caller_save_mode (unsigned, unsigned,
 int aarch64_uxt_size (int, HOST_WIDE_INT);
 int aarch64_vec_fpconst_pow_of_2 (rtx);
 rtx aarch64_mask_from_zextract_ops (rtx, rtx);
-const char *aarch64_output_move_struct (rtx *operands);
 rtx aarch64_return_addr_rtx (void);
 rtx aarch64_return_addr (int, rtx);
 rtx aarch64_simd_gen_const_vector_dup (machine_mode, HOST_WIDE_INT);
@@ -876,6 +885,7 @@ bool aarch64_sve_ldnf1_operand_p (rtx);
 bool aarch64_sve_ldr_operand_p (rtx);
 bool aarch64_sve_prefetch_operand_p (rtx, machine_mode);
 bool aarch64_sve_struct_memory_operand_p (rtx);
+bool aarch64_sme_ldr_vnum_offset_p (rtx, rtx);
 rtx aarch64_simd_vect_par_cnst_half (machine_mode, int, bool);
 rtx aarch64_gen_stepped_int_parallel (unsigned int, int, int);
 bool aarch64_stepped_int_parallel_p (rtx, int);
@@ -909,7 +919,7 @@ void aarch64_sve_expand_vector_init (rtx, rtx);
 void aarch64_init_cumulative_args (CUMULATIVE_ARGS *, const_tree, rtx,
 				   const_tree, unsigned, bool = false);
 void aarch64_init_expanders (void);
-void aarch64_emit_call_insn (rtx);
+rtx_call_insn *aarch64_emit_call_insn (rtx);
 void aarch64_register_pragmas (void);
 void aarch64_relayout_simd_types (void);
 void aarch64_reset_previous_fndecl (void);
@@ -937,6 +947,7 @@ rtx aarch64_simd_expand_builtin (int, tree, rtx);
 void aarch64_simd_lane_bounds (rtx, HOST_WIDE_INT, HOST_WIDE_INT, const_tree);
 rtx aarch64_endian_lane_rtx (machine_mode, unsigned int);
 
+void aarch64_split_double_move (rtx, rtx, machine_mode);
 void aarch64_split_128bit_move (rtx, rtx);
 
 bool aarch64_split_128bit_move_p (rtx, rtx);
@@ -992,6 +1003,7 @@ void handle_arm_neon_h (void);
 namespace aarch64_sve {
   void init_builtins ();
   void handle_arm_sve_h ();
+  void handle_arm_sme_h ();
   tree builtin_decl (unsigned, bool);
   bool builtin_type_p (const_tree);
   bool builtin_type_p (const_tree, unsigned int *, unsigned int *);
@@ -1050,6 +1062,7 @@ rtl_opt_pass *make_pass_track_speculation (gcc::context *);
 rtl_opt_pass *make_pass_tag_collision_avoidance (gcc::context *);
 rtl_opt_pass *make_pass_insert_bti (gcc::context *ctxt);
 rtl_opt_pass *make_pass_cc_fusion (gcc::context *ctxt);
+rtl_opt_pass *make_pass_switch_pstate_sm (gcc::context *ctxt);
 
 poly_uint64 aarch64_regmode_natural_size (machine_mode);
 
@@ -1078,5 +1091,8 @@ extern bool aarch64_harden_sls_blr_p (void);
 extern void aarch64_output_patchable_area (unsigned int, bool);
 
 extern void aarch64_adjust_reg_alloc_order ();
+
+bool aarch64_optimize_mode_switching (aarch64_mode_entity);
+void aarch64_restore_za (rtx);
 
 #endif /* GCC_AARCH64_PROTOS_H */
