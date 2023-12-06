@@ -22,6 +22,7 @@
 
 #define INCLUDE_STRING
 #define INCLUDE_ALGORITHM
+#define INCLUDE_VECTOR
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -91,6 +92,7 @@
 #include "symbol-summary.h"
 #include "ipa-prop.h"
 #include "ipa-fnsummary.h"
+#include "hash-map.h"
 
 /* This file should be included last.  */
 #include "target-def.h"
@@ -458,6 +460,103 @@ static const struct processor all_cores[] =
 #include "aarch64-cores.def"
   {NULL, aarch64_none, aarch64_none, aarch64_no_arch, 0, NULL}
 };
+/* Internal representation of system registers.  */
+typedef struct {
+  const char *name;
+  /* Stringified sysreg encoding values, represented as
+     s<sn>_<op1>_c<cn>_c<cm>_<op2>.  */
+  const char *encoding;
+  /* Flags affecting sysreg usage, such as read/write-only.  */
+  unsigned properties;
+  /* Architectural features implied by sysreg.  */
+  aarch64_feature_flags arch_reqs;
+} sysreg_t;
+
+/* An aarch64_feature_set initializer for a single feature,
+   AARCH64_FEATURE_<FEAT>.  */
+#define AARCH64_FEATURE(FEAT) AARCH64_FL_##FEAT
+
+/* Used by AARCH64_FEATURES.  */
+#define AARCH64_OR_FEATURES_1(X, F1) \
+  AARCH64_FEATURE (F1)
+#define AARCH64_OR_FEATURES_2(X, F1, F2) \
+  (AARCH64_FEATURE (F1) | AARCH64_OR_FEATURES_1 (X, F2))
+#define AARCH64_OR_FEATURES_3(X, F1, ...) \
+  (AARCH64_FEATURE (F1) | AARCH64_OR_FEATURES_2 (X, __VA_ARGS__))
+
+/* An aarch64_feature_set initializer for the N features listed in "...".  */
+#define AARCH64_FEATURES(N, ...) \
+  AARCH64_OR_FEATURES_##N (0, __VA_ARGS__)
+
+#define AARCH64_NO_FEATURES	   0
+
+/* Flags associated with the properties of system registers.  It mainly serves
+   to mark particular registers as read or write only.  */
+#define F_DEPRECATED		   (1 << 1)
+#define F_REG_READ		   (1 << 2)
+#define F_REG_WRITE		   (1 << 3)
+#define F_ARCHEXT		   (1 << 4)
+/* Flag indicating register name is alias for another system register.  */
+#define F_REG_ALIAS		   (1 << 5)
+
+/* Database of system registers, their encodings and architectural
+   requirements.  */
+const sysreg_t aarch64_sysregs[] =
+{
+#define CPENC(SN, OP1, CN, CM, OP2) "s"#SN"_"#OP1"_c"#CN"_c"#CM"_"#OP2
+#define SYSREG(NAME, ENC, FLAGS, ARCH) \
+  { NAME, ENC, FLAGS, ARCH },
+#include "aarch64-sys-regs.def"
+#undef CPENC
+};
+
+#undef AARCH64_NO_FEATURES
+
+using sysreg_map_t = hash_map<nofree_string_hash, const sysreg_t *>;
+static sysreg_map_t *sysreg_map = nullptr;
+
+/* Map system register names to their hardware metadata: encoding,
+   feature flags and architectural feature requirements, all of which
+   are encoded in a sysreg_t struct.  */
+void
+aarch64_register_sysreg (const char *name, const sysreg_t *metadata)
+{
+  bool dup = sysreg_map->put (name, metadata);
+  gcc_checking_assert (!dup);
+}
+
+/* Lazily initialize hash table for system register validation,
+   checking the validity of supplied register name and returning
+   register's associated metadata.  */
+static void
+aarch64_init_sysregs (void)
+{
+  gcc_assert (!sysreg_map);
+  sysreg_map = new sysreg_map_t;
+
+
+  for (unsigned i = 0; i < ARRAY_SIZE (aarch64_sysregs); i++)
+    {
+      const sysreg_t *reg = aarch64_sysregs + i;
+      aarch64_register_sysreg (reg->name, reg);
+    }
+}
+
+/* No direct access to the sysreg hash-map should be made.  Doing so
+   risks trying to acess an unitialized hash-map and dereferencing the
+   returned double pointer without due care risks dereferencing a
+   null-pointer.  */
+const sysreg_t *
+aarch64_lookup_sysreg_map (const char *regname)
+{
+  if (!sysreg_map)
+    aarch64_init_sysregs ();
+
+  const sysreg_t **sysreg_entry = sysreg_map->get (regname);
+  if (sysreg_entry != NULL)
+    return *sysreg_entry;
+  return NULL;
+}
 
 /* The current tuning set.  */
 struct tune_params aarch64_tune_params = generic_tunings;
@@ -28904,6 +29003,106 @@ make_pass_switch_pstate_sm (gcc::context *ctxt)
   return new pass_switch_pstate_sm (ctxt);
 }
 
+/* Parse an implementation-defined system register name of
+   the form S[0-3]_[0-7]_C[0-15]_C[0-15]_[0-7].
+   Return true if name matched against above pattern, false
+   otherwise.  */
+bool
+aarch64_is_implem_def_reg (const char *regname)
+{
+  unsigned pos = 0;
+  unsigned name_len = strlen (regname);
+  if (name_len < 12 || name_len > 14)
+    return false;
+
+  auto cterm_valid_p = [&]()
+  {
+    bool leading_zero_p = false;
+    unsigned i = 0;
+    char n[3] = {0};
+
+    if (regname[pos] != 'c')
+      return false;
+    pos++;
+    while (regname[pos] != '_')
+      {
+	if (leading_zero_p)
+	  return false;
+	if (i == 0 && regname[pos] == '0')
+	  leading_zero_p = true;
+	if (i > 2)
+	  return false;
+	if (!ISDIGIT (regname[pos]))
+	  return false;
+	n[i++] = regname[pos++];
+      }
+    if (atoi (n) > 15)
+      return false;
+    return true;
+  };
+
+  if (regname[pos] != 's')
+    return false;
+  pos++;
+  if (regname[pos] < '0' || regname[pos] > '3')
+    return false;
+  pos++;
+  if (regname[pos++] != '_')
+    return false;
+  if (regname[pos] < '0' || regname[pos] > '7')
+    return false;
+  pos++;
+  if (regname[pos++] != '_')
+    return false;
+  if (!cterm_valid_p ())
+    return false;
+  if (regname[pos++] != '_')
+    return false;
+  if (!cterm_valid_p ())
+    return false;
+  if (regname[pos++] != '_')
+    return false;
+  if (regname[pos] < '0' || regname[pos] > '7')
+    return false;
+  return true;
+}
+
+/* Return true if REGNAME matches either a known permitted system
+   register name, or a generic sysreg specification.  For use in
+   back-end predicate `aarch64_sysreg_string'.  */
+bool
+aarch64_valid_sysreg_name_p (const char *regname)
+{
+  const sysreg_t *sysreg = aarch64_lookup_sysreg_map (regname);
+  if (sysreg == NULL)
+    return aarch64_is_implem_def_reg (regname);
+  if (sysreg->arch_reqs)
+    return (aarch64_isa_flags & sysreg->arch_reqs);
+  return true;
+}
+
+/* Return the generic sysreg specification for a valid system register
+   name, otherwise NULL.  WRITE_P is true iff the register is being
+   written to.  */
+const char *
+aarch64_retrieve_sysreg (const char *regname, bool write_p)
+{
+  const sysreg_t *sysreg = aarch64_lookup_sysreg_map (regname);
+  if (sysreg == NULL)
+    {
+      if (aarch64_is_implem_def_reg (regname))
+	return regname;
+      else
+	return NULL;
+    }
+  if ((write_p && (sysreg->properties & F_REG_READ))
+      || (!write_p && (sysreg->properties & F_REG_WRITE)))
+    return NULL;
+  if ((~aarch64_isa_flags & sysreg->arch_reqs) != 0)
+    return NULL;
+  return sysreg->encoding;
+}
+
 /* Target-specific selftests.  */
 
 #if CHECKING_P
@@ -29031,6 +29230,48 @@ aarch64_test_fractional_cost ()
   ASSERT_EQ (cf (1, 2).as_double (), 0.5);
 }
 
+/* Calculate whether our system register data, as imported from
+   `aarch64-sys-reg.def' has any duplicate entries.  */
+static void
+aarch64_test_sysreg_encoding_clashes (void)
+{
+  using dup_instances_t = hash_map<nofree_string_hash,
+				   std::vector<const sysreg_t*>>;
+
+  dup_instances_t duplicate_instances;
+
+  /* Every time an encoding is established to come up more than once
+     we add it to a "clash-analysis queue", which is then used to extract
+     necessary information from our hash map when establishing whether
+     repeated encodings are valid.  */
+
+  /* 1) Collect recurrence information.  */
+  for (unsigned i = 0; i < ARRAY_SIZE (aarch64_sysregs); i++)
+    {
+      const sysreg_t *reg = aarch64_sysregs + i;
+
+      std::vector<const sysreg_t*> *tmp
+	= &duplicate_instances.get_or_insert (reg->encoding);
+
+      tmp->push_back (reg);
+    }
+
+  /* 2) Carry out analysis on collected data.  */
+  for (auto instance : duplicate_instances)
+    {
+      unsigned nrep = instance.second.size ();
+      if (nrep > 1)
+	for (unsigned i = 0; i < nrep; i++)
+	  for (unsigned j = i + 1; j < nrep; j++)
+	    {
+	      const sysreg_t *a = instance.second[i];
+	      const sysreg_t *b = instance.second[j];
+	      ASSERT_TRUE ((a->properties != b->properties)
+			   || (a->arch_reqs != b->arch_reqs));
+	    }
+    }
+}
+
 /* Run all target-specific selftests.  */
 
 static void
@@ -29038,6 +29279,7 @@ aarch64_run_selftests (void)
 {
   aarch64_test_loading_full_dump ();
   aarch64_test_fractional_cost ();
+  aarch64_test_sysreg_encoding_clashes ();
 }
 
 } // namespace selftest
