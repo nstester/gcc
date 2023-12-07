@@ -16209,11 +16209,12 @@ ix86_dep_by_shift_count (const_rtx set_insn, const_rtx use_insn)
 bool
 ix86_unary_operator_ok (enum rtx_code,
 			machine_mode,
-			rtx operands[2])
+			rtx operands[2],
+			bool use_ndd)
 {
   /* If one of operands is memory, source and destination must match.  */
   if ((MEM_P (operands[0])
-       || MEM_P (operands[1]))
+       || (!use_ndd && MEM_P (operands[1])))
       && ! rtx_equal_p (operands[0], operands[1]))
     return false;
   return true;
@@ -23328,6 +23329,31 @@ x86_evex_reg_mentioned_p (rtx operands[], int nops)
     if (EXT_REX_SSE_REG_P (operands[i])
 	|| x86_extended_rex2reg_mentioned_p (operands[i]))
       return true;
+  return false;
+}
+
+/* Return true when rtx operand does not contain any UNSPEC_*POFF related
+   constant to avoid APX_NDD instructions excceed encoding length limit.  */
+bool
+x86_poff_operand_p (rtx operand)
+{
+  if (GET_CODE (operand) == CONST)
+    {
+      rtx op = XEXP (operand, 0);
+      if (GET_CODE (op) == PLUS)
+	op = XEXP (op, 0);
+	
+      if (GET_CODE (op) == UNSPEC)
+	{
+	  int unspec = XINT (op, 1);
+	  return (unspec == UNSPEC_NTPOFF
+		  || unspec == UNSPEC_TPOFF
+		  || unspec == UNSPEC_DTPOFF
+		  || unspec == UNSPEC_GOTTPOFF
+		  || unspec == UNSPEC_GOTNTPOFF
+		  || unspec == UNSPEC_INDNTPOFF);
+	}
+    }
   return false;
 }
 
