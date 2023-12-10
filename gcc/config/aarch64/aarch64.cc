@@ -3226,6 +3226,28 @@ aarch64_split_simd_move (rtx dst, rtx src)
     }
 }
 
+/* Return a register that contains SVE value X reinterpreted as SVE mode MODE.
+   The semantics of those of svreinterpret rather than those of subregs;
+   see the comment at the head of aarch64-sve.md for details about the
+   difference.  */
+
+rtx
+aarch64_sve_reinterpret (machine_mode mode, rtx x)
+{
+  if (GET_MODE (x) == mode)
+    return x;
+
+  /* can_change_mode_class must only return true if subregs and svreinterprets
+     have the same semantics.  */
+  if (targetm.can_change_mode_class (GET_MODE (x), mode, FP_REGS))
+    return lowpart_subreg (mode, x, GET_MODE (x));
+
+  rtx res = gen_reg_rtx (mode);
+  x = force_reg (GET_MODE (x), x);
+  emit_insn (gen_aarch64_sve_reinterpret (mode, res, x));
+  return res;
+}
+
 bool
 aarch64_zero_extend_const_eq (machine_mode xmode, rtx x,
 			      machine_mode ymode, rtx y)
@@ -4956,14 +4978,17 @@ aarch64_sme_mode_switch_regs::add_reg (machine_mode mode, unsigned int regno)
   gcc_assert ((vec_flags & VEC_STRUCT) || end_regno == regno + 1);
   for (; regno < end_regno; regno++)
     {
+      /* Force the mode of SVE saves and restores even for single registers.
+	 This is necessary because big-endian targets only allow LDR Z and
+	 STR Z to be used with byte modes.  */
       machine_mode submode = mode;
-      if (vec_flags & VEC_STRUCT)
+      if (vec_flags & VEC_SVE_PRED)
+	submode = VNx16BImode;
+      else if (vec_flags & VEC_SVE_DATA)
+	submode = SVE_BYTE_MODE;
+      else if (vec_flags & VEC_STRUCT)
 	{
-	  if (vec_flags & VEC_SVE_PRED)
-	    submode = VNx16BImode;
-	  else if (vec_flags & VEC_SVE_DATA)
-	    submode = SVE_BYTE_MODE;
-	  else if (vec_flags & VEC_PARTIAL)
+	  if (vec_flags & VEC_PARTIAL)
 	    submode = V8QImode;
 	  else
 	    submode = V16QImode;
