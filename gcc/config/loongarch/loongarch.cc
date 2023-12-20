@@ -10728,7 +10728,7 @@ loongarch_expand_vector_init_same (rtx target, rtx vals, unsigned nvar)
   machine_mode vmode = GET_MODE (target);
   machine_mode imode = GET_MODE_INNER (vmode);
   rtx same = XVECEXP (vals, 0, 0);
-  rtx temp, temp2;
+  rtx temp;
 
   if (CONST_INT_P (same) && nvar == 0
       && loongarch_signed_immediate_p (INTVAL (same), 10, 0))
@@ -10750,19 +10750,19 @@ loongarch_expand_vector_init_same (rtx target, rtx vals, unsigned nvar)
 	  gcc_unreachable ();
 	}
     }
-  temp = gen_reg_rtx (imode);
+
   if (imode == GET_MODE (same))
-    temp2 = same;
+    temp = same;
   else if (GET_MODE_SIZE (imode) >= UNITS_PER_WORD)
     {
       if (GET_CODE (same) == MEM)
 	{
 	  rtx reg_tmp = gen_reg_rtx (GET_MODE (same));
 	  loongarch_emit_move (reg_tmp, same);
-	  temp2 = simplify_gen_subreg (imode, reg_tmp, GET_MODE (reg_tmp), 0);
+	  temp = simplify_gen_subreg (imode, reg_tmp, GET_MODE (reg_tmp), 0);
 	}
       else
-	temp2 = simplify_gen_subreg (imode, same, GET_MODE (same), 0);
+	temp = simplify_gen_subreg (imode, same, GET_MODE (same), 0);
     }
   else
     {
@@ -10770,12 +10770,13 @@ loongarch_expand_vector_init_same (rtx target, rtx vals, unsigned nvar)
 	{
 	  rtx reg_tmp = gen_reg_rtx (GET_MODE (same));
 	  loongarch_emit_move (reg_tmp, same);
-	  temp2 = lowpart_subreg (imode, reg_tmp, GET_MODE (reg_tmp));
+	  temp = lowpart_subreg (imode, reg_tmp, GET_MODE (reg_tmp));
 	}
       else
-	temp2 = lowpart_subreg (imode, same, GET_MODE (same));
+	temp = lowpart_subreg (imode, same, GET_MODE (same));
     }
-  emit_move_insn (temp, temp2);
+
+  temp = force_reg (imode, temp);
 
   switch (vmode)
     {
@@ -10997,35 +10998,29 @@ loongarch_expand_vector_init (rtx target, rtx vals)
 			 to reduce the number of instructions.  */
 		      if (i == 1)
 			{
-			  op0 = gen_reg_rtx (imode);
-			  emit_move_insn (op0, val_hi[0]);
-			  op1 = gen_reg_rtx (imode);
-			  emit_move_insn (op1, val_hi[1]);
+			  op0 = force_reg (imode, val_hi[0]);
+			  op1 = force_reg (imode, val_hi[1]);
 			  emit_insn (
 			    loongarch_vec_repl2_256 (target_hi, op0, op1));
 			}
 		      else if (i > 1)
 			{
-			  op0 = gen_reg_rtx (imode);
-			  emit_move_insn (op0, val_hi[i]);
+			  op0 = force_reg (imode, val_hi[i]);
 			  emit_insn (
 			    loongarch_vec_set256 (target_hi, op0, GEN_INT (i)));
 			}
 		    }
 		  else
 		    {
+		      op0 = force_reg (imode, val_hi[i]);
 		      /* Assign the lowest element of val_hi to all elements
 			 of target_hi.  */
 		      if (i == 0)
 			{
-			  op0 = gen_reg_rtx (imode);
-			  emit_move_insn (op0, val_hi[0]);
 			  emit_insn (loongarch_vec_repl1_256 (target_hi, op0));
 			}
 		      else if (!rtx_equal_p (val_hi[i], val_hi[0]))
 			{
-			  op0 = gen_reg_rtx (imode);
-			  emit_move_insn (op0, val_hi[i]);
 			  emit_insn (
 			    loongarch_vec_set256 (target_hi, op0, GEN_INT (i)));
 			}
@@ -11033,18 +11028,15 @@ loongarch_expand_vector_init (rtx target, rtx vals)
 		}
 	      if (!lo_same && !half_same)
 		{
+		  op0 = force_reg (imode, val_lo[i]);
 		  /* Assign the lowest element of val_lo to all elements
 		     of target_lo.  */
 		  if (i == 0)
 		    {
-		      op0 = gen_reg_rtx (imode);
-		      emit_move_insn (op0, val_lo[0]);
 		      emit_insn (loongarch_vec_repl1_128 (target_lo, op0));
 		    }
 		  else if (!rtx_equal_p (val_lo[i], val_lo[0]))
 		    {
-		      op0 = gen_reg_rtx (imode);
-		      emit_move_insn (op0, val_lo[i]);
 		      emit_insn (
 			loongarch_vec_set128 (target_lo, op0, GEN_INT (i)));
 		    }
@@ -11076,16 +11068,13 @@ loongarch_expand_vector_init (rtx target, rtx vals)
 		     reduce the number of instructions.  */
 		  if (i == 1)
 		    {
-		      op0 = gen_reg_rtx (imode);
-		      emit_move_insn (op0, val[0]);
-		      op1 = gen_reg_rtx (imode);
-		      emit_move_insn (op1, val[1]);
+		      op0 = force_reg (imode, val[0]);
+		      op1 = force_reg (imode, val[1]);
 		      emit_insn (loongarch_vec_repl2_128 (target, op0, op1));
 		    }
 		  else if (i > 1)
 		    {
-		      op0 = gen_reg_rtx (imode);
-		      emit_move_insn (op0, val[i]);
+		      op0 = force_reg (imode, val[i]);
 		      emit_insn (
 			loongarch_vec_set128 (target, op0, GEN_INT (i)));
 		    }
@@ -11098,18 +11087,15 @@ loongarch_expand_vector_init (rtx target, rtx vals)
 			loongarch_vec_mirror (target, target, const0_rtx));
 		      return;
 		    }
+		  op0 = force_reg (imode, val[i]);
 		  /* Assign the lowest element of val to all elements of
 		     target.  */
 		  if (i == 0)
 		    {
-		      op0 = gen_reg_rtx (imode);
-		      emit_move_insn (op0, val[0]);
 		      emit_insn (loongarch_vec_repl1_128 (target, op0));
 		    }
 		  else if (!rtx_equal_p (val[i], val[0]))
 		    {
-		      op0 = gen_reg_rtx (imode);
-		      emit_move_insn (op0, val[i]);
 		      emit_insn (
 			loongarch_vec_set128 (target, op0, GEN_INT (i)));
 		    }
@@ -11136,8 +11122,8 @@ loongarch_expand_vector_init (rtx target, rtx vals)
       return;
     }
 
-  /* Loongson is the only cpu with vectors with more elements.  */
-  gcc_assert (0);
+  /* No LoongArch CPU supports vectors with more elements as at now.  */
+  gcc_unreachable ();
 }
 
 /* Implement HARD_REGNO_CALLER_SAVE_MODE.  */
@@ -11161,7 +11147,6 @@ static void
 loongarch_expand_lsx_cmp (rtx dest, enum rtx_code cond, rtx op0, rtx op1)
 {
   machine_mode cmp_mode = GET_MODE (op0);
-  int unspec = -1;
   bool negate = false;
 
   switch (cmp_mode)
@@ -11203,66 +11188,9 @@ loongarch_expand_lsx_cmp (rtx dest, enum rtx_code cond, rtx op0, rtx op1)
 
     case E_V4SFmode:
     case E_V2DFmode:
-      switch (cond)
-	{
-	case UNORDERED:
-	case ORDERED:
-	case EQ:
-	case NE:
-	case UNEQ:
-	case UNLE:
-	case UNLT:
-	  break;
-	case LTGT: cond = NE; break;
-	case UNGE: cond = UNLE; std::swap (op0, op1); break;
-	case UNGT: cond = UNLT; std::swap (op0, op1); break;
-	case LE: unspec = UNSPEC_LSX_VFCMP_SLE; break;
-	case LT: unspec = UNSPEC_LSX_VFCMP_SLT; break;
-	case GE: unspec = UNSPEC_LSX_VFCMP_SLE; std::swap (op0, op1); break;
-	case GT: unspec = UNSPEC_LSX_VFCMP_SLT; std::swap (op0, op1); break;
-	default:
-		 gcc_unreachable ();
-	}
-      if (unspec < 0)
-	loongarch_emit_binary (cond, dest, op0, op1);
-      else
-	{
-	  rtx x = gen_rtx_UNSPEC (GET_MODE (dest),
-				  gen_rtvec (2, op0, op1), unspec);
-	  emit_insn (gen_rtx_SET (dest, x));
-	}
-      break;
-
     case E_V8SFmode:
     case E_V4DFmode:
-      switch (cond)
-	{
-	case UNORDERED:
-	case ORDERED:
-	case EQ:
-	case NE:
-	case UNEQ:
-	case UNLE:
-	case UNLT:
-	  break;
-	case LTGT: cond = NE; break;
-	case UNGE: cond = UNLE; std::swap (op0, op1); break;
-	case UNGT: cond = UNLT; std::swap (op0, op1); break;
-	case LE: unspec = UNSPEC_LASX_XVFCMP_SLE; break;
-	case LT: unspec = UNSPEC_LASX_XVFCMP_SLT; break;
-	case GE: unspec = UNSPEC_LASX_XVFCMP_SLE; std::swap (op0, op1); break;
-	case GT: unspec = UNSPEC_LASX_XVFCMP_SLT; std::swap (op0, op1); break;
-	default:
-		 gcc_unreachable ();
-	}
-      if (unspec < 0)
-	loongarch_emit_binary (cond, dest, op0, op1);
-      else
-	{
-	  rtx x = gen_rtx_UNSPEC (GET_MODE (dest),
-				  gen_rtvec (2, op0, op1), unspec);
-	  emit_insn (gen_rtx_SET (dest, x));
-	}
+      loongarch_emit_binary (cond, dest, op0, op1);
       break;
 
     default:
