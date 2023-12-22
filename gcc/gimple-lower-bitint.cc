@@ -1491,7 +1491,7 @@ bitint_large_huge::handle_cast (tree lhs_type, tree rhs1, tree idx)
 		m_data_cnt = tree_to_uhwi (m_data[save_data_cnt + 2]);
 	      if (TYPE_UNSIGNED (rhs_type))
 		t = build_zero_cst (m_limb_type);
-	      else if (m_bb)
+	      else if (m_bb && m_data[save_data_cnt])
 		t = m_data[save_data_cnt];
 	      else
 		t = m_data[save_data_cnt + 1];
@@ -5827,7 +5827,7 @@ gimple_lower_bitint (void)
 	  tree_code rhs_code;
 	  /* Unoptimize certain constructs to simpler alternatives to
 	     avoid having to lower all of them.  */
-	  if (is_gimple_assign (stmt))
+	  if (is_gimple_assign (stmt) && gimple_bb (stmt))
 	    switch (rhs_code = gimple_assign_rhs_code (stmt))
 	      {
 	      default:
@@ -6687,6 +6687,11 @@ gimple_lower_bitint (void)
 		{
 		  if (SSA_NAME_VAR (s))
 		    set_ssa_default_def (cfun, SSA_NAME_VAR (s), NULL_TREE);
+		  release_ssa_name (s);
+		  continue;
+		}
+	      if (gimple_bb (g) == NULL)
+		{
 		  release_ssa_name (s);
 		  continue;
 		}
