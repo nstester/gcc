@@ -2323,7 +2323,7 @@ build_this_conversion (tree fn, tree ctype,
 		       tree& parmtype, tree& argtype, tree& arg,
 		       int flags, tsubst_flags_t complain)
 {
-  gcc_assert (DECL_NONSTATIC_MEMBER_FUNCTION_P (fn)
+  gcc_assert (DECL_IOBJ_MEMBER_FUNCTION_P (fn)
 	      && !DECL_CONSTRUCTOR_P (fn));
 
   /* The type of the implicit object parameter ('this') for
@@ -2536,7 +2536,7 @@ add_function_candidate (struct z_candidate **candidates,
 	{
 	  tree parmtype = TREE_VALUE (parmnode);
 	  if (i == 0
-	      && DECL_NONSTATIC_MEMBER_FUNCTION_P (fn)
+	      && DECL_IOBJ_MEMBER_FUNCTION_P (fn)
 	      && !DECL_CONSTRUCTOR_P (fn))
 	    t = build_this_conversion (fn, ctype, parmtype, argtype, arg,
 				       flags, complain);
@@ -3493,7 +3493,7 @@ add_template_candidate_real (struct z_candidate **candidates, tree tmpl,
 
   /* We don't do deduction on the in-charge parameter, the VTT
      parameter or 'this'.  */
-  if (DECL_NONSTATIC_MEMBER_FUNCTION_P (tmpl))
+  if (DECL_IOBJ_MEMBER_FUNCTION_P (tmpl))
     {
       if (first_arg_without_in_chrg != NULL_TREE)
 	first_arg_without_in_chrg = NULL_TREE;
@@ -3603,7 +3603,7 @@ add_template_candidate_real (struct z_candidate **candidates, tree tmpl,
       convs = alloc_conversions (nargs);
 
       if (shortcut_bad_convs
-	  && DECL_NONSTATIC_MEMBER_FUNCTION_P (tmpl)
+	  && DECL_IOBJ_MEMBER_FUNCTION_P (tmpl)
 	  && !DECL_CONSTRUCTOR_P (tmpl))
 	{
 	  /* Check the 'this' conversion before proceeding with deduction.
@@ -6631,7 +6631,7 @@ add_candidates (tree fns, tree first_arg, const vec<tree, va_gc> *args,
       tree fn_first_arg = NULL_TREE;
       const vec<tree, va_gc> *fn_args = args;
 
-      if (DECL_NONSTATIC_MEMBER_FUNCTION_P (fn))
+      if (DECL_OBJECT_MEMBER_FUNCTION_P (fn))
 	{
 	  /* Figure out where the object arg comes from.  If this
 	     function is a non-static member and we didn't get an
@@ -9870,14 +9870,9 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
   const vec<tree, va_gc> *args = cand->args;
   tree first_arg = cand->first_arg;
   conversion **convs = cand->convs;
-  conversion *conv;
   tree parm = TYPE_ARG_TYPES (TREE_TYPE (fn));
   int parmlen;
   tree val;
-  int i = 0;
-  int j = 0;
-  unsigned int arg_index = 0;
-  int is_method = 0;
   int nargs;
   tree *argarray;
   bool already_used = false;
@@ -10074,45 +10069,46 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
   if (immediate_invocation_p (STRIP_TEMPLATE (fn)))
     in_consteval_if_p = true;
 
+  int argarray_size = 0;
+  unsigned int arg_index = 0;
+  int conv_index = 0;
+  int param_index = 0;
+
+  auto consume_object_arg = [&arg_index, &first_arg, args]()
+    {
+      if (!first_arg)
+	return (*args)[arg_index++];
+      tree object_arg = first_arg;
+      first_arg = NULL_TREE;
+      return object_arg;
+    };
+
   /* The implicit parameters to a constructor are not considered by overload
      resolution, and must be of the proper type.  */
   if (DECL_CONSTRUCTOR_P (fn))
     {
-      tree object_arg;
-      if (first_arg != NULL_TREE)
-	{
-	  object_arg = first_arg;
-	  first_arg = NULL_TREE;
-	}
-      else
-	{
-	  object_arg = (*args)[arg_index];
-	  ++arg_index;
-	}
-      argarray[j++] = build_this (object_arg);
+      tree object_arg = consume_object_arg ();
+      argarray[argarray_size++] = build_this (object_arg);
       parm = TREE_CHAIN (parm);
       /* We should never try to call the abstract constructor.  */
       gcc_assert (!DECL_HAS_IN_CHARGE_PARM_P (fn));
 
       if (DECL_HAS_VTT_PARM_P (fn))
 	{
-	  argarray[j++] = (*args)[arg_index];
+	  argarray[argarray_size++] = (*args)[arg_index];
 	  ++arg_index;
 	  parm = TREE_CHAIN (parm);
 	}
     }
   /* Bypass access control for 'this' parameter.  */
-  else if (TREE_CODE (TREE_TYPE (fn)) == METHOD_TYPE)
+  else if (DECL_IOBJ_MEMBER_FUNCTION_P (fn))
     {
-      tree arg = build_this (first_arg != NULL_TREE
-			     ? first_arg
-			     : (*args)[arg_index]);
+      tree arg = build_this (consume_object_arg ());
       tree argtype = TREE_TYPE (arg);
 
       if (arg == error_mark_node)
 	return error_mark_node;
-
-      if (convs[i]->bad_p)
+      if (convs[conv_index++]->bad_p)
 	{
 	  if (complain & tf_error)
 	    {
@@ -10187,25 +10183,53 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
       tree converted_arg = build_base_path (PLUS_EXPR, arg,
 					    base_binfo, 1, complain);
 
-      argarray[j++] = converted_arg;
+      argarray[argarray_size++] = converted_arg;
       parm = TREE_CHAIN (parm);
-      if (first_arg != NULL_TREE)
-	first_arg = NULL_TREE;
+    }
+
+  auto handle_arg = [fn, flags](tree type,
+				tree arg,
+				int const param_index,
+				conversion *conv,
+				tsubst_flags_t const arg_complain)
+    {
+      /* Set user_conv_p on the argument conversions, so rvalue/base handling
+	 knows not to allow any more UDCs.  This needs to happen after we
+	 process cand->warnings.  */
+      if (flags & LOOKUP_NO_CONVERSION)
+	conv->user_conv_p = true;
+
+      if (arg_complain & tf_warning)
+	maybe_warn_pessimizing_move (arg, type, /*return_p=*/false);
+
+      tree val = convert_like_with_context (conv, arg, fn,
+					    param_index, arg_complain);
+      val = convert_for_arg_passing (type, val, arg_complain);
+      return val;
+    };
+
+  if (DECL_XOBJ_MEMBER_FUNCTION_P (fn))
+    {
+      gcc_assert (cand->num_convs > 0);
+      tree object_arg = consume_object_arg ();
+      val = handle_arg (TREE_VALUE (parm),
+			object_arg,
+			param_index++,
+			convs[conv_index++],
+			complain);
+
+      if (val == error_mark_node)
+	return error_mark_node;
       else
-	++arg_index;
-      ++i;
-      is_method = 1;
+	argarray[argarray_size++] = val;
+      parm = TREE_CHAIN (parm);
     }
 
   gcc_assert (first_arg == NULL_TREE);
   for (; arg_index < vec_safe_length (args) && parm;
-       parm = TREE_CHAIN (parm), ++arg_index, ++i)
+       parm = TREE_CHAIN (parm), ++arg_index, ++param_index, ++conv_index)
     {
-      tree type = TREE_VALUE (parm);
-      tree arg = (*args)[arg_index];
-      bool conversion_warning = true;
-
-      conv = convs[i];
+      tree current_arg = (*args)[arg_index];
 
       /* If the argument is NULL and used to (implicitly) instantiate a
          template function (and bind one of the template arguments to
@@ -10227,47 +10251,39 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
              func(NULL);
            }
       */
-      if (null_node_p (arg)
-          && DECL_TEMPLATE_INFO (fn)
-          && cand->template_decl
-	  && !cand->explicit_targs)
-        conversion_warning = false;
+      bool const conversion_warning = !(null_node_p (current_arg)
+					&& DECL_TEMPLATE_INFO (fn)
+					&& cand->template_decl
+					&& !cand->explicit_targs);
 
-      /* Set user_conv_p on the argument conversions, so rvalue/base handling
-	 knows not to allow any more UDCs.  This needs to happen after we
-	 process cand->warnings.  */
-      if (flags & LOOKUP_NO_CONVERSION)
-	conv->user_conv_p = true;
+      tsubst_flags_t const arg_complain
+	= conversion_warning ? complain : complain & ~tf_warning;
 
-      tsubst_flags_t arg_complain = complain;
-      if (!conversion_warning)
-	arg_complain &= ~tf_warning;
-
-      if (arg_complain & tf_warning)
-	maybe_warn_pessimizing_move (arg, type, /*return_p*/false);
-
-      val = convert_like_with_context (conv, arg, fn, i - is_method,
-				       arg_complain);
-      val = convert_for_arg_passing (type, val, arg_complain);
+      val = handle_arg (TREE_VALUE (parm),
+			current_arg,
+			param_index,
+			convs[conv_index],
+			arg_complain);
 
       if (val == error_mark_node)
-        return error_mark_node;
+	return error_mark_node;
       else
-        argarray[j++] = val;
+	argarray[argarray_size++] = val;
     }
 
   /* Default arguments */
-  for (; parm && parm != void_list_node; parm = TREE_CHAIN (parm), i++)
+  for (; parm && parm != void_list_node;
+       parm = TREE_CHAIN (parm), param_index++)
     {
       if (TREE_VALUE (parm) == error_mark_node)
 	return error_mark_node;
       val = convert_default_arg (TREE_VALUE (parm),
 				 TREE_PURPOSE (parm),
-				 fn, i - is_method,
+				 fn, param_index,
 				 complain);
       if (val == error_mark_node)
-        return error_mark_node;
-      argarray[j++] = val;
+	return error_mark_node;
+      argarray[argarray_size++] = val;
     }
 
   /* Ellipsis */
@@ -10304,11 +10320,11 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
 	a = convert_arg_to_ellipsis (a, complain);
       if (a == error_mark_node)
 	return error_mark_node;
-      argarray[j++] = a;
+      argarray[argarray_size++] = a;
     }
 
-  gcc_assert (j <= nargs);
-  nargs = j;
+  gcc_assert (argarray_size <= nargs);
+  nargs = argarray_size;
   icip.reset ();
 
   /* Avoid performing argument transformation if warnings are disabled.
@@ -10324,7 +10340,7 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
     {
       tree *fargs = (!nargs ? argarray
 			    : (tree *) alloca (nargs * sizeof (tree)));
-      for (j = 0; j < nargs; j++)
+      for (int j = 0; j < nargs; j++)
 	{
 	  /* For -Wformat undo the implicit passing by hidden reference
 	     done by convert_arg_to_ellipsis.  */
@@ -10798,8 +10814,8 @@ maybe_warn_class_memaccess (location_t loc, tree fndecl,
      type.  If so, and if the class has no non-trivial bases or members,
      be more permissive.  */
   if (current_function_decl
-      && DECL_NONSTATIC_MEMBER_FUNCTION_P (current_function_decl)
-      && is_this_parameter (tree_strip_nop_conversions (dest)))
+      && DECL_OBJECT_MEMBER_FUNCTION_P (current_function_decl)
+      && is_object_parameter (tree_strip_nop_conversions (dest)))
     {
       tree ctx = DECL_CONTEXT (current_function_decl);
       bool special = same_type_ignoring_top_level_qualifiers_p (ctx, desttype);
@@ -12696,15 +12712,37 @@ cand_parms_match (z_candidate *c1, z_candidate *c2)
     }
   tree parms1 = TYPE_ARG_TYPES (TREE_TYPE (fn1));
   tree parms2 = TYPE_ARG_TYPES (TREE_TYPE (fn2));
-  if (DECL_FUNCTION_MEMBER_P (fn1)
-      && DECL_FUNCTION_MEMBER_P (fn2)
-      && (DECL_NONSTATIC_MEMBER_FUNCTION_P (fn1)
-	  != DECL_NONSTATIC_MEMBER_FUNCTION_P (fn2)))
+  auto skip_parms = [](tree fn, tree parms){
+      if (DECL_XOBJ_MEMBER_FUNCTION_P (fn))
+	return TREE_CHAIN (parms);
+      else
+	return skip_artificial_parms_for (fn, parms);
+    };
+  if (!(DECL_FUNCTION_MEMBER_P (fn1)
+	&& DECL_FUNCTION_MEMBER_P (fn2)))
+    /* Early escape.  */;
+  else if ((DECL_STATIC_FUNCTION_P (fn1)
+	    != DECL_STATIC_FUNCTION_P (fn2)))
     {
       /* Ignore 'this' when comparing the parameters of a static member
 	 function with those of a non-static one.  */
-      parms1 = skip_artificial_parms_for (fn1, parms1);
-      parms2 = skip_artificial_parms_for (fn2, parms2);
+      parms1 = skip_parms (fn1, parms1);
+      parms2 = skip_parms (fn2, parms2);
+    }
+  else if ((DECL_XOBJ_MEMBER_FUNCTION_P (fn1)
+	    || DECL_XOBJ_MEMBER_FUNCTION_P (fn2))
+	   && (DECL_IOBJ_MEMBER_FUNCTION_P (fn1)
+	       || DECL_IOBJ_MEMBER_FUNCTION_P (fn2)))
+    {
+      bool xobj_iobj_parameters_correspond (tree, tree);
+      /* CWG2789 is not adequate, it should specify corresponding object
+	 parameters, not same typed object parameters.  */
+      if (!xobj_iobj_parameters_correspond (fn1, fn2))
+	return false;
+      /* We just compared the object parameters, if they don't correspond
+	 we already return false.  */
+      parms1 = skip_parms (fn1, parms1);
+      parms2 = skip_parms (fn2, parms2);
     }
   return compparms (parms1, parms2);
 }
@@ -12884,7 +12922,7 @@ joust (struct z_candidate *cand1, struct z_candidate *cand2, bool warn,
 			  print_z_candidate (input_location,
 					     N_("candidate 2:"), l);
 			  if (w->fn == l->fn
-			      && DECL_NONSTATIC_MEMBER_FUNCTION_P (w->fn)
+			      && DECL_IOBJ_MEMBER_FUNCTION_P (w->fn)
 			      && (type_memfn_quals (TREE_TYPE (w->fn))
 				  & TYPE_QUAL_CONST) == 0)
 			    {
@@ -14033,7 +14071,7 @@ do_warn_dangling_reference (tree expr, bool arg_p)
 	       because R refers to one of the int elements of V, not to
 	       a temporary object.  Member operator* may return a reference
 	       but probably not to one of its arguments.  */
-	    || (DECL_NONSTATIC_MEMBER_FUNCTION_P (fndecl)
+	    || (DECL_OBJECT_MEMBER_FUNCTION_P (fndecl)
 		&& DECL_OVERLOADED_OPERATOR_P (fndecl)
 		&& DECL_OVERLOADED_OPERATOR_IS (fndecl, INDIRECT_REF)))
 	  return NULL_TREE;
@@ -14059,7 +14097,7 @@ do_warn_dangling_reference (tree expr, bool arg_p)
 	    tree arg = CALL_EXPR_ARG (expr, i);
 	    /* Check that this argument initializes a reference, except for
 	       the argument initializing the object of a member function.  */
-	    if (!DECL_NONSTATIC_MEMBER_FUNCTION_P (fndecl)
+	    if (!DECL_IOBJ_MEMBER_FUNCTION_P (fndecl)
 		&& !TYPE_REF_P (TREE_TYPE (arg)))
 	      continue;
 	    STRIP_NOPS (arg);
@@ -14079,7 +14117,7 @@ do_warn_dangling_reference (tree expr, bool arg_p)
 	       const S& s = S().self();
 	     where 's' dangles.  If we've gotten here, the object this function
 	     is invoked on is not a temporary.  */
-	    if (DECL_NONSTATIC_MEMBER_FUNCTION_P (fndecl))
+	    if (DECL_OBJECT_MEMBER_FUNCTION_P (fndecl))
 	      break;
 	  }
 	return NULL_TREE;
