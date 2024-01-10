@@ -33,7 +33,7 @@ Name(isa_base) Type(int)
 Basic ISAs of LoongArch:
 
 EnumValue
-Enum(isa_base) String(@@STR_ISA_BASE_LA64V100@@) Value(ISA_BASE_LA64V100)
+Enum(isa_base) String(@@STR_ISA_BASE_LA64@@) Value(ISA_BASE_LA64)
 
 ;; ISA extensions / adjustments
 Enum
@@ -181,20 +181,20 @@ Name(explicit_relocs) Type(int)
 The code model option names for -mexplicit-relocs:
 
 EnumValue
-Enum(explicit_relocs) String(@@STR_EXPLICIT_RELOCS_AUTO@@) Value(EXPLICIT_RELOCS_AUTO)
+Enum(explicit_relocs) String(auto) Value(EXPLICIT_RELOCS_AUTO)
 
 EnumValue
-Enum(explicit_relocs) String(@@STR_EXPLICIT_RELOCS_NONE@@) Value(EXPLICIT_RELOCS_NONE)
+Enum(explicit_relocs) String(none) Value(EXPLICIT_RELOCS_NONE)
 
 EnumValue
-Enum(explicit_relocs) String(@@STR_EXPLICIT_RELOCS_ALWAYS@@) Value(EXPLICIT_RELOCS_ALWAYS)
+Enum(explicit_relocs) String(always) Value(EXPLICIT_RELOCS_ALWAYS)
 
 mexplicit-relocs=
 Target RejectNegative Joined Enum(explicit_relocs) Var(la_opt_explicit_relocs) Init(M_OPT_UNSET)
 Use %reloc() assembly operators.
 
 mexplicit-relocs
-Target Var(la_opt_explicit_relocs_backward) Init(M_OPT_UNSET)
+Target Alias(mexplicit-relocs=, always, none)
 Use %reloc() assembly operators (for backward compatibility).
 
 mrecip
@@ -259,6 +259,6 @@ default value is 4.
 ; Features added during ISA evolution.  This concept is different from ISA
 ; extension, read Section 1.5 of LoongArch v1.10 Volume 1 for the
 ; explanation.  These features may be implemented and enumerated with
-; CPUCFG independantly, so we use bit flags to specify them.
-Variable
-HOST_WIDE_INT isa_evolution = 0
+; CPUCFG independently, so we use bit flags to specify them.
+TargetVariable
+HOST_WIDE_INT la_isa_evolution = 0
