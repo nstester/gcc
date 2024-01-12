@@ -1594,7 +1594,7 @@ from @w{@uref{https://www.nongnu.org/avr-libc/user-manual/,AVR-LibC}}
 together with attribute @code{progmem}.
 
 @noindent
-@b{Limitations and caveats}
+@b{Limitations and Caveats}
 
 @itemize
 @item
@@ -1608,6 +1608,8 @@ supports reading across the 64@tie{}KiB flash segment boundaries is
 If you use one of the @code{__flash@var{N}} address spaces
 you must arrange your linker script to locate the
 @code{.progmem@var{N}.data} sections according to your needs.
+For an example, see the
+@w{@uref{https://gcc.gnu.org/wiki/avr-gcc#Address_Spaces,avr-gcc wiki}}
 
 @item
 Any data or pointers to the non-generic address spaces must
@@ -8317,8 +8319,7 @@ allowing the use of @code{cbi}, @code{sbi}, @code{sbic} and @code{sbis}
 instructions.
 
 @cindex @code{address} variable attribute, AVR
-@item address
-@itemx address (@var{addr})
+@item address (@var{addr})
 Variables with the @code{address} attribute can be used to address
 memory-mapped peripherals that may lie outside the I/O address range.
 Just like with the @code{io} and @code{io_low} attributes, no memory is
