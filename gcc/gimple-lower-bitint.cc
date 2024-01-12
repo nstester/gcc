@@ -231,7 +231,8 @@ mergeable_op (gimple *stmt)
 	    && TREE_CODE (rhs_type) == BITINT_TYPE
 	    && bitint_precision_kind (lhs_type) >= bitint_prec_large
 	    && bitint_precision_kind (rhs_type) >= bitint_prec_large
-	    && tree_int_cst_equal (TYPE_SIZE (lhs_type), TYPE_SIZE (rhs_type)))
+	    && (CEIL (TYPE_PRECISION (lhs_type), limb_prec)
+		== CEIL (TYPE_PRECISION (rhs_type), limb_prec)))
 	  {
 	    if (TYPE_PRECISION (rhs_type) >= TYPE_PRECISION (lhs_type))
 	      return true;
@@ -996,7 +997,7 @@ bitint_large_huge::handle_operand (tree op, tree idx)
 	{
 	  unsigned int prec = TYPE_PRECISION (TREE_TYPE (op));
 	  unsigned rem = prec % (2 * limb_prec);
-	  int ext = tree_int_cst_sgn (op) < 0 ? -1 : 0;
+	  int ext = wi::neg_p (wi::to_wide (op)) ? -1 : 0;
 	  tree c = m_data[m_data_cnt];
 	  unsigned min_prec = TYPE_PRECISION (TREE_TYPE (c));
 	  g = gimple_build_cond (LT_EXPR, idx,
@@ -1263,8 +1264,8 @@ bitint_large_huge::handle_cast (tree lhs_type, tree rhs1, tree idx)
 	     if m_upwards_2limb * limb_prec is equal to
 	     lhs precision that is not the case.  */
 	  || (!m_var_msb
-	      && tree_int_cst_equal (TYPE_SIZE (rhs_type),
-				     TYPE_SIZE (lhs_type))
+	      && (CEIL (TYPE_PRECISION (lhs_type), limb_prec)
+		  == CEIL (TYPE_PRECISION (rhs_type), limb_prec))
 	      && (!m_upwards_2limb
 		  || (m_upwards_2limb * limb_prec
 		      < TYPE_PRECISION (lhs_type)))))
@@ -5117,14 +5118,23 @@ bitint_large_huge::lower_call (tree obj, gimple *stmt)
 	  || TREE_CODE (TREE_TYPE (arg)) != BITINT_TYPE
 	  || bitint_precision_kind (TREE_TYPE (arg)) <= bitint_prec_middle)
 	continue;
-      int p = var_to_partition (m_map, arg);
-      tree v = m_vars[p];
-      gcc_assert (v != NULL_TREE);
-      if (!types_compatible_p (TREE_TYPE (arg), TREE_TYPE (v)))
-	v = build1 (VIEW_CONVERT_EXPR, TREE_TYPE (arg), v);
-      arg = make_ssa_name (TREE_TYPE (arg));
-      gimple *g = gimple_build_assign (arg, v);
-      gsi_insert_before (&gsi, g, GSI_SAME_STMT);
+      if (SSA_NAME_IS_DEFAULT_DEF (arg)
+	  && (!SSA_NAME_VAR (arg) || VAR_P (SSA_NAME_VAR (arg))))
+	{
+	  tree var = create_tmp_reg (TREE_TYPE (arg));
+	  arg = get_or_create_ssa_default_def (cfun, var);
+	}
+      else
+	{
+	  int p = var_to_partition (m_map, arg);
+	  tree v = m_vars[p];
+	  gcc_assert (v != NULL_TREE);
+	  if (!types_compatible_p (TREE_TYPE (arg), TREE_TYPE (v)))
+	    v = build1 (VIEW_CONVERT_EXPR, TREE_TYPE (arg), v);
+	  arg = make_ssa_name (TREE_TYPE (arg));
+	  gimple *g = gimple_build_assign (arg, v);
+	  gsi_insert_before (&gsi, g, GSI_SAME_STMT);
+	}
       gimple_call_set_arg (stmt, i, arg);
       if (m_preserved == NULL)
 	m_preserved = BITMAP_ALLOC (NULL);
@@ -5503,7 +5513,7 @@ bitint_dom_walker::before_dom_children (basic_block bb)
       tree lhs = gimple_get_lhs (stmt);
       if (lhs
 	  && TREE_CODE (lhs) == SSA_NAME
-	  && TREE_CODE (TREE_TYPE (lhs)) != BITINT_TYPE
+	  && TREE_CODE (TREE_TYPE (lhs)) == BITINT_TYPE
 	  && bitint_precision_kind (TREE_TYPE (lhs)) >= bitint_prec_large
 	  && !bitmap_bit_p (m_names, SSA_NAME_VERSION (lhs)))
 	/* If lhs of stmt is large/huge _BitInt SSA_NAME not in m_names,
