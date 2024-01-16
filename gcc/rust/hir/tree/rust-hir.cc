@@ -1182,11 +1182,6 @@ BorrowExpr::as_string () const
 {
   std::string str ("&");
 
-  if (double_borrow)
-    {
-      str += "&";
-    }
-
   if (is_mut ())
     {
       str += "mut ";
@@ -1986,14 +1981,16 @@ TraitBound::as_string () const
 {
   std::string str ("TraitBound:");
 
-  str += "\n Has opening question mark: ";
-  if (opening_question_mark)
+  switch (polarity)
     {
-      str += "true";
-    }
-  else
-    {
-      str += "false";
+    case RegularBound:
+      break;
+    case NegativeBound:
+      str += "!";
+      break;
+    case AntiBound:
+      str += "?";
+      break;
     }
 
   str += "\n For lifetimes: ";
@@ -2173,7 +2170,7 @@ PathPattern::convert_to_simple_path (bool with_opening_scope_resolution) const
     }
 
   // kind of a HACK to get locus depending on opening scope resolution
-  Location locus = UNKNOWN_LOCATION;
+  location_t locus = UNKNOWN_LOCATION;
   if (with_opening_scope_resolution)
     {
       locus = simple_segments[0].get_locus () - 2; // minus 2 chars for ::
@@ -2285,30 +2282,6 @@ std::string
 GenericArgsBinding::as_string () const
 {
   return identifier.as_string () + " = " + type->as_string ();
-}
-
-std::string
-ForLoopExpr::as_string () const
-{
-  std::string str ("ForLoopExpr: ");
-
-  str += "\n Label: ";
-  if (!has_loop_label ())
-    {
-      str += "none";
-    }
-  else
-    {
-      str += loop_label.as_string ();
-    }
-
-  str += "\n Pattern: " + pattern->as_string ();
-
-  str += "\n Iterator expr: " + iterator_expr->as_string ();
-
-  str += "\n Loop block: " + loop_block->as_string ();
-
-  return str;
 }
 
 std::string
@@ -3670,6 +3643,36 @@ MaybeNamedParam::as_string () const
   return str;
 }
 
+std::string
+enum_to_str (MaybeNamedParam::ParamKind pk)
+{
+  switch (pk)
+    {
+    case MaybeNamedParam::ParamKind::UNNAMED:
+      return "UNNAMED";
+    case MaybeNamedParam::ParamKind::IDENTIFIER:
+      return "IDENTIFIER";
+    case MaybeNamedParam::ParamKind::WILDCARD:
+      return "WILDCARD";
+    }
+  gcc_unreachable ();
+}
+
+std::string
+enum_to_str (UseTreeRebind::NewBindType nbt)
+{
+  switch (nbt)
+    {
+    case UseTreeRebind::NewBindType::NONE:
+      return "NONE";
+    case UseTreeRebind::NewBindType::IDENTIFIER:
+      return "IDENTIFIER";
+    case UseTreeRebind::NewBindType::WILDCARD:
+      return "WILDCARD";
+    }
+  gcc_unreachable ();
+}
+
 /* Override that calls the function recursively on all items contained within
  * the module. */
 void
@@ -4056,12 +4059,6 @@ WhileLoopExpr::accept_vis (HIRFullVisitor &vis)
 
 void
 WhileLetLoopExpr::accept_vis (HIRFullVisitor &vis)
-{
-  vis.visit (*this);
-}
-
-void
-ForLoopExpr::accept_vis (HIRFullVisitor &vis)
 {
   vis.visit (*this);
 }
@@ -4746,12 +4743,6 @@ AltPattern::accept_vis (HIRPatternVisitor &vis)
 
 void
 RangePattern::accept_vis (HIRPatternVisitor &vis)
-{
-  vis.visit (*this);
-}
-
-void
-ForLoopExpr::accept_vis (HIRExpressionVisitor &vis)
 {
   vis.visit (*this);
 }

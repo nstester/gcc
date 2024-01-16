@@ -43,6 +43,7 @@
 #include <memory>
 #include <utility>
 #include <fstream>
+#include <array>
 
 // Rust frontend requires C++11 minimum, so will have unordered_map and set
 #include <unordered_map>
@@ -53,6 +54,7 @@
  * before the macro magic of safe-ctype.h, which is included by
  * system.h. */
 #include <iostream>
+#include <iomanip>
 
 #include "system.h"
 #include "ansidecl.h"

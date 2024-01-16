@@ -331,10 +331,6 @@ ResolverBase::visit (AST::TypeBoundWhereClauseItem &)
 {}
 
 void
-ResolverBase::visit (AST::Method &)
-{}
-
-void
 ResolverBase::visit (AST::Module &)
 {}
 
@@ -648,6 +644,18 @@ ResolverBase::visit (AST::InferredType &)
 
 void
 ResolverBase::visit (AST::BareFunctionType &)
+{}
+
+void
+ResolverBase::visit (AST::SelfParam &)
+{}
+
+void
+ResolverBase::visit (AST::VariadicParam &)
+{}
+
+void
+ResolverBase::visit (AST::FunctionParam &)
 {}
 
 } // namespace Resolver

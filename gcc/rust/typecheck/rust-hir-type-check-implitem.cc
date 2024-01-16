@@ -138,7 +138,15 @@ TypeCheckTopLevelExternItem::visit (HIR::ExternalFunctionItem &function)
 
   uint8_t flags = TyTy::FnType::FNTYPE_IS_EXTERN_FLAG;
   if (function.is_variadic ())
-    flags |= TyTy::FnType::FNTYPE_IS_VARADIC_FLAG;
+    {
+      flags |= TyTy::FnType::FNTYPE_IS_VARADIC_FLAG;
+      if (parent.get_abi () != Rust::ABI::C)
+	{
+	  rust_error_at (
+	    function.get_locus (), ErrorCode::E0045,
+	    "C-variadic function must have C or cdecl calling convention");
+	}
+    }
 
   RustIdent ident{
     CanonicalPath::new_seg (function.get_mappings ().get_nodeid (),
@@ -309,9 +317,9 @@ TypeCheckImplItem::visit (HIR::Function &function)
   auto block_expr_ty
     = TypeCheckExpr::Resolve (function.get_definition ().get ());
 
-  Location fn_return_locus = function.has_function_return_type ()
-			       ? function.get_return_type ()->get_locus ()
-			       : function.get_locus ();
+  location_t fn_return_locus = function.has_function_return_type ()
+				 ? function.get_return_type ()->get_locus ()
+				 : function.get_locus ();
 
   coercion_site (function.get_definition ()->get_mappings ().get_hirid (),
 		 TyTy::TyWithLocation (expected_ret_tyty, fn_return_locus),
@@ -389,12 +397,14 @@ TypeCheckImplItemWithTrait::visit (HIR::ConstantItem &constant)
 				       TraitItemReference::TraitItemType::CONST,
 				       &raw_trait_item);
 
-  // unknown trait item
+  // unknown trait item - https://doc.rust-lang.org/error_codes/E0323.html
   if (!found || raw_trait_item->is_error ())
     {
       rich_location r (line_table, constant.get_locus ());
       r.add_range (trait_reference.get_locus ());
-      rust_error_at (r, "constant %<%s%> is not a member of trait %<%s%>",
+      rust_error_at (r, ErrorCode::E0323,
+		     "item %qs is an associated const, which does not match "
+		     "its trait %qs",
 		     constant.get_identifier ().as_string ().c_str (),
 		     trait_reference.get_name ().c_str ());
       return;
@@ -529,7 +539,7 @@ TypeCheckImplItemWithTrait::visit (HIR::Function &function)
       rich_location r (line_table, function.get_locus ());
       r.add_range (resolved_trait_item.get_locus ());
 
-      rust_error_at (r, ErrorCode ("E0053"),
+      rust_error_at (r, ErrorCode::E0053,
 		     "method %<%s%> has an incompatible type for trait %<%s%>",
 		     function.get_function_name ().as_string ().c_str (),
 		     trait_reference.get_name ().c_str ());

@@ -19,7 +19,9 @@
 #include "rust-hir-type-check-base.h"
 #include "rust-hir-type-check-expr.h"
 #include "rust-hir-type-check-type.h"
+#include "rust-hir-trait-resolve.h"
 #include "rust-type-util.h"
+#include "rust-attribute-values.h"
 
 namespace Rust {
 namespace Resolver {
@@ -44,7 +46,7 @@ TypeCheckBase::check_for_unconstrained (
     return check_result;
 
   std::set<HirId> symbols_to_constrain;
-  std::map<HirId, Location> symbol_to_location;
+  std::map<HirId, location_t> symbol_to_location;
   for (const auto &p : params_to_constrain)
     {
       HirId ref = p.get_param_ty ()->get_ref ();
@@ -87,7 +89,7 @@ TypeCheckBase::check_for_unconstrained (
       bool used = constrained_symbols.find (sym) != constrained_symbols.end ();
       if (!used)
 	{
-	  Location locus = symbol_to_location.at (sym);
+	  location_t locus = symbol_to_location.at (sym);
 	  rust_error_at (locus, "unconstrained type parameter");
 	  unconstrained = true;
 	}
@@ -101,7 +103,7 @@ TypeCheckBase::check_for_unconstrained (
 
 TyTy::BaseType *
 TypeCheckBase::resolve_literal (const Analysis::NodeMapping &expr_mappings,
-				HIR::Literal &literal, Location locus)
+				HIR::Literal &literal, location_t locus)
 {
   TyTy::BaseType *infered = nullptr;
   switch (literal.get_lit_type ())
@@ -282,7 +284,7 @@ TypeCheckBase::resolve_literal (const Analysis::NodeMapping &expr_mappings,
 }
 
 TyTy::ADTType::ReprOptions
-TypeCheckBase::parse_repr_options (const AST::AttrVec &attrs, Location locus)
+TypeCheckBase::parse_repr_options (const AST::AttrVec &attrs, location_t locus)
 {
   TyTy::ADTType::ReprOptions repr;
   repr.pack = 0;
@@ -290,7 +292,7 @@ TypeCheckBase::parse_repr_options (const AST::AttrVec &attrs, Location locus)
 
   for (const auto &attr : attrs)
     {
-      bool is_repr = attr.get_path ().as_string ().compare ("repr") == 0;
+      bool is_repr = attr.get_path ().as_string () == Values::Attributes::REPR;
       if (is_repr)
 	{
 	  const AST::AttrInput &input = attr.get_attr_input ();
@@ -397,6 +399,22 @@ TypeCheckBase::resolve_generic_params (
 	  break;
 	}
     }
+}
+
+TyTy::TypeBoundPredicate
+TypeCheckBase::get_marker_predicate (Analysis::RustLangItem::ItemType item_type,
+				     location_t locus)
+{
+  DefId item_id = mappings->get_lang_item (item_type, locus);
+  HIR::Item *item = mappings->lookup_defid (item_id);
+  rust_assert (item != nullptr);
+  rust_assert (item->get_item_kind () == HIR::Item::ItemKind::Trait);
+
+  HIR::Trait &trait = *static_cast<HIR::Trait *> (item);
+  TraitReference *ref = TraitResolver::Resolve (trait);
+  rust_assert (ref != nullptr);
+
+  return TyTy::TypeBoundPredicate (*ref, BoundPolarity::RegularBound, locus);
 }
 
 } // namespace Resolver

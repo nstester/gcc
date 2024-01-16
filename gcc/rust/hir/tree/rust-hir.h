@@ -180,7 +180,7 @@ public:
 
   virtual void accept_vis (HIRStmtVisitor &vis) = 0;
 
-  virtual Location get_locus () const = 0;
+  virtual location_t get_locus () const = 0;
 
   virtual bool is_unit_check_needed () const { return false; }
 
@@ -320,7 +320,7 @@ public:
 
   virtual ~Expr () {}
 
-  virtual Location get_locus () const = 0;
+  virtual location_t get_locus () const = 0;
 
   const Analysis::NodeMapping &get_mappings () const { return mappings; }
 
@@ -420,9 +420,9 @@ public:
 
   virtual void accept_vis (HIRPatternVisitor &vis) = 0;
 
-  virtual Analysis::NodeMapping get_pattern_mappings () const = 0;
+  virtual const Analysis::NodeMapping &get_mappings () const = 0;
 
-  virtual Location get_locus () const = 0;
+  virtual location_t get_locus () const = 0;
 
   virtual PatternType get_pattern_type () const = 0;
 
@@ -464,10 +464,10 @@ public:
   virtual void accept_vis (HIRTypeVisitor &vis) = 0;
 
   virtual Analysis::NodeMapping get_mappings () const { return mappings; }
-  virtual Location get_locus () const { return locus; }
+  virtual location_t get_locus () const { return locus; }
 
 protected:
-  Type (Analysis::NodeMapping mappings, Location locus)
+  Type (Analysis::NodeMapping mappings, location_t locus)
     : mappings (mappings), locus (locus)
   {}
 
@@ -475,7 +475,7 @@ protected:
   virtual Type *clone_type_impl () const = 0;
 
   Analysis::NodeMapping mappings;
-  Location locus;
+  location_t locus;
 };
 
 // A type without parentheses? - abstract
@@ -489,7 +489,7 @@ public:
   }
 
 protected:
-  TypeNoBounds (Analysis::NodeMapping mappings, Location locus)
+  TypeNoBounds (Analysis::NodeMapping mappings, location_t locus)
     : Type (mappings, locus)
   {}
 
@@ -529,7 +529,7 @@ public:
 
   virtual Analysis::NodeMapping get_mappings () const = 0;
 
-  virtual Location get_locus () const = 0;
+  virtual location_t get_locus () const = 0;
 
   virtual BoundType get_bound_type () const = 0;
 
@@ -544,13 +544,13 @@ class Lifetime : public TypeParamBound
 private:
   AST::Lifetime::LifetimeType lifetime_type;
   std::string lifetime_name;
-  Location locus;
+  location_t locus;
   Analysis::NodeMapping mappings;
 
 public:
   // Constructor
   Lifetime (Analysis::NodeMapping mapping, AST::Lifetime::LifetimeType type,
-	    std::string name, Location locus)
+	    std::string name, location_t locus)
     : lifetime_type (type), lifetime_name (std::move (name)), locus (locus),
       mappings (mapping)
   {}
@@ -579,7 +579,7 @@ public:
     return lifetime_type;
   }
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   Analysis::NodeMapping get_mappings () const override final
   {
@@ -621,7 +621,7 @@ public:
 
   virtual std::string as_string () const = 0;
 
-  virtual Location get_locus () const = 0;
+  virtual location_t get_locus () const = 0;
 
   Analysis::NodeMapping get_mappings () const { return mappings; }
 
@@ -654,7 +654,7 @@ class LifetimeParam : public GenericParam
   // std::unique_ptr<Attribute> outer_attr;
   AST::Attribute outer_attr;
 
-  Location locus;
+  location_t locus;
 
 public:
   Lifetime get_lifetime () { return lifetime; }
@@ -670,7 +670,7 @@ public:
 
   // Constructor
   LifetimeParam (Analysis::NodeMapping mappings, Lifetime lifetime,
-		 Location locus = UNDEF_LOCATION,
+		 location_t locus = UNDEF_LOCATION,
 		 std::vector<Lifetime> lifetime_bounds
 		 = std::vector<Lifetime> (),
 		 AST::Attribute outer_attr = AST::Attribute::create_empty ())
@@ -709,7 +709,7 @@ public:
 
   void accept_vis (HIRFullVisitor &vis) override;
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -725,7 +725,7 @@ class ConstGenericParam : public GenericParam
 public:
   ConstGenericParam (std::string name, std::unique_ptr<Type> type,
 		     std::unique_ptr<Expr> default_expression,
-		     Analysis::NodeMapping mapping, Location locus)
+		     Analysis::NodeMapping mapping, location_t locus)
     : GenericParam (mapping, GenericKind::CONST), name (std::move (name)),
       type (std::move (type)),
       default_expression (std::move (default_expression)), locus (locus)
@@ -746,7 +746,7 @@ public:
 
   void accept_vis (HIRFullVisitor &vis) override final;
 
-  Location get_locus () const override final { return locus; };
+  location_t get_locus () const override final { return locus; };
 
   bool has_default_expression () { return default_expression != nullptr; }
 
@@ -772,7 +772,7 @@ private:
   /* Optional - can be a null pointer if there is no default expression */
   std::unique_ptr<Expr> default_expression;
 
-  Location locus;
+  location_t locus;
 };
 
 // Item used in trait declarations - abstract base class
@@ -814,7 +814,7 @@ public:
 
   const Analysis::NodeMapping &get_mappings () const { return mappings; }
 
-  virtual Location get_trait_locus () const = 0;
+  virtual location_t get_trait_locus () const = 0;
 
   virtual TraitItemKind get_item_kind () const = 0;
 
@@ -850,7 +850,7 @@ public:
 
   virtual Analysis::NodeMapping get_impl_mappings () const = 0;
 
-  virtual Location get_locus () const = 0;
+  virtual location_t get_locus () const = 0;
 
   virtual ImplItemType get_impl_item_type () const = 0;
 

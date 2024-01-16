@@ -17,6 +17,7 @@
 // <http://www.gnu.org/licenses/>.
 
 #include "rust-derive-clone.h"
+#include "rust-item.h"
 
 namespace Rust {
 namespace AST {
@@ -46,15 +47,21 @@ std::unique_ptr<TraitImplItem>
 DeriveClone::clone_fn (std::unique_ptr<Expr> &&clone_expr)
 {
   auto block = std::unique_ptr<BlockExpr> (
-    new BlockExpr ({}, std::move (clone_expr), {}, {}, loc, loc));
+    new BlockExpr ({}, std::move (clone_expr), {}, {}, AST::LoopLabel::error (),
+		   loc, loc));
   auto big_self_type = builder.single_type_path ("Self");
 
+  std::unique_ptr<SelfParam> self (new SelfParam (Lifetime::error (),
+						  /* is_mut */ false, loc));
+
+  std::vector<std::unique_ptr<Param>> params;
+  params.push_back (std::move (self));
+
   return std::unique_ptr<TraitImplItem> (
-    new Method ({"clone"}, builder.fn_qualifiers (), /* generics */ {},
-		SelfParam (Lifetime::error (), /* is_mut */ false, loc),
-		/* function params */ {}, std::move (big_self_type),
-		WhereClause::create_empty (), std::move (block),
-		Visibility::create_private (), {}, loc));
+    new Function ({"clone"}, builder.fn_qualifiers (), /* generics */ {},
+		  /* function params */ std::move (params),
+		  std::move (big_self_type), WhereClause::create_empty (),
+		  std::move (block), Visibility::create_private (), {}, loc));
 }
 
 /**
@@ -87,7 +94,7 @@ DeriveClone::clone_impl (std::unique_ptr<TraitImplItem> &&clone_fn,
 
 // TODO: Create new `make_qualified_call` helper function
 
-DeriveClone::DeriveClone (Location loc)
+DeriveClone::DeriveClone (location_t loc)
   : DeriveVisitor (loc), expanded (nullptr)
 {}
 

@@ -198,7 +198,6 @@ private:
   virtual void visit (AST::TypeParam &param);
   virtual void visit (AST::LifetimeWhereClauseItem &item);
   virtual void visit (AST::TypeBoundWhereClauseItem &item);
-  virtual void visit (AST::Method &method);
   virtual void visit (AST::Module &module);
   virtual void visit (AST::ExternCrate &crate);
   virtual void visit (AST::UseTreeGlob &use_tree);
@@ -278,6 +277,10 @@ private:
   virtual void visit (AST::SliceType &type);
   virtual void visit (AST::InferredType &type);
   virtual void visit (AST::BareFunctionType &type);
+
+  virtual void visit (AST::VariadicParam &type);
+  virtual void visit (AST::FunctionParam &type);
+  virtual void visit (AST::SelfParam &type);
 };
 
 } // namespace Resolver

@@ -24,6 +24,7 @@
 #include "rust-session-manager.h"
 #include "safe-ctype.h"
 #include "cpplib.h"
+#include "rust-keyword-values.h"
 
 namespace Rust {
 // TODO: move to separate compilation unit?
@@ -136,9 +137,9 @@ is_identifier_continue (uint32_t codepoint)
   return cpp_check_xid_property (codepoint) & CPP_XID_CONTINUE;
 }
 
-Lexer::Lexer (const std::string &input)
+Lexer::Lexer (const std::string &input, Linemap *linemap)
   : input (RAIIFile::create_error ()), current_line (1), current_column (1),
-    line_map (nullptr), dump_lex_out ({}),
+    line_map (linemap), dump_lex_out ({}),
     raw_input_source (new BufferInputSource (input, 0)),
     input_queue{*raw_input_source}, token_queue (TokenSource (this))
 {}
@@ -173,7 +174,7 @@ Lexer::input_source_is_valid_utf8 ()
   return raw_input_source->is_valid ();
 }
 
-Location
+location_t
 Lexer::get_current_location ()
 {
   if (line_map)
@@ -230,7 +231,7 @@ Lexer::dump_and_skip (int n)
 	  tok = peek_token ();
 	  found_eof |= tok->get_id () == Rust::END_OF_FILE;
 
-	  Location loc = tok->get_locus ();
+	  location_t loc = tok->get_locus ();
 
 	  out << "<id=";
 	  out << tok->token_id_to_str ();
@@ -254,25 +255,12 @@ Lexer::replace_current_token (TokenPtr replacement)
   rust_debug ("called 'replace_current_token' - this is deprecated");
 }
 
-/* shitty anonymous namespace that can only be accessed inside the compilation
- * unit - used for classify_keyword binary search in sorted array of keywords
- * created with x-macros. */
-namespace {
-// TODO: make constexpr when update to c++20
-const std::map<std::string, TokenId> keywords = {
-#define RS_TOKEN(x, y)
-#define RS_TOKEN_KEYWORD(tok, key) {key, tok},
-  RS_TOKEN_LIST
-#undef RS_TOKEN_KEYWORD
-#undef RS_TOKEN
-};
-} // namespace
-
 /* Determines whether the string passed in is a keyword or not. If it is, it
  * returns the keyword name.  */
 TokenId
 Lexer::classify_keyword (const std::string &str)
 {
+  auto &keywords = Rust::Values::Keywords::keywords;
   auto keyword = keywords.find (str);
 
   if (keyword == keywords.end ())
@@ -302,7 +290,7 @@ Lexer::build_token ()
   // loop to go through multiple characters to build a single token
   while (true)
     {
-      Location loc = get_current_location ();
+      location_t loc = get_current_location ();
 
       current_char = peek_input ();
       skip_input ();
@@ -1699,7 +1687,7 @@ Lexer::parse_partial_unicode_escape ()
 
 // Parses a byte character.
 TokenPtr
-Lexer::parse_byte_char (Location loc)
+Lexer::parse_byte_char (location_t loc)
 {
   skip_input ();
   current_column++;
@@ -1734,7 +1722,7 @@ Lexer::parse_byte_char (Location loc)
       // otherwise, get character from direct input character
       byte_char = current_char;
 
-      if (byte_char.value > 0x7f)
+      if (!byte_char.is_ascii ())
 	{
 	  rust_error_at (get_current_location (),
 			 "non-ASCII character in %<byte char%>");
@@ -1767,7 +1755,7 @@ Lexer::parse_byte_char (Location loc)
 
 // Parses a byte string.
 TokenPtr
-Lexer::parse_byte_string (Location loc)
+Lexer::parse_byte_string (location_t loc)
 {
   // byte string
 
@@ -1833,7 +1821,7 @@ Lexer::parse_byte_string (Location loc)
 
 // Parses a raw byte string.
 TokenPtr
-Lexer::parse_raw_byte_string (Location loc)
+Lexer::parse_raw_byte_string (location_t loc)
 {
   // raw byte string literals
   std::string str;
@@ -1916,7 +1904,7 @@ Lexer::parse_raw_byte_string (Location loc)
 
 // Parses a raw identifier.
 TokenPtr
-Lexer::parse_raw_identifier (Location loc)
+Lexer::parse_raw_identifier (location_t loc)
 {
   // raw identifier
   std::string str;
@@ -1950,8 +1938,13 @@ Lexer::parse_raw_identifier (Location loc)
     rust_error_at (get_current_location (),
 		   "%<_%> is not a valid raw identifier");
 
-  if (str == "crate" || str == "extern" || str == "self" || str == "super"
-      || str == "Self")
+  using namespace Rust::Values;
+  std::set<std::string> invalid{
+    Keywords::CRATE, Keywords::EXTERN_TOK, Keywords::SELF,
+    Keywords::SUPER, Keywords::SELF_ALIAS,
+  };
+
+  if (invalid.find (str) != invalid.end ())
     {
       rust_error_at (get_current_location (),
 		     "%qs is a forbidden raw identifier", str.c_str ());
@@ -1998,7 +1991,7 @@ Lexer::skip_broken_string_input (Codepoint current_char)
 
 // Parses a string.
 TokenPtr
-Lexer::parse_string (Location loc)
+Lexer::parse_string (location_t loc)
 {
   std::string str;
   str.reserve (16); // some sensible default
@@ -2063,7 +2056,7 @@ Lexer::parse_string (Location loc)
 
 // Parses an identifier or keyword.
 TokenPtr
-Lexer::parse_identifier_or_keyword (Location loc)
+Lexer::parse_identifier_or_keyword (location_t loc)
 {
   std::string str;
   str.reserve (16); // default
@@ -2104,7 +2097,7 @@ Lexer::parse_identifier_or_keyword (Location loc)
 
 // Possibly returns a raw string token if it exists - otherwise returns null.
 TokenPtr
-Lexer::maybe_parse_raw_string (Location loc)
+Lexer::maybe_parse_raw_string (location_t loc)
 {
   int peek_index = 0;
   while (peek_input (peek_index) == '#')
@@ -2118,7 +2111,7 @@ Lexer::maybe_parse_raw_string (Location loc)
 
 // Returns a raw string token.
 TokenPtr
-Lexer::parse_raw_string (Location loc, int initial_hash_count)
+Lexer::parse_raw_string (location_t loc, int initial_hash_count)
 {
   // raw string literals
   std::string str;
@@ -2181,7 +2174,7 @@ Lexer::parse_raw_string (Location loc, int initial_hash_count)
 
 template <typename IsDigitFunc>
 TokenPtr
-Lexer::parse_non_decimal_int_literal (Location loc, IsDigitFunc is_digit_func,
+Lexer::parse_non_decimal_int_literal (location_t loc, IsDigitFunc is_digit_func,
 				      std::string existent_str, int base)
 {
   int length = 1;
@@ -2245,7 +2238,7 @@ Lexer::parse_non_decimal_int_literal (Location loc, IsDigitFunc is_digit_func,
 
 // Parses a hex, binary or octal int literal.
 TokenPtr
-Lexer::parse_non_decimal_int_literals (Location loc)
+Lexer::parse_non_decimal_int_literals (location_t loc)
 {
   std::string str;
   str.reserve (16); // some sensible default
@@ -2278,7 +2271,7 @@ Lexer::parse_non_decimal_int_literals (Location loc)
 
 // Parses a decimal-based int literal or float literal.
 TokenPtr
-Lexer::parse_decimal_int_or_float (Location loc)
+Lexer::parse_decimal_int_or_float (location_t loc)
 {
   std::string str;
   str.reserve (16); // some sensible default
@@ -2295,7 +2288,17 @@ Lexer::parse_decimal_int_or_float (Location loc)
   length += std::get<1> (initial_decimal);
 
   // detect float literal
-  if (current_char == '.' && is_float_digit (peek_input (1).value))
+  //
+  // Note:
+  //
+  // We should not use is_float_digit () for this verification but instead
+  // directly ISDIGIT because rust does not support non digit values right after
+  // a dot.
+  // The following value is not legal in rust:
+  // let a = 3.e1;
+  // A `0` should be put between the dot and the exponent to be valid
+  // (eg. 3.0e1).
+  if (current_char == '.' && ISDIGIT (peek_input (1).value))
     {
       // float with a '.', parse another decimal into it
 
@@ -2347,9 +2350,6 @@ Lexer::parse_decimal_int_or_float (Location loc)
       skip_input ();
       current_char = peek_input ();
       length++;
-
-      // add a '0' after the . to prevent ambiguity
-      str += '0';
 
       // type hint not allowed
 
@@ -2417,7 +2417,7 @@ Lexer::parse_decimal_int_or_float (Location loc)
 }
 
 TokenPtr
-Lexer::parse_char_or_lifetime (Location loc)
+Lexer::parse_char_or_lifetime (location_t loc)
 {
   int length = 1;
 
@@ -2511,12 +2511,24 @@ Lexer::split_current_token (TokenId new_left, TokenId new_right)
 {
   /* TODO: assert that this TokenId is a "simple token" like punctuation and not
    * like "IDENTIFIER"? */
-  Location current_loc = peek_token ()->get_locus ();
+  location_t current_loc = peek_token ()->get_locus ();
   TokenPtr new_left_tok = Token::make (new_left, current_loc);
   TokenPtr new_right_tok = Token::make (new_right, current_loc + 1);
 
   token_queue.replace_current_value (std::move (new_left_tok));
   token_queue.insert (1, std::move (new_right_tok));
+}
+
+void
+Lexer::split_current_token (std::vector<TokenPtr> new_tokens)
+{
+  rust_assert (new_tokens.size () > 0);
+  token_queue.replace_current_value (new_tokens[0]);
+
+  for (size_t i = 1; i < new_tokens.size (); i++)
+    {
+      token_queue.insert (i, new_tokens[i]);
+    }
 }
 
 void
@@ -2533,9 +2545,9 @@ Lexer::start_line (int current_line, int current_column)
 namespace selftest {
 
 // Checks if `src` has the same contents as the given characters
-void
-assert_source_content (Rust::Lexer::InputSource &src,
-		       std::vector<uint32_t> expected)
+static void
+assert_source_content (Rust::InputSource &src,
+		       const std::vector<uint32_t> &expected)
 {
   Rust::Codepoint src_char = src.next ();
   for (auto expected_char : expected)
@@ -2550,21 +2562,22 @@ assert_source_content (Rust::Lexer::InputSource &src,
   ASSERT_TRUE (src_char.is_eof ());
 }
 
-void
-test_buffer_input_source (std::string str, std::vector<uint32_t> expected)
+static void
+test_buffer_input_source (std::string str,
+			  const std::vector<uint32_t> &expected)
 {
-  Rust::Lexer::BufferInputSource source (str, 0);
+  Rust::BufferInputSource source (str, 0);
   assert_source_content (source, expected);
 }
 
-void
-test_file_input_source (std::string str, std::vector<uint32_t> expected)
+static void
+test_file_input_source (std::string str, const std::vector<uint32_t> &expected)
 {
   FILE *tmpf = tmpfile ();
   // Moves to the first character
   fputs (str.c_str (), tmpf);
   std::rewind (tmpf);
-  Rust::Lexer::FileInputSource source (tmpf);
+  Rust::FileInputSource source (tmpf);
   assert_source_content (source, expected);
 }
 

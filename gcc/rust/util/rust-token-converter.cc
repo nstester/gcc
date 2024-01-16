@@ -16,7 +16,6 @@
 
 #include "rust-lex.h"
 #include "rust-token-converter.h"
-#include "libproc_macro/proc_macro.h"
 #include "bi-map.h"
 #include "line-map.h"
 
@@ -52,27 +51,52 @@ pop_group (std::vector<ProcMacro::TokenStream> &streams,
 }
 
 static ProcMacro::Span
-convert (Location location)
+convert (location_t location)
 {
   return ProcMacro::Span::make_span (location, 0);
 }
 
-static Location
+static location_t
 convert (ProcMacro::Span span)
 {
   return span.start;
 }
 
-static void
-handle_suffix (ProcMacro::TokenStream &ts, const const_TokenPtr &token,
-	       ProcMacro::LitKind kind)
+static ProcMacro::Literal
+handle_suffix (const const_TokenPtr &token, ProcMacro::LitKind kind)
 {
   auto str = token->as_string ();
   auto lookup = suffixes.lookup (token->get_type_hint ());
   auto suffix = suffixes.is_iter_ok (lookup) ? lookup->second : "";
-  ts.push (ProcMacro::TokenTree::make_tokentree (
-    ProcMacro::Literal::make_literal (kind, convert (token->get_locus ()), str,
-				      suffix)));
+  return ProcMacro::Literal::make_literal (kind, convert (token->get_locus ()),
+					   str, suffix);
+}
+
+ProcMacro::Literal
+convert_literal (const_TokenPtr lit)
+{
+  auto loc = convert (lit->get_locus ());
+  switch (lit->get_id ())
+    {
+    case FLOAT_LITERAL:
+      return handle_suffix (lit, ProcMacro::LitKind::make_float ());
+    case INT_LITERAL:
+      return handle_suffix (lit, ProcMacro::LitKind::make_integer ());
+    case CHAR_LITERAL:
+      return ProcMacro::Literal::make_literal (ProcMacro::LitKind::make_char (),
+					       loc, lit->as_string ());
+    case STRING_LITERAL:
+      return ProcMacro::Literal::make_literal (ProcMacro::LitKind::make_str (),
+					       loc, lit->as_string ());
+    case BYTE_CHAR_LITERAL:
+      return ProcMacro::Literal::make_literal (ProcMacro::LitKind::make_byte (),
+					       loc, lit->as_string ());
+    case BYTE_STRING_LITERAL:
+      return ProcMacro::Literal::make_literal (
+	ProcMacro::LitKind::make_byte_str (), loc, lit->as_string ());
+    default:
+      rust_unreachable ();
+    }
 }
 
 ProcMacro::TokenStream
@@ -87,32 +111,13 @@ convert (const std::vector<const_TokenPtr> &tokens)
 	{
 	// Literals
 	case FLOAT_LITERAL:
-	  handle_suffix (trees.back (), token,
-			 ProcMacro::LitKind::make_float ());
-	  break;
 	case INT_LITERAL:
-	  handle_suffix (trees.back (), token,
-			 ProcMacro::LitKind::make_integer ());
-	  break;
 	case CHAR_LITERAL:
-	  trees.back ().push (ProcMacro::TokenTree::make_tokentree (
-	    ProcMacro::Literal::make_literal (ProcMacro::LitKind::make_char (),
-					      loc, token->as_string ())));
-	  break;
 	case STRING_LITERAL:
-	  trees.back ().push (ProcMacro::TokenTree::make_tokentree (
-	    ProcMacro::Literal::make_literal (ProcMacro::LitKind::make_str (),
-					      loc, token->as_string ())));
-	  break;
 	case BYTE_CHAR_LITERAL:
-	  trees.back ().push (ProcMacro::TokenTree::make_tokentree (
-	    ProcMacro::Literal::make_literal (ProcMacro::LitKind::make_byte (),
-					      loc, token->as_string ())));
-	  break;
 	case BYTE_STRING_LITERAL:
-	  trees.back ().push (ProcMacro::TokenTree::make_tokentree (
-	    ProcMacro::Literal::make_literal (
-	      ProcMacro::LitKind::make_byte_str (), loc, token->as_string ())));
+	  trees.back ().push (
+	    ProcMacro::TokenTree::make_tokentree (convert_literal (token)));
 	  break;
 	// Ident
 	case IDENTIFIER:
@@ -269,11 +274,11 @@ from_tokenstream (const ProcMacro::TokenStream &ts,
 static void
 from_ident (const ProcMacro::Ident &ident, std::vector<const_TokenPtr> &result)
 {
-  std::string value (reinterpret_cast<const char *> (ident.val), ident.len);
+  std::string value (ident.value.to_string ());
   if (ident.is_raw)
     value = "r#" + value;
 
-  Lexer lexer (value);
+  Lexer lexer (value, nullptr);
   auto token = lexer.build_token ();
   token->set_locus (convert (ident.span));
   result.push_back (token);
@@ -343,7 +348,7 @@ from_punct (const ProcMacro::Punct &punct, std::vector<std::uint32_t> &acc,
     {
       // TODO: UTF-8 string
       std::string whole (acc.begin (), acc.end ());
-      auto lexer = Lexer (whole);
+      auto lexer = Lexer (whole, nullptr);
       auto token = lexer.build_token ();
       token->set_locus (convert (punct.span));
       result.push_back (token);

@@ -72,7 +72,6 @@ public:
   // TODO
   void visit (HIR::ErrorPropagationExpr &) override {}
   void visit (HIR::RangeToInclExpr &) override {}
-  void visit (HIR::ForLoopExpr &) override {}
 
   // TODO
   // these need to be sugared in the HIR to if statements and a match
@@ -92,11 +91,11 @@ public:
 protected:
   tree get_fn_addr_from_dyn (const TyTy::DynamicObjectType *dyn,
 			     TyTy::BaseType *receiver, TyTy::FnType *fntype,
-			     tree receiver_ref, Location expr_locus);
+			     tree receiver_ref, location_t expr_locus);
 
   tree get_receiver_from_dyn (const TyTy::DynamicObjectType *dyn,
 			      TyTy::BaseType *receiver, TyTy::FnType *fntype,
-			      tree receiver_ref, Location expr_locus);
+			      tree receiver_ref, location_t expr_locus);
 
   tree
   resolve_operator_overload (Analysis::RustLangItem::ItemType lang_item_type,
@@ -124,12 +123,13 @@ protected:
   tree compile_byte_string_literal (const HIR::LiteralExpr &expr,
 				    const TyTy::BaseType *tyty);
 
-  tree type_cast_expression (tree type_to_cast_to, tree expr, Location locus);
+  tree type_cast_expression (tree type_to_cast_to, tree expr, location_t locus);
 
-  tree array_value_expr (Location expr_locus, const TyTy::ArrayType &array_tyty,
-			 tree array_type, HIR::ArrayElemsValues &elems);
+  tree array_value_expr (location_t expr_locus,
+			 const TyTy::ArrayType &array_tyty, tree array_type,
+			 HIR::ArrayElemsValues &elems);
 
-  tree array_copied_expr (Location expr_locus,
+  tree array_copied_expr (location_t expr_locus,
 			  const TyTy::ArrayType &array_tyty, tree array_type,
 			  HIR::ArrayElemsCopied &elems);
 

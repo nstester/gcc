@@ -17,6 +17,7 @@
 // <http://www.gnu.org/licenses/>.
 
 #include "rust-macro-expand.h"
+#include "optional.h"
 #include "rust-macro-substitute-ctx.h"
 #include "rust-ast-full.h"
 #include "rust-ast-visitor.h"
@@ -30,7 +31,7 @@
 namespace Rust {
 
 AST::Fragment
-MacroExpander::expand_decl_macro (Location invoc_locus,
+MacroExpander::expand_decl_macro (location_t invoc_locus,
 				  AST::MacroInvocData &invoc,
 				  AST::MacroRulesDefinition &rules_def,
 				  bool semicolon)
@@ -281,12 +282,13 @@ MacroExpander::expand_invoc (AST::MacroInvocation &invoc, bool has_semicolon)
 
   // We store the last expanded invocation and macro definition for error
   // reporting in case the recursion limit is reached
-  last_invoc = &invoc;
-  last_def = rules_def;
+  last_invoc = *invoc.clone_macro_invocation_impl ();
+  last_def = *rules_def;
 
   if (rules_def->is_builtin ())
     fragment
-      = rules_def->get_builtin_transcriber () (invoc.get_locus (), invoc_data);
+      = rules_def->get_builtin_transcriber () (invoc.get_locus (), invoc_data)
+	  .value_or (AST::Fragment::create_empty ());
   else
     fragment = expand_decl_macro (invoc.get_locus (), invoc_data, *rules_def,
 				  has_semicolon);
@@ -1091,50 +1093,6 @@ MacroExpander::transcribe_rule (
     }
 
   return fragment;
-}
-
-// TODO: Move to early name resolver ?
-void
-MacroExpander::import_proc_macros (std::string extern_crate)
-{
-  auto path = session.extern_crates.find (extern_crate);
-  if (path == session.extern_crates.end ())
-    {
-      // Extern crate path is not available.
-      // FIXME: Emit error
-      rust_error_at (UNDEF_LOCATION, "Cannot find requested proc macro crate");
-      rust_unreachable ();
-    }
-  auto macros = load_macros (path->second);
-
-  std::string prefix = extern_crate + "::";
-  for (auto &macro : macros)
-    {
-      switch (macro.tag)
-	{
-	case ProcMacro::CUSTOM_DERIVE:
-	  rust_debug ("Found one derive proc macro.");
-	  mappings->insert_derive_proc_macro (
-	    std::make_pair (extern_crate,
-			    macro.payload.custom_derive.trait_name),
-	    macro.payload.custom_derive);
-	  break;
-	case ProcMacro::ATTR:
-	  rust_debug ("Found one attribute proc macro.");
-	  mappings->insert_attribute_proc_macro (
-	    std::make_pair (extern_crate, macro.payload.attribute.name),
-	    macro.payload.attribute);
-	  break;
-	case ProcMacro::BANG:
-	  rust_debug ("Found one bang proc macro.");
-	  mappings->insert_bang_proc_macro (
-	    std::make_pair (extern_crate, macro.payload.bang.name),
-	    macro.payload.bang);
-	  break;
-	default:
-	  rust_unreachable ();
-	}
-    }
 }
 
 AST::Fragment

@@ -30,13 +30,6 @@ ProcMacroInvocLexer::peek_token (int n)
   return token_stream.at (offs + n);
 }
 
-// Advances current token to n + 1 tokens ahead of current position.
-void
-ProcMacroInvocLexer::skip_token (int n)
-{
-  offs += (n + 1);
-}
-
 void
 ProcMacroInvocLexer::split_current_token (TokenId new_left, TokenId new_right)
 {
@@ -52,6 +45,21 @@ ProcMacroInvocLexer::split_current_token (TokenId new_left, TokenId new_right)
   // then the left
   token_stream.insert (current_pos, l_tok);
   token_stream.insert (current_pos, r_tok);
+}
+
+void
+ProcMacroInvocLexer::split_current_token (std::vector<TokenPtr> new_tokens)
+{
+  rust_assert (new_tokens.size () > 0);
+
+  auto current_pos = token_stream.begin () + offs;
+
+  token_stream.erase (current_pos);
+
+  for (size_t i = 1; i < new_tokens.size (); i++)
+    {
+      token_stream.insert (current_pos + i, new_tokens[i]);
+    }
 }
 
 } // namespace Rust

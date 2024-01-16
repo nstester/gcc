@@ -20,6 +20,7 @@
 #include "rust-ast-full.h"
 #include "rust-name-resolver.h"
 #include "rust-macro-builtins.h"
+#include "rust-attribute-values.h"
 
 namespace Rust {
 namespace Resolver {
@@ -29,7 +30,7 @@ static bool
 is_macro_use_module (const AST::Module &mod)
 {
   for (const auto &attr : mod.get_outer_attrs ())
-    if (attr.get_path ().as_string () == "macro_use")
+    if (attr.get_path ().as_string () == Values::Attributes::MACRO_USE)
       return true;
 
   return false;
@@ -600,25 +601,6 @@ EarlyNameResolver::visit (AST::TypeBoundWhereClauseItem &item)
 }
 
 void
-EarlyNameResolver::visit (AST::Method &method)
-{
-  if (method.has_generics ())
-    for (auto &generic : method.get_generic_params ())
-      generic->accept_vis (*this);
-
-  if (method.get_self_param ().has_type ())
-    method.get_self_param ().get_type ()->accept_vis (*this);
-
-  for (auto &param : method.get_function_params ())
-    param.get_type ()->accept_vis (*this);
-
-  if (method.has_return_type ())
-    method.get_return_type ()->accept_vis (*this);
-
-  method.get_definition ()->accept_vis (*this);
-}
-
-void
 EarlyNameResolver::visit (AST::Module &module)
 {
   if (module.get_kind () == AST::Module::UNLOADED)
@@ -680,8 +662,8 @@ EarlyNameResolver::visit (AST::Function &function)
     for (auto &generic : function.get_generic_params ())
       generic->accept_vis (*this);
 
-  for (auto &param : function.get_function_params ())
-    param.get_type ()->accept_vis (*this);
+  for (auto &p : function.get_function_params ())
+    p->accept_vis (*this);
 
   if (function.has_return_type ())
     function.get_return_type ()->accept_vis (*this);
@@ -751,7 +733,8 @@ void
 EarlyNameResolver::visit (AST::ConstantItem &const_item)
 {
   const_item.get_type ()->accept_vis (*this);
-  const_item.get_expr ()->accept_vis (*this);
+  if (const_item.has_expr ())
+    const_item.get_expr ()->accept_vis (*this);
 }
 
 void
@@ -772,8 +755,8 @@ EarlyNameResolver::visit (AST::TraitItemFunc &item)
   for (auto &generic : decl.get_generic_params ())
     generic->accept_vis (*this);
 
-  for (auto &param : decl.get_function_params ())
-    param.get_type ()->accept_vis (*this);
+  for (auto &p : decl.get_function_params ())
+    p->accept_vis (*this);
 
   if (item.has_definition ())
     item.get_definition ()->accept_vis (*this);
@@ -791,8 +774,8 @@ EarlyNameResolver::visit (AST::TraitItemMethod &item)
   for (auto &generic : decl.get_generic_params ())
     generic->accept_vis (*this);
 
-  for (auto &param : decl.get_function_params ())
-    param.get_type ()->accept_vis (*this);
+  for (auto &p : decl.get_function_params ())
+    p->accept_vis (*this);
 
   if (item.has_definition ())
     item.get_definition ()->accept_vis (*this);
@@ -870,7 +853,8 @@ EarlyNameResolver::visit (AST::ExternalFunctionItem &item)
     generic->accept_vis (*this);
 
   for (auto &param : item.get_function_params ())
-    param.get_type ()->accept_vis (*this);
+    if (!param.is_variadic ())
+      param.get_type ()->accept_vis (*this);
 
   if (item.has_return_type ())
     item.get_return_type ()->accept_vis (*this);
@@ -952,7 +936,7 @@ EarlyNameResolver::visit (AST::MacroInvocation &invoc)
   if (has_semicolon)
     source_node = invoc.get_macro_node_id ();
   else
-    source_node = invoc.get_pattern_node_id ();
+    source_node = invoc.get_node_id ();
   auto seg
     = CanonicalPath::new_seg (source_node, invoc_data.get_path ().as_string ());
 
@@ -973,7 +957,8 @@ EarlyNameResolver::visit (AST::MacroInvocation &invoc)
   bool is_builtin
     = std::any_of (outer_attrs.begin (), outer_attrs.end (),
 		   [] (AST::Attribute attr) {
-		     return attr.get_path () == "rustc_builtin_macro";
+		     return attr.get_path ()
+			    == Values::Attributes::RUSTC_BUILTIN_MACRO;
 		   });
 
   if (is_builtin)
@@ -1105,6 +1090,16 @@ EarlyNameResolver::visit (AST::TupleStructItemsRange &tuple_items)
 void
 EarlyNameResolver::visit (AST::TupleStructPattern &pattern)
 {
+  if (!pattern.has_items ())
+    {
+      rich_location rich_locus (line_table, pattern.get_locus ());
+      rich_locus.add_fixit_replace (
+	"function calls are not allowed in patterns");
+      rust_error_at (
+	rich_locus, ErrorCode::E0164,
+	"expected tuple struct or tuple variant, found associated function");
+      return;
+    }
   pattern.get_items ()->accept_vis (*this);
 }
 
@@ -1232,6 +1227,29 @@ EarlyNameResolver::visit (AST::BareFunctionType &type)
 
   if (type.has_return_type ())
     type.get_return_type ()->accept_vis (*this);
+}
+
+void
+EarlyNameResolver::visit (AST::VariadicParam &param)
+{
+  if (param.has_pattern ())
+    param.get_pattern ()->accept_vis (*this);
+}
+
+void
+EarlyNameResolver::visit (AST::FunctionParam &param)
+{
+  param.get_pattern ()->accept_vis (*this);
+  param.get_type ()->accept_vis (*this);
+}
+
+void
+EarlyNameResolver::visit (AST::SelfParam &param)
+{
+  if (param.has_type ())
+    param.get_type ()->accept_vis (*this);
+  if (param.has_lifetime ())
+    param.get_lifetime ().accept_vis (*this);
 }
 
 } // namespace Resolver

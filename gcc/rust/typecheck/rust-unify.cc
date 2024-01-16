@@ -22,7 +22,7 @@ namespace Rust {
 namespace Resolver {
 
 UnifyRules::UnifyRules (TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
-			Location locus, bool commit_flag, bool emit_error,
+			location_t locus, bool commit_flag, bool emit_error,
 			bool infer, std::vector<CommitSite> &commits,
 			std::vector<InferenceSite> &infers)
   : lhs (lhs), rhs (rhs), locus (locus), commit_flag (commit_flag),
@@ -33,7 +33,7 @@ UnifyRules::UnifyRules (TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
 
 TyTy::BaseType *
 UnifyRules::Resolve (TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
-		     Location locus, bool commit_flag, bool emit_error,
+		     location_t locus, bool commit_flag, bool emit_error,
 		     bool infer, std::vector<CommitSite> &commits,
 		     std::vector<InferenceSite> &infers)
 {
@@ -122,7 +122,8 @@ UnifyRules::emit_type_mismatch () const
   rich_location r (line_table, locus);
   r.add_range (lhs.get_locus ());
   r.add_range (rhs.get_locus ());
-  rust_error_at (r, "expected %<%s%> got %<%s%>",
+  rust_error_at (r, ErrorCode::E0308,
+		 "mismatched types, expected %qs but got %qs",
 		 expected->get_name ().c_str (), expr->get_name ().c_str ());
 }
 

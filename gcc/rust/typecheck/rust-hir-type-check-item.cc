@@ -75,7 +75,7 @@ TypeCheckItem::ResolveImplBlockSelf (HIR::ImplBlock &impl_block)
 
 TyTy::BaseType *
 TypeCheckItem::ResolveImplBlockSelfWithInference (
-  HIR::ImplBlock &impl, Location locus,
+  HIR::ImplBlock &impl, location_t locus,
   TyTy::SubstitutionArgumentMappings *infer_arguments)
 {
   TypeCheckItem resolver;
@@ -120,7 +120,7 @@ TypeCheckItem::ResolveImplBlockSelfWithInference (
 
   // we only need to apply to the bounds manually on types which dont bind
   // generics
-  if (!infer->has_subsititions_defined ())
+  if (!infer->has_substitutions_defined ())
     {
       for (auto &bound : infer->get_specified_bounds ())
 	bound.handle_substitions (*infer_arguments);
@@ -495,9 +495,9 @@ TypeCheckItem::visit (HIR::Function &function)
   auto block_expr_ty
     = TypeCheckExpr::Resolve (function.get_definition ().get ());
 
-  Location fn_return_locus = function.has_function_return_type ()
-			       ? function.get_return_type ()->get_locus ()
-			       : function.get_locus ();
+  location_t fn_return_locus = function.has_function_return_type ()
+				 ? function.get_return_type ()->get_locus ()
+				 : function.get_locus ();
   coercion_site (function.get_definition ()->get_mappings ().get_hirid (),
 		 TyTy::TyWithLocation (expected_ret_tyty, fn_return_locus),
 		 TyTy::TyWithLocation (block_expr_ty),
@@ -528,7 +528,8 @@ TypeCheckItem::visit (HIR::Trait &trait)
   RustIdent ident{CanonicalPath::create_empty (), trait.get_locus ()};
   infered = new TyTy::DynamicObjectType (
     trait.get_mappings ().get_hirid (), ident,
-    {TyTy::TypeBoundPredicate (*trait_ref, trait.get_locus ())});
+    {TyTy::TypeBoundPredicate (*trait_ref, BoundPolarity::RegularBound,
+			       trait.get_locus ())});
 }
 
 void
@@ -615,7 +616,8 @@ TypeCheckItem::validate_trait_impl_block (
 						   impl_item.get (), self,
 						   specified_bound,
 						   substitutions);
-	  trait_item_refs.push_back (trait_item_ref.get_raw_item ());
+	  if (!trait_item_ref.is_error ())
+	    trait_item_refs.push_back (trait_item_ref.get_raw_item ());
 	}
     }
 
@@ -659,7 +661,7 @@ TypeCheckItem::validate_trait_impl_block (
 	      r.add_range (missing_trait_item.get_locus ());
 	    }
 
-	  rust_error_at (r, ErrorCode ("E0046"),
+	  rust_error_at (r, ErrorCode::E0046,
 			 "missing %s in implementation of trait %<%s%>",
 			 missing_items_buf.c_str (),
 			 trait_reference->get_name ().c_str ());

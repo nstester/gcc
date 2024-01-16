@@ -283,7 +283,7 @@ TypeCheckType::visit (HIR::QualifiedPathInType &path)
       // turbo-fish segment path::<ty>
       if (generic_seg.has_generic_args ())
 	{
-	  if (!translated->has_subsititions_defined ())
+	  if (!translated->has_substitutions_defined ())
 	    {
 	      rust_error_at (item_seg->get_locus (),
 			     "substitutions not supported for %s",
@@ -440,6 +440,16 @@ TypeCheckType::resolve_root_path (HIR::TypePath &path, size_t *offset,
       *root_resolved_node_id = ref_node_id;
       *offset = *offset + 1;
       root_tyty = lookup;
+
+      // this enforces the proper get_segments checks to take place
+      bool is_adt = root_tyty->get_kind () == TyTy::TypeKind::ADT;
+      if (is_adt)
+	{
+	  const TyTy::ADTType &adt
+	    = *static_cast<const TyTy::ADTType *> (root_tyty);
+	  if (adt.is_enum ())
+	    return root_tyty;
+	}
     }
 
   return root_tyty;
@@ -450,7 +460,7 @@ TypeCheckType::resolve_segments (
   NodeId root_resolved_node_id, HirId expr_id,
   std::vector<std::unique_ptr<HIR::TypePathSegment>> &segments, size_t offset,
   TyTy::BaseType *tyseg, const Analysis::NodeMapping &expr_mappings,
-  Location expr_locus)
+  location_t expr_locus)
 {
   NodeId resolved_node_id = root_resolved_node_id;
   TyTy::BaseType *prev_segment = tyseg;
@@ -498,6 +508,22 @@ TypeCheckType::resolve_segments (
       prev_segment = tyseg;
       tyseg = candidate.ty;
 
+      if (candidate.is_enum_candidate ())
+	{
+	  TyTy::ADTType *adt = static_cast<TyTy::ADTType *> (tyseg);
+	  auto last_variant = adt->get_variants ();
+	  TyTy::VariantDef *variant = last_variant.back ();
+
+	  rich_location richloc (line_table, seg->get_locus ());
+	  richloc.add_fixit_replace ("not a type");
+
+	  rust_error_at (richloc, ErrorCode::E0573,
+			 "expected type, found variant of %<%s::%s%>",
+			 adt->get_name ().c_str (),
+			 variant->get_identifier ().c_str ());
+	  return new TyTy::ErrorType (expr_id);
+	}
+
       if (candidate.is_impl_candidate ())
 	{
 	  resolved_node_id
@@ -524,7 +550,7 @@ TypeCheckType::resolve_segments (
   context->insert_receiver (expr_mappings.get_hirid (), prev_segment);
   if (tyseg->needs_generic_substitutions ())
     {
-      // Location locus = segments.back ()->get_locus ();
+      // location_t locus = segments.back ()->get_locus ();
       if (!prev_segment->needs_generic_substitutions ())
 	{
 	  auto used_args_in_prev_segment
@@ -673,9 +699,9 @@ TypeCheckType::visit (HIR::NeverType &type)
 }
 
 TyTy::ParamType *
-TypeResolveGenericParam::Resolve (HIR::GenericParam *param)
+TypeResolveGenericParam::Resolve (HIR::GenericParam *param, bool apply_sized)
 {
-  TypeResolveGenericParam resolver;
+  TypeResolveGenericParam resolver (apply_sized);
   switch (param->get_kind ())
     {
     case HIR::GenericParam::GenericKind::TYPE:
@@ -733,8 +759,26 @@ TypeResolveGenericParam::visit (HIR::TypeParam &param)
 	= new HIR::TypePath (mappings, {}, BUILTINS_LOCATION, false);
     }
 
+  std::map<DefId, std::vector<TyTy::TypeBoundPredicate>> predicates;
+
+  // https://doc.rust-lang.org/std/marker/trait.Sized.html
+  // All type parameters have an implicit bound of Sized. The special syntax
+  // ?Sized can be used to remove this bound if it’s not appropriate.
+  //
+  // We can only do this when we are not resolving the implicit Self for Sized
+  // itself
+  rust_debug_loc (param.get_locus (), "apply_sized: %s",
+		  apply_sized ? "true" : "false");
+  if (apply_sized)
+    {
+      TyTy::TypeBoundPredicate sized_predicate
+	= get_marker_predicate (Analysis::RustLangItem::ItemType::SIZED,
+				param.get_locus ());
+
+      predicates[sized_predicate.get_id ()] = {sized_predicate};
+    }
+
   // resolve the bounds
-  std::vector<TyTy::TypeBoundPredicate> specified_bounds;
   if (param.has_type_param_bounds ())
     {
       for (auto &bound : param.get_type_param_bounds ())
@@ -747,15 +791,56 @@ TypeResolveGenericParam::visit (HIR::TypeParam &param)
 
 		TyTy::TypeBoundPredicate predicate
 		  = get_predicate_from_bound (b->get_path (),
-					      implicit_self_bound);
+					      implicit_self_bound,
+					      b->get_polarity ());
 		if (!predicate.is_error ())
-		  specified_bounds.push_back (std::move (predicate));
+		  {
+		    switch (predicate.get_polarity ())
+		      {
+			case BoundPolarity::AntiBound: {
+			  bool found = predicates.find (predicate.get_id ())
+				       != predicates.end ();
+			  if (found)
+			    predicates.erase (predicate.get_id ());
+			  else
+			    {
+			      // emit error message
+			      rich_location r (line_table, b->get_locus ());
+			      r.add_range (predicate.get ()->get_locus ());
+			      rust_error_at (
+				r, "antibound for %s is not applied here",
+				predicate.get ()->get_name ().c_str ());
+			    }
+			}
+			break;
+
+			default: {
+			  if (predicates.find (predicate.get_id ())
+			      == predicates.end ())
+			    {
+			      predicates[predicate.get_id ()] = {};
+			    }
+			  predicates[predicate.get_id ()].push_back (predicate);
+			}
+			break;
+		      }
+		  }
 	      }
 	      break;
 
 	    default:
 	      break;
 	    }
+	}
+    }
+
+  // now to flat map the specified_bounds into the raw specified predicates
+  std::vector<TyTy::TypeBoundPredicate> specified_bounds;
+  for (auto it = predicates.begin (); it != predicates.end (); it++)
+    {
+      for (const auto &predicate : it->second)
+	{
+	  specified_bounds.push_back (predicate);
 	}
     }
 

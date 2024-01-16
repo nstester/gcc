@@ -20,6 +20,9 @@
 #include "rust-ast-lower-type.h"
 #include "rust-ast-lower-pattern.h"
 #include "rust-ast-lower-extern.h"
+#include "rust-attribute-values.h"
+#include "rust-item.h"
+#include "rust-system.h"
 
 namespace Rust {
 namespace HIR {
@@ -261,9 +264,6 @@ ASTLoweringBase::visit (AST::LifetimeWhereClauseItem &)
 {}
 void
 ASTLoweringBase::visit (AST::TypeBoundWhereClauseItem &)
-{}
-void
-ASTLoweringBase::visit (AST::Method &)
 {}
 void
 ASTLoweringBase::visit (AST::Module &)
@@ -517,6 +517,18 @@ void
 ASTLoweringBase::visit (AST::BareFunctionType &)
 {}
 
+void
+ASTLoweringBase::visit (AST::FunctionParam &param)
+{}
+
+void
+ASTLoweringBase::visit (AST::VariadicParam &param)
+{}
+
+void
+ASTLoweringBase::visit (AST::SelfParam &param)
+{}
+
 HIR::Lifetime
 ASTLoweringBase::lower_lifetime (AST::Lifetime &lifetime)
 {
@@ -631,28 +643,31 @@ ASTLoweringBase::lower_generic_args (AST::GenericArgs &args)
 }
 
 HIR::SelfParam
-ASTLoweringBase::lower_self (AST::SelfParam &self)
+ASTLoweringBase::lower_self (std::unique_ptr<AST::Param> &param)
 {
+  rust_assert (param->is_self ());
+
+  auto self = static_cast<AST::SelfParam *> (param.get ());
   auto crate_num = mappings->get_current_crate ();
-  Analysis::NodeMapping mapping (crate_num, self.get_node_id (),
+  Analysis::NodeMapping mapping (crate_num, self->get_node_id (),
 				 mappings->get_next_hir_id (crate_num),
 				 mappings->get_next_localdef_id (crate_num));
 
-  if (self.has_type ())
+  if (self->has_type ())
     {
-      HIR::Type *type = ASTLoweringType::translate (self.get_type ().get ());
+      HIR::Type *type = ASTLoweringType::translate (self->get_type ().get ());
       return HIR::SelfParam (mapping, std::unique_ptr<HIR::Type> (type),
-			     self.get_is_mut (), self.get_locus ());
+			     self->get_is_mut (), self->get_locus ());
     }
-  else if (!self.get_has_ref ())
+  else if (!self->get_has_ref ())
     {
       return HIR::SelfParam (mapping, std::unique_ptr<HIR::Type> (nullptr),
-			     self.get_is_mut (), self.get_locus ());
+			     self->get_is_mut (), self->get_locus ());
     }
 
-  AST::Lifetime l = self.get_lifetime ();
-  return HIR::SelfParam (mapping, lower_lifetime (l), self.get_is_mut (),
-			 self.get_locus ());
+  AST::Lifetime l = self->get_lifetime ();
+  return HIR::SelfParam (mapping, lower_lifetime (l), self->get_is_mut (),
+			 self->get_locus ());
 }
 
 HIR::Type *
@@ -681,8 +696,7 @@ struct_field_name_exists (std::vector<HIR::StructField> &fields,
 	{
 	  rich_location r (line_table, new_field.get_locus ());
 	  r.add_range (field.get_locus ());
-	  rust_error_at (r, ErrorCode ("E0124"),
-			 "field %qs is already declared",
+	  rust_error_at (r, ErrorCode::E0124, "field %qs is already declared",
 			 field.get_field_name ().as_string ().c_str ());
 	  return true;
 	}
@@ -703,7 +717,8 @@ ASTLoweringBase::lower_qualifiers (const AST::FunctionQualifiers &qualifiers)
       const std::string &extern_abi = qualifiers.get_extern_abi ();
       abi = get_abi_from_string (extern_abi);
       if (has_extern && abi == ABI::UNKNOWN)
-	rust_error_at (qualifiers.get_locus (), "unknown ABI option");
+	rust_error_at (qualifiers.get_locus (), ErrorCode::E0703,
+		       "invalid ABI: found %qs", extern_abi.c_str ());
     }
 
   return HIR::FunctionQualifiers (qualifiers.get_const_status (), unsafety,
@@ -722,12 +737,12 @@ ASTLoweringBase::handle_outer_attributes (const ItemWrapper &item)
 	  continue;
 	}
 
-      bool is_lang_item = str_path.compare ("lang") == 0
+      bool is_lang_item = str_path == Values::Attributes::LANG
 			  && attr.has_attr_input ()
 			  && attr.get_attr_input ().get_attr_input_type ()
 			       == AST::AttrInput::AttrInputType::LITERAL;
 
-      bool is_doc_item = str_path.compare ("doc") == 0;
+      bool is_doc_item = str_path == Values::Attributes::DOC;
 
       if (is_doc_item)
 	handle_doc_item_attribute (item, attr);
@@ -947,7 +962,8 @@ ASTLoweringBase::lower_extern_block (AST::ExternBlock &extern_block)
       const std::string &extern_abi = extern_block.get_abi ();
       abi = get_abi_from_string (extern_abi);
       if (abi == ABI::UNKNOWN)
-	rust_error_at (extern_block.get_locus (), "unknown ABI option");
+	rust_error_at (extern_block.get_locus (), ErrorCode::E0703,
+		       "invalid ABI: found %qs", extern_abi.c_str ());
     }
 
   HIR::ExternBlock *hir_extern_block
@@ -966,7 +982,7 @@ ASTLoweringBase::lower_macro_definition (AST::MacroRulesDefinition &def)
 {
   auto is_export = false;
   for (const auto &attr : def.get_outer_attrs ())
-    if (attr.get_path ().as_string () == "macro_export")
+    if (attr.get_path ().as_string () == Values::Attributes::MACRO_EXPORT)
       is_export = true;
 
   if (is_export)

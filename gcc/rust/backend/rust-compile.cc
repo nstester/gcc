@@ -23,6 +23,7 @@
 #include "rust-compile-type.h"
 #include "rust-substitution-mapper.h"
 #include "rust-type-util.h"
+#include "rust-session-manager.h"
 
 namespace Rust {
 namespace Compile {
@@ -45,14 +46,18 @@ CompileCrate::go ()
 {
   for (auto &item : crate.get_items ())
     CompileItem::compile (item.get (), ctx);
+  auto crate_type
+    = Rust::Session::get_instance ().options.target_data.get_crate_type ();
+  if (crate_type == TargetOptions::CrateType::PROC_MACRO)
+    add_proc_macro_symbols ();
 }
 
 // Shared methods in compilation
 
 tree
 HIRCompileBase::coercion_site (HirId id, tree rvalue, TyTy::BaseType *rval,
-			       TyTy::BaseType *lval, Location lvalue_locus,
-			       Location rvalue_locus)
+			       TyTy::BaseType *lval, location_t lvalue_locus,
+			       location_t rvalue_locus)
 {
   std::vector<Resolver::Adjustment> *adjustments = nullptr;
   bool ok = ctx->get_tyctx ()->lookup_autoderef_mappings (id, &adjustments);
@@ -66,8 +71,8 @@ HIRCompileBase::coercion_site (HirId id, tree rvalue, TyTy::BaseType *rval,
 
 tree
 HIRCompileBase::coercion_site1 (tree rvalue, TyTy::BaseType *rval,
-				TyTy::BaseType *lval, Location lvalue_locus,
-				Location rvalue_locus)
+				TyTy::BaseType *lval, location_t lvalue_locus,
+				location_t rvalue_locus)
 {
   if (rvalue == error_mark_node)
     return error_mark_node;
@@ -115,8 +120,8 @@ HIRCompileBase::coercion_site1 (tree rvalue, TyTy::BaseType *rval,
       if (!valid_coercion)
 	return error_mark_node;
 
-      const TyTy::ReferenceType *exp
-	= static_cast<const TyTy::ReferenceType *> (expected);
+      const TyTy::PointerType *exp
+	= static_cast<const TyTy::PointerType *> (expected);
 
       TyTy::BaseType *actual_base = nullptr;
       if (actual->get_kind () == TyTy::TypeKind::REF)
@@ -181,7 +186,7 @@ tree
 HIRCompileBase::coerce_to_dyn_object (tree compiled_ref,
 				      const TyTy::BaseType *actual,
 				      const TyTy::DynamicObjectType *ty,
-				      Location locus)
+				      location_t locus)
 {
   // DST's get wrapped in a pseudo reference that doesnt exist...
   const TyTy::ReferenceType r (ctx->get_mappings ()->get_next_hir_id (),
@@ -218,12 +223,14 @@ HIRCompileBase::coerce_to_dyn_object (tree compiled_ref,
       vtable_ctor_idx.push_back (i++);
     }
 
-  tree vtable_ctor = ctx->get_backend ()->array_constructor_expression (
-    TREE_TYPE (vtable_field), vtable_ctor_idx, vtable_ctor_elems, locus);
+  tree vtable_ctor
+    = Backend::array_constructor_expression (TREE_TYPE (vtable_field),
+					     vtable_ctor_idx, vtable_ctor_elems,
+					     locus);
 
   std::vector<tree> dyn_ctor = {address_of_compiled_ref, vtable_ctor};
-  return ctx->get_backend ()->constructor_expression (dynamic_object, false,
-						      dyn_ctor, -1, locus);
+  return Backend::constructor_expression (dynamic_object, false, dyn_ctor, -1,
+					  locus);
 }
 
 tree
@@ -232,7 +239,7 @@ HIRCompileBase::compute_address_for_trait_item (
   const TyTy::TypeBoundPredicate *predicate,
   std::vector<std::pair<Resolver::TraitReference *, HIR::ImplBlock *>>
     &receiver_bounds,
-  const TyTy::BaseType *receiver, const TyTy::BaseType *root, Location locus)
+  const TyTy::BaseType *receiver, const TyTy::BaseType *root, location_t locus)
 {
   // There are two cases here one where its an item which has an implementation
   // within a trait-impl-block. Then there is the case where there is a default
@@ -361,8 +368,8 @@ HIRCompileBase::compute_address_for_trait_item (
 
 bool
 HIRCompileBase::verify_array_capacities (tree ltype, tree rtype,
-					 Location lvalue_locus,
-					 Location rvalue_locus)
+					 location_t lvalue_locus,
+					 location_t rvalue_locus)
 {
   rust_assert (ltype != NULL_TREE);
   rust_assert (rtype != NULL_TREE);
@@ -401,11 +408,12 @@ HIRCompileBase::verify_array_capacities (tree ltype, tree rtype,
 
   if (ltype_length != rtype_length)
     {
-      rust_error_at (
-	rvalue_locus,
-	"expected an array with a fixed size of " HOST_WIDE_INT_PRINT_UNSIGNED
-	" elements, found one with " HOST_WIDE_INT_PRINT_UNSIGNED " elements",
-	ltype_length, rtype_length);
+      rust_error_at (rvalue_locus, ErrorCode::E0308,
+		     "mismatched types, expected an array with a fixed size "
+		     "of " HOST_WIDE_INT_PRINT_UNSIGNED
+		     " elements, found one with " HOST_WIDE_INT_PRINT_UNSIGNED
+		     " elements",
+		     ltype_length, rtype_length);
       return false;
     }
 

@@ -57,7 +57,7 @@ TypeResolution::Resolve (HIR::Crate &crate)
     bool ok = infer_var->default_type (&default_type);
     if (!ok)
       {
-	rust_error_at (mappings->lookup_location (id),
+	rust_error_at (mappings->lookup_location (id), ErrorCode::E0282,
 		       "type annotations needed");
 	return true;
       }
@@ -84,7 +84,7 @@ TypeResolution::Resolve (HIR::Crate &crate)
 TraitItemReference::TraitItemReference (
   std::string identifier, bool optional, TraitItemType type,
   HIR::TraitItem *hir_trait_item, TyTy::BaseType *self,
-  std::vector<TyTy::SubstitutionParamMapping> substitutions, Location locus)
+  std::vector<TyTy::SubstitutionParamMapping> substitutions, location_t locus)
   : identifier (identifier), optional_flag (optional), type (type),
     hir_trait_item (hir_trait_item),
     inherited_substitutions (std::move (substitutions)), locus (locus),

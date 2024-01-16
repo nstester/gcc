@@ -44,7 +44,7 @@ private:
   /**
    * Check that only const functions are called in const contexts
    */
-  void check_function_call (HirId fn_id, Location locus);
+  void check_function_call (HirId fn_id, location_t locus);
 
   /* All possible const contexts */
   enum class ConstGenericCtx
@@ -126,7 +126,6 @@ private:
   virtual void visit (LoopExpr &expr) override;
   virtual void visit (WhileLoopExpr &expr) override;
   virtual void visit (WhileLetLoopExpr &expr) override;
-  virtual void visit (ForLoopExpr &expr) override;
   virtual void visit (IfExpr &expr) override;
   virtual void visit (IfExprConseqElse &expr) override;
   virtual void visit (IfLetExpr &expr) override;

@@ -78,7 +78,7 @@ TypeCheckStmt::visit (HIR::LetStmt &stmt)
 
   HIR::Pattern &stmt_pattern = *stmt.get_pattern ();
   TyTy::BaseType *init_expr_ty = nullptr;
-  Location init_expr_locus = UNKNOWN_LOCATION;
+  location_t init_expr_locus = UNKNOWN_LOCATION;
   if (stmt.has_init_expr ())
     {
       init_expr_locus = stmt.get_init_expr ()->get_locus ();
@@ -87,11 +87,11 @@ TypeCheckStmt::visit (HIR::LetStmt &stmt)
 	return;
 
       init_expr_ty->append_reference (
-	stmt_pattern.get_pattern_mappings ().get_hirid ());
+	stmt_pattern.get_mappings ().get_hirid ());
     }
 
   TyTy::BaseType *specified_ty = nullptr;
-  Location specified_ty_locus;
+  location_t specified_ty_locus;
   if (stmt.has_type ())
     {
       specified_ty = TypeCheckType::Resolve (stmt.get_type ().get ());
@@ -122,10 +122,11 @@ TypeCheckStmt::visit (HIR::LetStmt &stmt)
       // let x;
       else
 	{
-	  auto infer = new TyTy::InferType (
-	    stmt_pattern.get_pattern_mappings ().get_hirid (),
-	    TyTy::InferType::InferTypeKind::GENERAL,
-	    TyTy::InferType::TypeHint::Default (), stmt.get_locus ());
+	  auto infer
+	    = new TyTy::InferType (stmt_pattern.get_mappings ().get_hirid (),
+				   TyTy::InferType::InferTypeKind::GENERAL,
+				   TyTy::InferType::TypeHint::Default (),
+				   stmt.get_locus ());
 	  TypeCheckPattern::Resolve (&stmt_pattern, infer);
 	}
     }

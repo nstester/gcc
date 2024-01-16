@@ -46,7 +46,7 @@ ResolvePathRef::visit (HIR::PathInExpression &expr)
 tree
 ResolvePathRef::resolve (const HIR::PathIdentSegment &final_segment,
 			 const Analysis::NodeMapping &mappings,
-			 Location expr_locus, bool is_qualified_path)
+			 location_t expr_locus, bool is_qualified_path)
 {
   TyTy::BaseType *lookup = nullptr;
   bool ok = ctx->get_tyctx ()->lookup_type (mappings.get_hirid (), &lookup);
@@ -96,10 +96,9 @@ ResolvePathRef::resolve (const HIR::PathIdentSegment &final_segment,
       tree folded_discrim_expr = fold_expr (discrim_expr_node);
       tree qualifier = folded_discrim_expr;
 
-      return ctx->get_backend ()->constructor_expression (compiled_adt_type,
-							  true, {qualifier},
-							  union_disriminator,
-							  expr_locus);
+      return Backend::constructor_expression (compiled_adt_type, true,
+					      {qualifier}, union_disriminator,
+					      expr_locus);
     }
 
   HirId ref;
@@ -130,7 +129,7 @@ ResolvePathRef::resolve (const HIR::PathIdentSegment &final_segment,
   if (ctx->lookup_var_decl (ref, &var))
     {
       // TREE_USED is setup in the gcc abstraction here
-      return ctx->get_backend ()->var_expression (var, expr_locus);
+      return Backend::var_expression (var, expr_locus);
     }
 
   // might be a match pattern binding
@@ -174,7 +173,7 @@ tree
 HIRCompileBase::query_compile (HirId ref, TyTy::BaseType *lookup,
 			       const HIR::PathIdentSegment &final_segment,
 			       const Analysis::NodeMapping &mappings,
-			       Location expr_locus, bool is_qualified_path)
+			       location_t expr_locus, bool is_qualified_path)
 {
   HIR::Item *resolved_item = ctx->get_mappings ()->lookup_hir_item (ref);
   HirId parent_block;
@@ -185,7 +184,7 @@ HIRCompileBase::query_compile (HirId ref, TyTy::BaseType *lookup,
   bool is_fn = lookup->get_kind () == TyTy::TypeKind::FNDEF;
   if (is_hir_item)
     {
-      if (!lookup->has_subsititions_defined ())
+      if (!lookup->has_substitutions_defined ())
 	return CompileItem::compile (resolved_item, ctx, nullptr, true,
 				     expr_locus);
       else
@@ -194,7 +193,7 @@ HIRCompileBase::query_compile (HirId ref, TyTy::BaseType *lookup,
     }
   else if (is_hir_extern_item)
     {
-      if (!lookup->has_subsititions_defined ())
+      if (!lookup->has_substitutions_defined ())
 	return CompileExternItem::compile (resolved_extern_item, ctx, nullptr,
 					   true, expr_locus);
       else
@@ -223,7 +222,7 @@ HIRCompileBase::query_compile (HirId ref, TyTy::BaseType *lookup,
       bool is_impl_item = resolved_item != nullptr;
       if (is_impl_item)
 	{
-	  if (!lookup->has_subsititions_defined ())
+	  if (!lookup->has_substitutions_defined ())
 	    return CompileInherentImplItem::Compile (resolved_item, ctx,
 						     nullptr, true, expr_locus);
 	  else
@@ -286,7 +285,7 @@ HIRCompileBase::query_compile (HirId ref, TyTy::BaseType *lookup,
 		impl->get_type ()->get_mappings ().get_hirid (), &self);
 	      rust_assert (ok);
 
-	      if (!lookup->has_subsititions_defined ())
+	      if (!lookup->has_substitutions_defined ())
 		return CompileInherentImplItem::Compile (impl_item, ctx,
 							 nullptr, true,
 							 expr_locus);

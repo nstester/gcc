@@ -26,16 +26,6 @@
 namespace Rust {
 
 bool
-is_derive (AST::Attribute &attr)
-{
-  auto path = attr.get_path ();
-  return attr.has_attr_input ()
-	 && attr.get_attr_input ().get_attr_input_type ()
-	      == AST::AttrInput::TOKEN_TREE
-	 && path == "derive";
-}
-
-bool
 is_builtin (AST::Attribute &attr)
 {
   auto &segments = attr.get_path ().get_segments ();
@@ -52,50 +42,6 @@ ExpandVisitor::go (AST::Crate &crate)
   expand_inner_items (crate.items);
 }
 
-/**
- * Returns a list of traits to derive from within a given attribute.
- *
- * @param attrs The attributes on the item to derive
- */
-static std::vector<std::string>
-get_traits_to_derive (AST::Attribute &attr)
-{
-  std::vector<std::string> to_derive;
-
-  auto &input = attr.get_attr_input ();
-  switch (input.get_attr_input_type ())
-    {
-      // isn't there a better way to do this?? like parse it or
-      // something idk. some function I'm not thinking of?
-      case AST::AttrInput::TOKEN_TREE: {
-	auto &tokens
-	  = static_cast<AST::DelimTokenTree &> (input).get_token_trees ();
-
-	// erase the delimiters
-	rust_assert (tokens.size () >= 2);
-	tokens.erase (tokens.begin ());
-	tokens.pop_back ();
-
-	for (auto &token : tokens)
-	  {
-	    // skip commas, as they are part of the token stream
-	    if (token->as_string () == ",")
-	      continue;
-
-	    to_derive.emplace_back (token->as_string ());
-	  }
-	break;
-      }
-    case AST::AttrInput::LITERAL:
-    case AST::AttrInput::META_ITEM:
-    case AST::AttrInput::MACRO:
-      rust_unreachable ();
-      break;
-    }
-
-  return to_derive;
-}
-
 static std::unique_ptr<AST::Item>
 builtin_derive_item (AST::Item &item, const AST::Attribute &derive,
 		     BuiltinMacro to_derive)
@@ -104,7 +50,7 @@ builtin_derive_item (AST::Item &item, const AST::Attribute &derive,
 }
 
 static std::vector<std::unique_ptr<AST::Item>>
-derive_item (AST::Item &item, const std::string &to_derive,
+derive_item (AST::Item &item, AST::SimplePath &to_derive,
 	     MacroExpander &expander)
 {
   std::vector<std::unique_ptr<AST::Item>> result;
@@ -230,15 +176,16 @@ ExpandVisitor::expand_inner_items (
 	    {
 	      auto current = *attr_it;
 
-	      if (is_derive (current))
+	      if (current.is_derive ())
 		{
+		  current.parse_attr_to_meta_item ();
 		  attr_it = attrs.erase (attr_it);
 		  // Get traits to derive in the current attribute
-		  auto traits_to_derive = get_traits_to_derive (current);
+		  auto traits_to_derive = current.get_traits_to_derive ();
 		  for (auto &to_derive : traits_to_derive)
 		    {
-		      auto maybe_builtin
-			= MacroBuiltin::builtins.lookup (to_derive);
+		      auto maybe_builtin = MacroBuiltin::builtins.lookup (
+			to_derive.get ().as_string ());
 		      if (MacroBuiltin::builtins.is_iter_ok (maybe_builtin))
 			{
 			  auto new_item
@@ -316,15 +263,15 @@ ExpandVisitor::expand_inner_stmts (AST::BlockExpr &expr)
 	    {
 	      auto current = *attr_it;
 
-	      if (is_derive (current))
+	      if (current.is_derive ())
 		{
 		  attr_it = attrs.erase (attr_it);
 		  // Get traits to derive in the current attribute
-		  auto traits_to_derive = get_traits_to_derive (current);
+		  auto traits_to_derive = current.get_traits_to_derive ();
 		  for (auto &to_derive : traits_to_derive)
 		    {
-		      auto maybe_builtin
-			= MacroBuiltin::builtins.lookup (to_derive);
+		      auto maybe_builtin = MacroBuiltin::builtins.lookup (
+			to_derive.get ().as_string ());
 		      if (MacroBuiltin::builtins.is_iter_ok (maybe_builtin))
 			{
 			  auto new_item
@@ -426,12 +373,11 @@ ExpandVisitor::expand_tuple_fields (std::vector<AST::TupleField> &fields)
 
 // FIXME: This can definitely be refactored with the method above
 void
-ExpandVisitor::expand_function_params (std::vector<AST::FunctionParam> &params)
+ExpandVisitor::expand_function_params (
+  std::vector<std::unique_ptr<AST::Param>> &params)
 {
-  for (auto &param : params)
-    {
-      maybe_expand_type (param.get_type ());
-    }
+  for (auto &p : params)
+    visit (p);
 }
 
 void
@@ -485,16 +431,6 @@ ExpandVisitor::expand_closure_params (std::vector<AST::ClosureParam> &params)
 }
 
 void
-ExpandVisitor::expand_self_param (AST::SelfParam &self_param)
-{
-  if (self_param.has_type ())
-    maybe_expand_type (self_param.get_type ());
-
-  /* TODO: maybe check for invariants being violated - e.g. both type and
-   * lifetime? */
-}
-
-void
 ExpandVisitor::expand_where_clause (AST::WhereClause &where_clause)
 {
   for (auto &item : where_clause.get_items ())
@@ -524,11 +460,6 @@ ExpandVisitor::expand_trait_method_decl (AST::TraitMethodDecl &decl)
 {
   for (auto &param : decl.get_generic_params ())
     visit (param);
-
-  /* assuming you can't strip self param - wouldn't be a method
-   * anymore. spec allows outer attrs on self param, but doesn't
-   * specify whether cfg is used. */
-  expand_self_param (decl.get_self_param ());
 
   /* strip function parameters if required - this is specifically
    * allowed by spec */
@@ -1037,24 +968,6 @@ ExpandVisitor::visit (AST::TypeBoundWhereClauseItem &item)
 }
 
 void
-ExpandVisitor::visit (AST::Method &method)
-{
-  for (auto &param : method.get_generic_params ())
-    visit (param);
-
-  expand_self_param (method.get_self_param ());
-  expand_function_params (method.get_function_params ());
-
-  if (method.has_return_type ())
-    visit (method.get_return_type ());
-
-  if (method.has_where_clause ())
-    expand_where_clause (method.get_where_clause ());
-
-  visit (method.get_definition ());
-}
-
-void
 ExpandVisitor::visit (AST::Module &module)
 {
   if (module.get_kind () == AST::Module::ModuleKind::LOADED)
@@ -1180,7 +1093,8 @@ ExpandVisitor::visit (AST::ConstantItem &const_item)
 {
   maybe_expand_type (const_item.get_type ());
 
-  maybe_expand_expr (const_item.get_expr ());
+  if (const_item.has_expr ())
+    maybe_expand_expr (const_item.get_expr ());
 }
 
 void
@@ -1317,12 +1231,9 @@ ExpandVisitor::visit (AST::ExternalFunctionItem &item)
   for (auto &param : item.get_generic_params ())
     visit (param);
 
-  // FIXME: Should this work? What is the difference between NamedFunctionParam
-  // and FunctionParam?
-  // expand_function_params (item.get_function_params ());
-
   for (auto &param : item.get_function_params ())
-    maybe_expand_type (param.get_type ());
+    if (!param.is_variadic ())
+      maybe_expand_type (param.get_type ());
 
   if (item.has_return_type ())
     maybe_expand_type (item.get_return_type ());
@@ -1637,6 +1548,25 @@ ExpandVisitor::visit (AST::BareFunctionType &type)
     visit (type.get_return_type ());
 }
 
+void
+ExpandVisitor::visit (AST::VariadicParam &param)
+{}
+
+void
+ExpandVisitor::visit (AST::FunctionParam &param)
+{
+  maybe_expand_type (param.get_type ());
+}
+
+void
+ExpandVisitor::visit (AST::SelfParam &param)
+{
+  /* TODO: maybe check for invariants being violated - e.g. both type and
+   * lifetime? */
+  if (param.has_type ())
+    maybe_expand_type (param.get_type ());
+}
+
 template <typename T>
 void
 ExpandVisitor::expand_inner_attribute (T &item, AST::SimplePath &path)
@@ -1654,7 +1584,7 @@ ExpandVisitor::visit_inner_using_attrs (T &item,
     {
       auto current = *it;
 
-      if (!is_builtin (current) && !is_derive (current))
+      if (!is_builtin (current) && !current.is_derive ())
 	{
 	  it = attrs.erase (it);
 	  expand_inner_attribute (item, current.get_path ());

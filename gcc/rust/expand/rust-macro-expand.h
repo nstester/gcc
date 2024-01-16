@@ -19,6 +19,7 @@
 #ifndef RUST_MACRO_EXPAND_H
 #define RUST_MACRO_EXPAND_H
 
+#include "optional.h"
 #include "rust-buffered-queue.h"
 #include "rust-parse.h"
 #include "rust-token.h"
@@ -32,7 +33,7 @@
 #include "rust-token-converter.h"
 #include "rust-ast-collector.h"
 #include "rust-system.h"
-#include "libproc_macro/proc_macro.h"
+#include "libproc_macro_internal/proc_macro.h"
 
 // Provides objects and method prototypes for macro expansion
 
@@ -319,7 +320,7 @@ struct MacroExpander
   void expand_invoc (AST::MacroInvocation &invoc, bool has_semicolon);
 
   // Expands a single declarative macro.
-  AST::Fragment expand_decl_macro (Location locus, AST::MacroInvocData &invoc,
+  AST::Fragment expand_decl_macro (location_t locus, AST::MacroInvocData &invoc,
 				   AST::MacroRulesDefinition &rules_def,
 				   bool semicolon);
 
@@ -407,27 +408,14 @@ struct MacroExpander
   void import_proc_macros (std::string extern_crate);
 
   template <typename T>
-  AST::Fragment expand_derive_proc_macro (T &item,
-					  const std::string &trait_name)
+  AST::Fragment expand_derive_proc_macro (T &item, AST::SimplePath &path)
   {
-    ProcMacro::CustomDerive macro;
-
-    // FIXME: Resolve crate name
-    std::string crate = "";
-    std::string name = trait_name;
-
-    if (!mappings->lookup_derive_proc_macro (std::make_pair (crate, name),
-					     macro))
+    tl::optional<CustomDeriveProcMacro &> macro
+      = mappings->lookup_derive_proc_macro_invocation (path);
+    if (!macro.has_value ())
       {
-	// FIXME: Resolve this path segment instead of taking it directly.
-	import_proc_macros (crate);
-	if (!mappings->lookup_derive_proc_macro (std::make_pair (crate, name),
-						 macro))
-	  {
-	    rust_error_at (UNDEF_LOCATION, "procedural macro %s not found",
-			   name.c_str ());
-	    rust_assert (false);
-	  }
+	rust_error_at (path.get_locus (), "Macro not found");
+	return AST::Fragment::create_error ();
       }
 
     AST::TokenCollector collector;
@@ -437,28 +425,20 @@ struct MacroExpander
     auto c = collector.collect_tokens ();
     std::vector<const_TokenPtr> vec (c.cbegin (), c.cend ());
 
-    return parse_proc_macro_output (macro.macro (convert (vec)));
+    return parse_proc_macro_output (
+      macro.value ().get_handle () (convert (vec)));
   }
 
   template <typename T>
-  AST::Fragment expand_bang_proc_macro (T &item, AST::SimplePath &path)
+  AST::Fragment expand_bang_proc_macro (T &item,
+					AST::MacroInvocation &invocation)
   {
-    ProcMacro::Bang macro;
-
-    std::string crate = path.get_segments ()[0].get_segment_name ();
-    std::string name = path.get_segments ()[1].get_segment_name ();
-    if (!mappings->lookup_bang_proc_macro (std::make_pair (crate, name), macro))
+    tl::optional<BangProcMacro &> macro
+      = mappings->lookup_bang_proc_macro_invocation (invocation);
+    if (!macro.has_value ())
       {
-	// FIXME: Resolve this path segment instead of taking it directly.
-	import_proc_macros (crate);
-
-	if (!mappings->lookup_bang_proc_macro (std::make_pair (crate, name),
-					       macro))
-	  {
-	    rust_error_at (UNDEF_LOCATION, "procedural macro %s not found",
-			   name.c_str ());
-	    rust_assert (false);
-	  }
+	rust_error_at (invocation.get_locus (), "Macro not found");
+	return AST::Fragment::create_error ();
       }
 
     AST::TokenCollector collector;
@@ -468,29 +448,19 @@ struct MacroExpander
     auto c = collector.collect_tokens ();
     std::vector<const_TokenPtr> vec (c.cbegin (), c.cend ());
 
-    return parse_proc_macro_output (macro.macro (convert (vec)));
+    return parse_proc_macro_output (
+      macro.value ().get_handle () (convert (vec)));
   }
 
   template <typename T>
   AST::Fragment expand_attribute_proc_macro (T &item, AST::SimplePath &path)
   {
-    ProcMacro::Attribute macro;
-
-    std::string crate = path.get_segments ()[0].get_segment_name ();
-    std::string name = path.get_segments ()[1].get_segment_name ();
-    if (!mappings->lookup_attribute_proc_macro (std::make_pair (crate, name),
-						macro))
+    tl::optional<AttributeProcMacro &> macro
+      = mappings->lookup_attribute_proc_macro_invocation (path);
+    if (!macro.has_value ())
       {
-	// FIXME: Resolve this path segment instead of taking it directly.
-	import_proc_macros (crate);
-	if (!mappings->lookup_attribute_proc_macro (std::make_pair (crate,
-								    name),
-						    macro))
-	  {
-	    rust_error_at (UNDEF_LOCATION, "procedural macro %s not found",
-			   name.c_str ());
-	    rust_assert (false);
-	  }
+	rust_error_at (path.get_locus (), "Macro not found");
+	return AST::Fragment::create_error ();
       }
 
     AST::TokenCollector collector;
@@ -502,7 +472,8 @@ struct MacroExpander
 
     // FIXME: Handle attributes
     return parse_proc_macro_output (
-      macro.macro (ProcMacro::TokenStream::make_tokenstream (), convert (vec)));
+      macro.value ().get_handle () (ProcMacro::TokenStream::make_tokenstream (),
+				    convert (vec)));
   }
 
   /**
@@ -516,8 +487,15 @@ struct MacroExpander
    */
   void reset_changed_state () { has_changed_flag = false; }
 
-  AST::MacroRulesDefinition *get_last_definition () { return last_def; }
-  AST::MacroInvocation *get_last_invocation () { return last_invoc; }
+  tl::optional<AST::MacroRulesDefinition &> &get_last_definition ()
+  {
+    return last_def;
+  }
+
+  tl::optional<AST::MacroInvocation &> &get_last_invocation ()
+  {
+    return last_invoc;
+  }
 
 private:
   AST::Fragment parse_proc_macro_output (ProcMacro::TokenStream ts);
@@ -529,8 +507,8 @@ private:
   AST::Fragment expanded_fragment;
   bool has_changed_flag;
 
-  AST::MacroRulesDefinition *last_def;
-  AST::MacroInvocation *last_invoc;
+  tl::optional<AST::MacroRulesDefinition &> last_def;
+  tl::optional<AST::MacroInvocation &> last_invoc;
 
 public:
   Resolver::Resolver *resolver;

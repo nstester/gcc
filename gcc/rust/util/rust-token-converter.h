@@ -19,7 +19,7 @@
 
 #include <vector>
 #include "rust-token.h"
-#include "libproc_macro/proc_macro.h"
+#include "libproc_macro_internal/proc_macro.h"
 
 namespace Rust {
 
@@ -28,6 +28,9 @@ convert (const std::vector<const_TokenPtr> &tokens);
 
 std::vector<const_TokenPtr>
 convert (const ProcMacro::TokenStream &ts);
+
+ProcMacro::Literal
+convert_literal (const_TokenPtr lit);
 
 } // namespace Rust
 

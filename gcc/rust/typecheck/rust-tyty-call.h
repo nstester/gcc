@@ -88,11 +88,11 @@ class Argument
 {
 public:
   Argument (Analysis::NodeMapping mapping, BaseType *argument_type,
-	    Location locus)
+	    location_t locus)
     : mapping (mapping), argument_type (argument_type), locus (locus)
   {}
 
-  Location get_locus () const { return locus; }
+  location_t get_locus () const { return locus; }
 
   BaseType *get_argument_type () { return argument_type; }
 
@@ -101,7 +101,7 @@ public:
 private:
   Analysis::NodeMapping mapping;
   BaseType *argument_type;
-  Location locus;
+  location_t locus;
 };
 
 class TypeCheckMethodCallExpr
@@ -112,23 +112,23 @@ public:
 		       Resolver::TypeCheckContext *context);
 
   static BaseType *go (FnType *ref, Analysis::NodeMapping call_mappings,
-		       std::vector<Argument> &args, Location call_locus,
-		       Location receiver_locus, TyTy::BaseType *adjusted_self,
+		       std::vector<Argument> &args, location_t call_locus,
+		       location_t receiver_locus, TyTy::BaseType *adjusted_self,
 		       Resolver::TypeCheckContext *context);
 
 protected:
   BaseType *check (FnType &type);
 
   TypeCheckMethodCallExpr (Analysis::NodeMapping call_mappings,
-			   std::vector<Argument> &args, Location call_locus,
-			   Location receiver_locus,
+			   std::vector<Argument> &args, location_t call_locus,
+			   location_t receiver_locus,
 			   TyTy::BaseType *adjusted_self,
 			   Resolver::TypeCheckContext *context);
 
   Analysis::NodeMapping call_mappings;
   std::vector<Argument> &arguments;
-  Location call_locus;
-  Location receiver_locus;
+  location_t call_locus;
+  location_t receiver_locus;
   TyTy::BaseType *adjusted_self;
   Resolver::TypeCheckContext *context;
   Analysis::Mappings *mappings;

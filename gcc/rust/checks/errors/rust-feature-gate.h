@@ -104,7 +104,6 @@ public:
   void visit (AST::TypeParam &param) override {}
   void visit (AST::LifetimeWhereClauseItem &item) override {}
   void visit (AST::TypeBoundWhereClauseItem &item) override {}
-  void visit (AST::Method &method) override;
   void visit (AST::Module &module) override {}
   void visit (AST::ExternCrate &crate) override {}
   void visit (AST::UseTreeGlob &use_tree) override {}
@@ -184,9 +183,12 @@ public:
   void visit (AST::SliceType &type) override {}
   void visit (AST::InferredType &type) override {}
   void visit (AST::BareFunctionType &type) override {}
+  void visit (AST::FunctionParam &param) override {}
+  void visit (AST::VariadicParam &param) override {}
+  void visit (AST::SelfParam &param) override {}
 
 private:
-  void gate (Feature::Name name, Location loc, const std::string &error_msg);
+  void gate (Feature::Name name, location_t loc, const std::string &error_msg);
   void check_rustc_attri (const std::vector<AST::Attribute> &attributes);
   std::set<Feature::Name> valid_features;
 };

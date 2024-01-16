@@ -22,9 +22,11 @@
 #include "rust-hir-map.h"
 #include "rust-ast-dump.h"
 #include "rust-abi.h"
+#include "rust-item.h"
 #include "rust-object-export.h"
 
 #include "md5.h"
+#include "rust-system.h"
 
 namespace Rust {
 namespace Metadata {
@@ -107,22 +109,26 @@ ExportContext::emit_function (const HIR::Function &fn)
 	}
 
       std::vector<AST::NamedFunctionParam> function_params;
-      for (AST::FunctionParam &param : function.get_function_params ())
+      for (auto &p : function.get_function_params ())
 	{
-	  std::string name = param.get_pattern ()->as_string ();
+	  if (p->is_variadic () || p->is_self ())
+	    rust_unreachable ();
+	  auto param = static_cast<AST::FunctionParam *> (p.get ());
+	  std::string name = param->get_pattern ()->as_string ();
 	  std::unique_ptr<AST::Type> param_type
-	    = param.get_type ()->clone_type ();
+	    = param->get_type ()->clone_type ();
 
-	  AST::NamedFunctionParam p (name, std::move (param_type), {},
-				     param.get_locus ());
-	  function_params.push_back (std::move (p));
+	  AST::NamedFunctionParam np (name, std::move (param_type), {},
+				      param->get_locus ());
+	  function_params.push_back (std::move (np));
 	}
 
-      AST::ExternalItem *external_item = new AST::ExternalFunctionItem (
-	item_name, {} /* generic_params */, std::move (return_type),
-	where_clause, std::move (function_params), false /* has_variadics */,
-	{} /* variadic_outer_attrs */, vis, function.get_outer_attrs (),
-	function.get_locus ());
+      AST::ExternalItem *external_item
+	= new AST::ExternalFunctionItem (item_name, {} /* generic_params */,
+					 std::move (return_type), where_clause,
+					 std::move (function_params), vis,
+					 function.get_outer_attrs (),
+					 function.get_locus ());
 
       std::vector<std::unique_ptr<AST::ExternalItem>> external_items;
       external_items.push_back (

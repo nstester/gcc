@@ -149,7 +149,7 @@ TypeCheckStructExpr::resolve (HIR::StructExprStructFields &struct_expr)
 	}
       else if (!struct_expr.has_struct_base ())
 	{
-	  rust_error_at (struct_expr.get_locus (), ErrorCode ("E0063"),
+	  rust_error_at (struct_expr.get_locus (), ErrorCode::E0063,
 			 "constructor is missing fields");
 	  return;
 	}
@@ -259,7 +259,7 @@ TypeCheckStructExpr::visit (HIR::StructExprFieldIdentifierValue &field)
     }
 
   TyTy::BaseType *value = TypeCheckExpr::Resolve (field.get_value ().get ());
-  Location value_locus = field.get_value ()->get_locus ();
+  location_t value_locus = field.get_value ()->get_locus ();
 
   HirId coercion_site_id = field.get_mappings ().get_hirid ();
   resolved_field_value_expr
@@ -296,7 +296,7 @@ TypeCheckStructExpr::visit (HIR::StructExprFieldIndexValue &field)
     }
 
   TyTy::BaseType *value = TypeCheckExpr::Resolve (field.get_value ().get ());
-  Location value_locus = field.get_value ()->get_locus ();
+  location_t value_locus = field.get_value ()->get_locus ();
 
   HirId coercion_site_id = field.get_mappings ().get_hirid ();
   resolved_field_value_expr
@@ -343,7 +343,7 @@ TypeCheckStructExpr::visit (HIR::StructExprFieldIdentifier &field)
   HIR::PathInExpression expr (mappings_copy2, {seg}, field.get_locus (), false,
 			      {});
   TyTy::BaseType *value = TypeCheckExpr::Resolve (&expr);
-  Location value_locus = expr.get_locus ();
+  location_t value_locus = expr.get_locus ();
 
   HirId coercion_site_id = field.get_mappings ().get_hirid ();
   resolved_field_value_expr

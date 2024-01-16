@@ -21,7 +21,8 @@
 
 #include "rust-system.h"
 #include "rust-linemap.h"
-#include "rust-codepoint.h"
+#include "rust-make-unique.h"
+#include "rust-unicode.h"
 
 namespace Rust {
 // "Primitive core types" in Rust - the different int and float types, as well
@@ -236,6 +237,10 @@ token_id_keyword_string (TokenId id);
 const char *
 get_type_hint_string (PrimitiveCoreType type);
 
+/* Normalize string if a token is a identifier */
+std::string
+nfc_normalize_token_string (location_t loc, TokenId id, const std::string &str);
+
 // Represents a single token. Create using factory static methods.
 class Token
 {
@@ -243,7 +248,7 @@ private:
   // Token kind.
   TokenId token_id;
   // Token location.
-  Location locus;
+  location_t locus;
   // Associated text (if any) of token.
   std::unique_ptr<std::string> str;
   // TODO: maybe remove issues and just store std::string as value?
@@ -252,36 +257,47 @@ private:
   PrimitiveCoreType type_hint;
 
   // Token constructor from token id and location. Has a null string.
-  Token (TokenId token_id, Location location)
+  Token (TokenId token_id, location_t location)
     : token_id (token_id), locus (location), str (nullptr),
       type_hint (CORETYPE_UNKNOWN)
   {}
 
   // Token constructor from token id, location, and a string.
-  Token (TokenId token_id, Location location, std::string &&paramStr)
-    : token_id (token_id), locus (location),
-      str (new std::string (std::move (paramStr))), type_hint (CORETYPE_UNKNOWN)
-  {}
+  Token (TokenId token_id, location_t location, std::string &&paramStr)
+    : token_id (token_id), locus (location), type_hint (CORETYPE_UNKNOWN)
+  {
+    // Normalize identifier tokens
+    str = Rust::make_unique<std::string> (
+      nfc_normalize_token_string (location, token_id, paramStr));
+  }
 
   // Token constructor from token id, location, and a char.
-  Token (TokenId token_id, Location location, char paramChar)
+  Token (TokenId token_id, location_t location, char paramChar)
     : token_id (token_id), locus (location),
       str (new std::string (1, paramChar)), type_hint (CORETYPE_UNKNOWN)
-  {}
+  {
+    // Do not need to normalize 1byte char
+  }
 
   // Token constructor from token id, location, and a "codepoint".
-  Token (TokenId token_id, Location location, Codepoint paramCodepoint)
-    : token_id (token_id), locus (location),
-      str (new std::string (paramCodepoint.as_string ())),
-      type_hint (CORETYPE_UNKNOWN)
-  {}
+  Token (TokenId token_id, location_t location, Codepoint paramCodepoint)
+    : token_id (token_id), locus (location), type_hint (CORETYPE_UNKNOWN)
+  {
+    // Normalize identifier tokens
+    str = Rust::make_unique<std::string> (
+      nfc_normalize_token_string (location, token_id,
+				  paramCodepoint.as_string ()));
+  }
 
   // Token constructor from token id, location, a string, and type hint.
-  Token (TokenId token_id, Location location, std::string &&paramStr,
+  Token (TokenId token_id, location_t location, std::string &&paramStr,
 	 PrimitiveCoreType parType)
-    : token_id (token_id), locus (location),
-      str (new std::string (std::move (paramStr))), type_hint (parType)
-  {}
+    : token_id (token_id), locus (location), type_hint (parType)
+  {
+    // Normalize identifier tokens
+    str = Rust::make_unique<std::string> (
+      nfc_normalize_token_string (location, token_id, paramStr));
+  }
 
 public:
   // No default constructor.
@@ -300,21 +316,21 @@ public:
    * private constructor */
 
   // Makes and returns a new TokenPtr (with null string).
-  static TokenPtr make (TokenId token_id, Location locus)
+  static TokenPtr make (TokenId token_id, location_t locus)
   {
     // return std::make_shared<Token> (token_id, locus);
     return TokenPtr (new Token (token_id, locus));
   }
 
   // Makes and returns a new TokenPtr of type IDENTIFIER.
-  static TokenPtr make_identifier (Location locus, std::string &&str)
+  static TokenPtr make_identifier (location_t locus, std::string &&str)
   {
     // return std::make_shared<Token> (IDENTIFIER, locus, str);
     return TokenPtr (new Token (IDENTIFIER, locus, std::move (str)));
   }
 
   // Makes and returns a new TokenPtr of type INT_LITERAL.
-  static TokenPtr make_int (Location locus, std::string &&str,
+  static TokenPtr make_int (location_t locus, std::string &&str,
 			    PrimitiveCoreType type_hint = CORETYPE_UNKNOWN)
   {
     // return std::make_shared<Token> (INT_LITERAL, locus, str, type_hint);
@@ -323,7 +339,7 @@ public:
   }
 
   // Makes and returns a new TokenPtr of type FLOAT_LITERAL.
-  static TokenPtr make_float (Location locus, std::string &&str,
+  static TokenPtr make_float (location_t locus, std::string &&str,
 			      PrimitiveCoreType type_hint = CORETYPE_UNKNOWN)
   {
     // return std::make_shared<Token> (FLOAT_LITERAL, locus, str, type_hint);
@@ -332,7 +348,7 @@ public:
   }
 
   // Makes and returns a new TokenPtr of type STRING_LITERAL.
-  static TokenPtr make_string (Location locus, std::string &&str)
+  static TokenPtr make_string (location_t locus, std::string &&str)
   {
     // return std::make_shared<Token> (STRING_LITERAL, locus, str,
     // CORETYPE_STR);
@@ -341,40 +357,40 @@ public:
   }
 
   // Makes and returns a new TokenPtr of type CHAR_LITERAL.
-  static TokenPtr make_char (Location locus, Codepoint char_lit)
+  static TokenPtr make_char (location_t locus, Codepoint char_lit)
   {
     // return std::make_shared<Token> (CHAR_LITERAL, locus, char_lit);
     return TokenPtr (new Token (CHAR_LITERAL, locus, char_lit));
   }
 
   // Makes and returns a new TokenPtr of type BYTE_CHAR_LITERAL.
-  static TokenPtr make_byte_char (Location locus, char byte_char)
+  static TokenPtr make_byte_char (location_t locus, char byte_char)
   {
     // return std::make_shared<Token> (BYTE_CHAR_LITERAL, locus, byte_char);
     return TokenPtr (new Token (BYTE_CHAR_LITERAL, locus, byte_char));
   }
 
   // Makes and returns a new TokenPtr of type BYTE_STRING_LITERAL (fix).
-  static TokenPtr make_byte_string (Location locus, std::string &&str)
+  static TokenPtr make_byte_string (location_t locus, std::string &&str)
   {
     // return std::make_shared<Token> (BYTE_STRING_LITERAL, locus, str);
     return TokenPtr (new Token (BYTE_STRING_LITERAL, locus, std::move (str)));
   }
 
   // Makes and returns a new TokenPtr of type INNER_DOC_COMMENT.
-  static TokenPtr make_inner_doc_comment (Location locus, std::string &&str)
+  static TokenPtr make_inner_doc_comment (location_t locus, std::string &&str)
   {
     return TokenPtr (new Token (INNER_DOC_COMMENT, locus, std::move (str)));
   }
 
   // Makes and returns a new TokenPtr of type OUTER_DOC_COMMENT.
-  static TokenPtr make_outer_doc_comment (Location locus, std::string &&str)
+  static TokenPtr make_outer_doc_comment (location_t locus, std::string &&str)
   {
     return TokenPtr (new Token (OUTER_DOC_COMMENT, locus, std::move (str)));
   }
 
   // Makes and returns a new TokenPtr of type LIFETIME.
-  static TokenPtr make_lifetime (Location locus, std::string &&str)
+  static TokenPtr make_lifetime (location_t locus, std::string &&str)
   {
     // return std::make_shared<Token> (LIFETIME, locus, str);
     return TokenPtr (new Token (LIFETIME, locus, std::move (str)));
@@ -384,10 +400,10 @@ public:
   TokenId get_id () const { return token_id; }
 
   // Gets location of the token.
-  Location get_locus () const { return locus; }
+  location_t get_locus () const { return locus; }
 
   // Set location of the token.
-  void set_locus (Location locus) { this->locus = locus; }
+  void set_locus (location_t locus) { this->locus = locus; }
 
   // Gets string description of the token.
   const std::string &

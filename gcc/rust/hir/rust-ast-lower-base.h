@@ -44,12 +44,12 @@ public:
   {}
 
   const Analysis::NodeMapping &get_mappings () const { return mappings; }
-  Location get_locus () const { return locus; }
+  location_t get_locus () const { return locus; }
   const AST::AttrVec &get_outer_attrs () const { return outer_attrs; }
 
 private:
   const Analysis::NodeMapping &mappings;
-  Location locus;
+  location_t locus;
   const AST::AttrVec &outer_attrs;
 };
 
@@ -158,7 +158,6 @@ public:
   //  virtual void visit(WhereClauseItem& item);
   virtual void visit (AST::LifetimeWhereClauseItem &item);
   virtual void visit (AST::TypeBoundWhereClauseItem &item);
-  virtual void visit (AST::Method &method);
   virtual void visit (AST::Module &module);
   virtual void visit (AST::ExternCrate &crate);
   //  virtual void visit(UseTree& use_tree);
@@ -252,6 +251,9 @@ public:
   virtual void visit (AST::SliceType &type);
   virtual void visit (AST::InferredType &type);
   virtual void visit (AST::BareFunctionType &type);
+  virtual void visit (AST::FunctionParam &param);
+  virtual void visit (AST::VariadicParam &param);
+  virtual void visit (AST::SelfParam &param);
 
 protected:
   ASTLoweringBase ()
@@ -275,7 +277,7 @@ protected:
 
   HIR::GenericArgsBinding lower_binding (AST::GenericArgsBinding &binding);
 
-  HIR::SelfParam lower_self (AST::SelfParam &self);
+  HIR::SelfParam lower_self (std::unique_ptr<AST::Param> &self);
 
   HIR::Type *lower_type_no_bounds (AST::TypeNoBounds *type);
 

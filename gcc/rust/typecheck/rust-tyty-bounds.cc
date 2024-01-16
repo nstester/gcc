@@ -103,18 +103,22 @@ TypeBoundsProbe::assemble_sized_builtin ()
 {
   const TyTy::BaseType *raw = receiver->destructure ();
 
-  // does this thing actually implement sized?
+  // https://runrust.miraheze.org/wiki/Dynamically_Sized_Type
+  // everything is sized except for:
+  //
+  //   1. dyn traits
+  //   2. slices
+  //   3. str
+  //   4. ADT's which contain any of the above
+  //   t. tuples which contain any of the above
   switch (raw->get_kind ())
     {
-    case TyTy::ADT:
-    case TyTy::STR:
+    case TyTy::ARRAY:
     case TyTy::REF:
     case TyTy::POINTER:
     case TyTy::PARAM:
-    case TyTy::SLICE:
     case TyTy::FNDEF:
     case TyTy::FNPTR:
-    case TyTy::TUPLE:
     case TyTy::BOOL:
     case TyTy::CHAR:
     case TyTy::INT:
@@ -124,13 +128,21 @@ TypeBoundsProbe::assemble_sized_builtin ()
     case TyTy::ISIZE:
     case TyTy::CLOSURE:
     case TyTy::INFER:
-      assemble_builtin_candidate (Analysis::RustLangItem::SIZED);
-      break;
-
-    case TyTy::ARRAY:
     case TyTy::NEVER:
     case TyTy::PLACEHOLDER:
     case TyTy::PROJECTION:
+      assemble_builtin_candidate (Analysis::RustLangItem::SIZED);
+      break;
+
+      // FIXME str and slice need to be moved and test cases updated
+    case TyTy::SLICE:
+    case TyTy::STR:
+    case TyTy::ADT:
+    case TyTy::TUPLE:
+      // FIXME add extra checks
+      assemble_builtin_candidate (Analysis::RustLangItem::SIZED);
+      break;
+
     case TyTy::DYNAMIC:
     case TyTy::ERROR:
       break;
@@ -171,7 +183,8 @@ TypeCheckBase::resolve_trait_path (HIR::TypePath &path)
 
 TyTy::TypeBoundPredicate
 TypeCheckBase::get_predicate_from_bound (HIR::TypePath &type_path,
-					 HIR::Type *associated_self)
+					 HIR::Type *associated_self,
+					 BoundPolarity polarity)
 {
   TyTy::TypeBoundPredicate lookup = TyTy::TypeBoundPredicate::error ();
   bool already_resolved
@@ -184,7 +197,7 @@ TypeCheckBase::get_predicate_from_bound (HIR::TypePath &type_path,
   if (trait->is_error ())
     return TyTy::TypeBoundPredicate::error ();
 
-  TyTy::TypeBoundPredicate predicate (*trait, type_path.get_locus ());
+  TyTy::TypeBoundPredicate predicate (*trait, polarity, type_path.get_locus ());
   HIR::GenericArgs args
     = HIR::GenericArgs::create_empty (type_path.get_locus ());
 
@@ -233,10 +246,11 @@ TypeCheckBase::get_predicate_from_bound (HIR::TypePath &type_path,
 	TypeCheckType::Resolve (fn.get_return_type ().get ());
 
 	HIR::TraitItem *trait_item = mappings->lookup_trait_item_lang_item (
-	  Analysis::RustLangItem::ItemType::FN_ONCE_OUTPUT);
+	  Analysis::RustLangItem::ItemType::FN_ONCE_OUTPUT,
+	  final_seg->get_locus ());
 
 	std::vector<HIR::GenericArgsBinding> bindings;
-	Location output_locus = fn.get_return_type ()->get_locus ();
+	location_t output_locus = fn.get_return_type ()->get_locus ();
 	HIR::GenericArgsBinding binding (Identifier (
 					   trait_item->trait_identifier ()),
 					 fn.get_return_type ()->clone_type (),
@@ -290,11 +304,14 @@ TypeCheckBase::get_predicate_from_bound (HIR::TypePath &type_path,
 namespace TyTy {
 
 TypeBoundPredicate::TypeBoundPredicate (
-  const Resolver::TraitReference &trait_reference, Location locus)
+  const Resolver::TraitReference &trait_reference, BoundPolarity polarity,
+  location_t locus)
   : SubstitutionRef ({}, SubstitutionArgumentMappings::empty ()),
     reference (trait_reference.get_mappings ().get_defid ()), locus (locus),
-    error_flag (false)
+    error_flag (false), polarity (polarity)
 {
+  rust_assert (!trait_reference.get_trait_substs ().empty ());
+
   substitutions.clear ();
   for (const auto &p : trait_reference.get_trait_substs ())
     substitutions.push_back (p.clone ());
@@ -305,10 +322,14 @@ TypeBoundPredicate::TypeBoundPredicate (
 }
 
 TypeBoundPredicate::TypeBoundPredicate (
-  DefId reference, std::vector<SubstitutionParamMapping> subst, Location locus)
+  DefId reference, std::vector<SubstitutionParamMapping> subst,
+  BoundPolarity polarity, location_t locus)
   : SubstitutionRef ({}, SubstitutionArgumentMappings::empty ()),
-    reference (reference), locus (locus), error_flag (false)
+    reference (reference), locus (locus), error_flag (false),
+    polarity (polarity)
 {
+  rust_assert (!subst.empty ());
+
   substitutions.clear ();
   for (const auto &p : subst)
     substitutions.push_back (p.clone ());
@@ -318,10 +339,16 @@ TypeBoundPredicate::TypeBoundPredicate (
   used_arguments.get_mappings ().push_back (placeholder_self);
 }
 
+TypeBoundPredicate::TypeBoundPredicate (mark_is_error)
+  : SubstitutionRef ({}, SubstitutionArgumentMappings::empty ()),
+    reference (UNKNOWN_DEFID), locus (UNDEF_LOCATION), error_flag (true),
+    polarity (BoundPolarity::RegularBound)
+{}
+
 TypeBoundPredicate::TypeBoundPredicate (const TypeBoundPredicate &other)
   : SubstitutionRef ({}, SubstitutionArgumentMappings::empty ()),
     reference (other.reference), locus (other.locus),
-    error_flag (other.error_flag)
+    error_flag (other.error_flag), polarity (other.polarity)
 {
   substitutions.clear ();
   for (const auto &p : other.get_substs ())
@@ -357,6 +384,7 @@ TypeBoundPredicate::operator= (const TypeBoundPredicate &other)
   reference = other.reference;
   locus = other.locus;
   error_flag = other.error_flag;
+  polarity = other.polarity;
   used_arguments = SubstitutionArgumentMappings::empty ();
 
   substitutions.clear ();
@@ -395,9 +423,7 @@ TypeBoundPredicate::operator= (const TypeBoundPredicate &other)
 TypeBoundPredicate
 TypeBoundPredicate::error ()
 {
-  auto p = TypeBoundPredicate (UNKNOWN_DEFID, {}, UNDEF_LOCATION);
-  p.error_flag = true;
-  return p;
+  return TypeBoundPredicate (mark_is_error ());
 }
 
 std::string
@@ -431,7 +457,7 @@ TypeBoundPredicate::get_name () const
 }
 
 bool
-TypeBoundPredicate::is_object_safe (bool emit_error, Location locus) const
+TypeBoundPredicate::is_object_safe (bool emit_error, location_t locus) const
 {
   const Resolver::TraitReference *trait = get ();
   rust_assert (trait != nullptr);
@@ -603,10 +629,11 @@ TypeBoundPredicate::handle_substitions (
       TyTy::BaseType *type = it.second;
 
       TypeBoundPredicateItem item = lookup_associated_item (identifier);
-      rust_assert (!item.is_error ());
-
-      const auto item_ref = item.get_raw_item ();
-      item_ref->associated_type_set (type);
+      if (!item.is_error ())
+	{
+	  const auto item_ref = item.get_raw_item ();
+	  item_ref->associated_type_set (type);
+	}
     }
 
   // FIXME more error handling at some point
@@ -731,7 +758,7 @@ TypeBoundPredicateItem::needs_implementation () const
   return !get_raw_item ()->is_optional ();
 }
 
-Location
+location_t
 TypeBoundPredicateItem::get_locus () const
 {
   return get_raw_item ()->get_locus ();

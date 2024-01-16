@@ -76,7 +76,7 @@ SubstitutionParamMapping::needs_substitution () const
   return !(get_param_ty ()->is_concrete ());
 }
 
-Location
+location_t
 SubstitutionParamMapping::get_param_locus () const
 {
   return generic.get_locus ();
@@ -107,7 +107,7 @@ SubstitutionParamMapping::need_substitution () const
 
 bool
 SubstitutionParamMapping::fill_param_ty (
-  SubstitutionArgumentMappings &subst_mappings, Location locus)
+  SubstitutionArgumentMappings &subst_mappings, location_t locus)
 {
   SubstitutionArg arg = SubstitutionArg::error ();
   bool ok = subst_mappings.get_argument_for_symbol (get_param_ty (), &arg);
@@ -247,7 +247,7 @@ SubstitutionArg::as_string () const
 
 SubstitutionArgumentMappings::SubstitutionArgumentMappings (
   std::vector<SubstitutionArg> mappings,
-  std::map<std::string, BaseType *> binding_args, Location locus,
+  std::map<std::string, BaseType *> binding_args, location_t locus,
   ParamSubstCb param_subst_cb, bool trait_item_flag, bool error_flag)
   : mappings (mappings), binding_args (binding_args), locus (locus),
     param_subst_cb (param_subst_cb), trait_item_flag (trait_item_flag),
@@ -333,7 +333,7 @@ SubstitutionArgumentMappings::is_concrete () const
   return true;
 }
 
-Location
+location_t
 SubstitutionArgumentMappings::get_locus () const
 {
   return locus;
@@ -606,7 +606,7 @@ SubstitutionRef::get_mappings_from_generic_args (HIR::GenericArgs &args)
 	  for (auto &binding : args.get_binding_args ())
 	    r.add_range (binding.get_locus ());
 
-	  rust_error_at (r, ErrorCode ("E0229"),
+	  rust_error_at (r, ErrorCode::E0229,
 			 "associated type bindings are not allowed here");
 	  return SubstitutionArgumentMappings::error ();
 	}
@@ -633,7 +633,7 @@ SubstitutionRef::get_mappings_from_generic_args (HIR::GenericArgs &args)
       r.add_range (substitutions.front ().get_param_locus ());
 
       rust_error_at (
-	r,
+	r, ErrorCode::E0107,
 	"generic item takes at least %lu type arguments but %lu were supplied",
 	(unsigned long) (min_required_substitutions () - offs),
 	(unsigned long) args.get_type_args ().size ());
@@ -692,7 +692,7 @@ SubstitutionRef::get_mappings_from_generic_args (HIR::GenericArgs &args)
 }
 
 BaseType *
-SubstitutionRef::infer_substitions (Location locus)
+SubstitutionRef::infer_substitions (location_t locus)
 {
   std::vector<SubstitutionArg> args;
   std::map<std::string, BaseType *> argument_mappings;

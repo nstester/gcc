@@ -28,7 +28,9 @@
 #include "rust-hir-full-decls.h"
 #include "rust-lang-item.h"
 #include "rust-privacy-common.h"
-#include "libproc_macro/proc_macro.h"
+#include "libproc_macro_internal/proc_macro.h"
+#include "rust-proc-macro.h"
+#include "optional.h"
 
 namespace Rust {
 namespace Analysis {
@@ -171,8 +173,8 @@ public:
   bool lookup_node_to_hir (NodeId id, HirId *ref);
   bool lookup_hir_to_node (HirId id, NodeId *ref);
 
-  void insert_location (HirId id, Location locus);
-  Location lookup_location (HirId id);
+  void insert_location (HirId id, location_t locus);
+  location_t lookup_location (HirId id);
 
   bool resolve_nodeid_to_stmt (NodeId id, HIR::Stmt **stmt);
 
@@ -271,6 +273,9 @@ public:
     return true;
   }
 
+  // This will fatal_error when this lang item does not exist
+  DefId get_lang_item (RustLangItem::ItemType item_type, location_t locus);
+
   void insert_macro_def (AST::MacroRulesDefinition *macro);
 
   bool lookup_macro_def (NodeId id, AST::MacroRulesDefinition **def);
@@ -283,21 +288,42 @@ public:
   void insert_exported_macro (AST::MacroRulesDefinition &def);
   std::vector<NodeId> &get_exported_macros ();
 
-  void insert_derive_proc_macro (std::pair<std::string, std::string> hierachy,
-				 ProcMacro::CustomDerive macro);
-  void insert_bang_proc_macro (std::pair<std::string, std::string> hierachy,
-			       ProcMacro::Bang macro);
-  void
-  insert_attribute_proc_macro (std::pair<std::string, std::string> hierachy,
-			       ProcMacro::Attribute macro);
+  void insert_derive_proc_macros (CrateNum num,
+				  std::vector<CustomDeriveProcMacro> macros);
+  void insert_bang_proc_macros (CrateNum num,
+				std::vector<BangProcMacro> macros);
+  void insert_attribute_proc_macros (CrateNum num,
+				     std::vector<AttributeProcMacro> macros);
 
-  bool lookup_derive_proc_macro (std::pair<std::string, std::string> hierachy,
-				 ProcMacro::CustomDerive &macro);
-  bool lookup_bang_proc_macro (std::pair<std::string, std::string> hierachy,
-			       ProcMacro::Bang &macro);
-  bool
-  lookup_attribute_proc_macro (std::pair<std::string, std::string> hierachy,
-			       ProcMacro::Attribute &macro);
+  tl::optional<std::vector<CustomDeriveProcMacro> &>
+  lookup_derive_proc_macros (CrateNum num);
+  tl::optional<std::vector<BangProcMacro> &>
+  lookup_bang_proc_macros (CrateNum num);
+  tl::optional<std::vector<AttributeProcMacro> &>
+  lookup_attribute_proc_macros (CrateNum num);
+
+  void insert_derive_proc_macro_def (CustomDeriveProcMacro macro);
+  void insert_bang_proc_macro_def (BangProcMacro macro);
+  void insert_attribute_proc_macro_def (AttributeProcMacro macro);
+
+  tl::optional<CustomDeriveProcMacro &>
+  lookup_derive_proc_macro_def (NodeId id);
+  tl::optional<BangProcMacro &> lookup_bang_proc_macro_def (NodeId id);
+  tl::optional<AttributeProcMacro &>
+  lookup_attribute_proc_macro_def (NodeId id);
+
+  tl::optional<CustomDeriveProcMacro &>
+  lookup_derive_proc_macro_invocation (AST::SimplePath &invoc);
+  tl::optional<BangProcMacro &>
+  lookup_bang_proc_macro_invocation (AST::MacroInvocation &invoc_id);
+  tl::optional<AttributeProcMacro &>
+  lookup_attribute_proc_macro_invocation (AST::SimplePath &invoc);
+  void insert_derive_proc_macro_invocation (AST::SimplePath &invoc,
+					    CustomDeriveProcMacro def);
+  void insert_bang_proc_macro_invocation (AST::MacroInvocation &invoc,
+					  BangProcMacro def);
+  void insert_attribute_proc_macro_invocation (AST::SimplePath &invoc,
+					       AttributeProcMacro def);
 
   void insert_visibility (NodeId id, Privacy::ModuleVisibility visibility);
   bool lookup_visibility (NodeId id, Privacy::ModuleVisibility &def);
@@ -322,7 +348,8 @@ public:
   HIR::ImplBlock *lookup_builtin_marker ();
 
   HIR::TraitItem *
-  lookup_trait_item_lang_item (Analysis::RustLangItem::ItemType item);
+  lookup_trait_item_lang_item (Analysis::RustLangItem::ItemType item,
+			       location_t locus);
 
 private:
   Mappings ();
@@ -363,7 +390,7 @@ private:
   std::map<HirId, HIR::Pattern *> hirPatternMappings;
   std::map<RustLangItem::ItemType, DefId> lang_item_mappings;
   std::map<NodeId, const Resolver::CanonicalPath> paths;
-  std::map<NodeId, Location> locations;
+  std::map<NodeId, location_t> locations;
   std::map<NodeId, HirId> nodeIdToHirMappings;
   std::map<HirId, NodeId> hirIdToNodeMappings;
 
@@ -376,14 +403,18 @@ private:
   std::vector<NodeId> exportedMacros;
 
   // Procedural macros
-  std::map<std::pair<std::string, std::string>, ProcMacro::CustomDerive>
-    procmacroDeriveMappings;
+  std::map<CrateNum, std::vector<CustomDeriveProcMacro>>
+    procmacrosDeriveMappings;
+  std::map<CrateNum, std::vector<BangProcMacro>> procmacrosBangMappings;
+  std::map<CrateNum, std::vector<AttributeProcMacro>>
+    procmacrosAttributeMappings;
 
-  std::map<std::pair<std::string, std::string>, ProcMacro::Bang>
-    procmacroBangMappings;
-
-  std::map<std::pair<std::string, std::string>, ProcMacro::Attribute>
-    procmacroAttributeMappings;
+  std::map<NodeId, CustomDeriveProcMacro> procmacroDeriveMappings;
+  std::map<NodeId, BangProcMacro> procmacroBangMappings;
+  std::map<NodeId, AttributeProcMacro> procmacroAttributeMappings;
+  std::map<NodeId, CustomDeriveProcMacro> procmacroDeriveInvocations;
+  std::map<NodeId, BangProcMacro> procmacroBangInvocations;
+  std::map<NodeId, AttributeProcMacro> procmacroAttributeInvocations;
 
   // crate names
   std::map<CrateNum, std::string> crate_names;

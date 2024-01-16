@@ -30,6 +30,7 @@
 #include "rust-hir-path-probe.h"
 #include "rust-type-util.h"
 #include "rust-compile-implitem.h"
+#include "rust-attribute-values.h"
 
 #include "fold-const.h"
 #include "stringpool.h"
@@ -42,7 +43,9 @@ namespace Compile {
 
 bool inline should_mangle_item (const tree fndecl)
 {
-  return lookup_attribute ("no_mangle", DECL_ATTRIBUTES (fndecl)) == NULL_TREE;
+  return lookup_attribute (Values::Attributes::NO_MANGLE,
+			   DECL_ATTRIBUTES (fndecl))
+	 == NULL_TREE;
 }
 
 void
@@ -69,15 +72,24 @@ HIRCompileBase::setup_fndecl (tree fndecl, bool is_main_entry_point,
   // is it inline?
   for (const auto &attr : attrs)
     {
-      bool is_inline = attr.get_path ().as_string ().compare ("inline") == 0;
+      bool is_inline
+	= attr.get_path ().as_string () == Values::Attributes::INLINE;
       bool is_must_use
-	= attr.get_path ().as_string ().compare ("must_use") == 0;
-      bool is_cold = attr.get_path ().as_string ().compare ("cold") == 0;
+	= attr.get_path ().as_string () == Values::Attributes::MUST_USE;
+      bool is_cold = attr.get_path ().as_string () == Values::Attributes::COLD;
       bool is_link_section
-	= attr.get_path ().as_string ().compare ("link_section") == 0;
-      bool no_mangle = attr.get_path ().as_string ().compare ("no_mangle") == 0;
+	= attr.get_path ().as_string () == Values::Attributes::LINK_SECTION;
+      bool no_mangle
+	= attr.get_path ().as_string () == Values::Attributes::NO_MANGLE;
       bool is_deprecated
-	= attr.get_path ().as_string ().compare ("deprecated") == 0;
+	= attr.get_path ().as_string () == Values::Attributes::DEPRECATED;
+      bool is_proc_macro
+	= attr.get_path ().as_string () == Values::Attributes::PROC_MACRO;
+      bool is_proc_macro_attribute
+	= attr.get_path ().as_string ()
+	  == Values::Attributes::PROC_MACRO_ATTRIBUTE;
+      bool is_proc_macro_derive = attr.get_path ().as_string ()
+				  == Values::Attributes::PROC_MACRO_DERIVE;
 
       if (is_inline)
 	{
@@ -103,7 +115,113 @@ HIRCompileBase::setup_fndecl (tree fndecl, bool is_main_entry_point,
 	{
 	  handle_no_mangle_attribute_on_fndecl (fndecl, attr);
 	}
+      else if (is_proc_macro)
+	{
+	  handle_bang_proc_macro_attribute_on_fndecl (fndecl, attr);
+	}
+      else if (is_proc_macro_attribute)
+	{
+	  handle_attribute_proc_macro_attribute_on_fndecl (fndecl, attr);
+	}
+      else if (is_proc_macro_derive)
+	{
+	  handle_derive_proc_macro_attribute_on_fndecl (fndecl, attr);
+	}
     }
+}
+
+static void
+handle_proc_macro_common (tree fndecl, const AST::Attribute &attr)
+{
+  DECL_ATTRIBUTES (fndecl) = tree_cons (get_identifier ("gccrs_proc_macro"),
+					NULL, DECL_ATTRIBUTES (fndecl));
+}
+
+void
+HIRCompileBase::handle_bang_proc_macro_attribute_on_fndecl (
+  tree fndecl, const AST::Attribute &attr)
+{
+  handle_proc_macro_common (fndecl, attr);
+  ctx->collect_bang_proc_macro (fndecl);
+}
+
+void
+HIRCompileBase::handle_attribute_proc_macro_attribute_on_fndecl (
+  tree fndecl, const AST::Attribute &attr)
+{
+  handle_proc_macro_common (fndecl, attr);
+  ctx->collect_attribute_proc_macro (fndecl);
+}
+
+static std::vector<std::string>
+get_attributes (const AST::Attribute &attr)
+{
+  std::vector<std::string> result;
+
+  rust_assert (attr.get_attr_input ().get_attr_input_type ()
+	       == Rust::AST::AttrInput::TOKEN_TREE);
+  const auto &tt
+    = static_cast<const AST::DelimTokenTree &> (attr.get_attr_input ());
+
+  // TODO: Should we rely on fixed index ? Should we search for the
+  // attribute tokentree instead ?
+
+  // Derive proc macros have the following format:
+  // #[proc_macro_derive(TraitName, attributes(attr1, attr2, attr3))]
+  //                    -~~~~~~~~ - ~~~~~~~~~~---------------------
+  //                    ^0  ^1    ^2     ^3           ^4
+  // - "attributes" is stored at position 3 in the token tree
+  // - attribute are stored in the delimited token tree in position 4
+  constexpr size_t attr_kw_pos = 3;
+  constexpr size_t attribute_list_pos = 4;
+
+  if (tt.get_token_trees ().size () > attr_kw_pos)
+    {
+      rust_assert (tt.get_token_trees ()[attr_kw_pos]->as_string ()
+		   == "attributes");
+
+      auto attributes = static_cast<const AST::DelimTokenTree *> (
+	tt.get_token_trees ()[attribute_list_pos].get ());
+
+      auto &token_trees = attributes->get_token_trees ();
+
+      for (auto i = token_trees.cbegin () + 1; // Skip opening parenthesis
+	   i < token_trees.cend ();
+	   i += 2) // Skip comma and closing parenthesis
+	{
+	  result.push_back ((*i)->as_string ());
+	}
+    }
+  return result;
+}
+
+static std::string
+get_trait_name (const AST::Attribute &attr)
+{
+  // Derive proc macros have the following format:
+  // #[proc_macro_derive(TraitName, attributes(attr1, attr2, attr3))]
+  //                    -~~~~~~~~ - ~~~~~~~~~~---------------------
+  //                    ^0  ^1    ^2     ^3           ^4
+  // - The trait name is stored at position 1
+  constexpr size_t trait_name_pos = 1;
+
+  rust_assert (attr.get_attr_input ().get_attr_input_type ()
+	       == Rust::AST::AttrInput::TOKEN_TREE);
+  const auto &tt
+    = static_cast<const AST::DelimTokenTree &> (attr.get_attr_input ());
+  return tt.get_token_trees ()[trait_name_pos]->as_string ();
+}
+
+void
+HIRCompileBase::handle_derive_proc_macro_attribute_on_fndecl (
+  tree fndecl, const AST::Attribute &attr)
+{
+  handle_proc_macro_common (fndecl, attr);
+
+  attr.get_attr_input ().parse_to_meta_item ();
+  CustomDeriveInfo macro
+    = {fndecl, get_trait_name (attr), get_attributes (attr)};
+  ctx->collect_derive_proc_macro (macro);
 }
 
 void
@@ -113,7 +231,7 @@ HIRCompileBase::handle_cold_attribute_on_fndecl (tree fndecl,
   // simple #[cold]
   if (!attr.has_attr_input ())
     {
-      tree cold = get_identifier ("cold");
+      tree cold = get_identifier (Values::Attributes::COLD);
       // this will get handled by the GCC backend later
       DECL_ATTRIBUTES (fndecl)
 	= tree_cons (cold, NULL_TREE, DECL_ATTRIBUTES (fndecl));
@@ -160,8 +278,9 @@ HIRCompileBase::handle_no_mangle_attribute_on_fndecl (
       return;
     }
 
-  DECL_ATTRIBUTES (fndecl) = tree_cons (get_identifier ("no_mangle"), NULL_TREE,
-					DECL_ATTRIBUTES (fndecl));
+  DECL_ATTRIBUTES (fndecl)
+    = tree_cons (get_identifier (Values::Attributes::NO_MANGLE), NULL_TREE,
+		 DECL_ATTRIBUTES (fndecl));
 }
 
 void
@@ -199,8 +318,8 @@ HIRCompileBase::handle_deprecated_attribute_on_fndecl (
 	  auto key_value = converted_item->get_name_value_pair ();
 	  if (key_value.first.as_string ().compare ("since") == 0)
 	    {
-	      // valid, but this is handled by Cargo and some third-party audit
-	      // tools
+	      // valid, but this is handled by Cargo and some third-party
+	      // audit tools
 	      continue;
 	    }
 	  else if (key_value.first.as_string ().compare ("note") == 0)
@@ -212,7 +331,8 @@ HIRCompileBase::handle_deprecated_attribute_on_fndecl (
 	    }
 	  else
 	    {
-	      rust_error_at (attr.get_locus (), "unknown meta item %qs",
+	      rust_error_at (attr.get_locus (), ErrorCode::E0541,
+			     "unknown meta item %qs",
 			     key_value.first.as_string ().c_str ());
 	    }
 	}
@@ -222,7 +342,7 @@ HIRCompileBase::handle_deprecated_attribute_on_fndecl (
     {
       tree attr_list = build_tree_list (NULL_TREE, value);
       DECL_ATTRIBUTES (fndecl)
-	= tree_cons (get_identifier ("deprecated"), attr_list,
+	= tree_cons (get_identifier (Values::Attributes::DEPRECATED), attr_list,
 		     DECL_ATTRIBUTES (fndecl));
     }
 }
@@ -246,7 +366,10 @@ HIRCompileBase::handle_inline_attribute_on_fndecl (tree fndecl,
   AST::AttrInputMetaItemContainer *meta_item = option.parse_to_meta_item ();
   if (meta_item->get_items ().size () != 1)
     {
-      rust_error_at (attr.get_locus (), "invalid number of arguments");
+      rich_location rich_locus (line_table, attr.get_locus ());
+      rich_locus.add_fixit_replace ("expected one argument");
+      rust_error_at (rich_locus, ErrorCode::E0534,
+		     "invalid number of arguments");
       return;
     }
 
@@ -271,7 +394,11 @@ HIRCompileBase::handle_inline_attribute_on_fndecl (tree fndecl,
     }
   else
     {
-      rust_error_at (attr.get_locus (), "unknown inline option");
+      rich_location rich_locus (line_table, attr.get_locus ());
+      rich_locus.add_fixit_replace ("unknown inline option");
+      rust_error_at (rich_locus, ErrorCode::E0535,
+		     "invalid argument, %<inline%> attribute only accepts "
+		     "%<always%> or %<never%>");
     }
 }
 
@@ -312,10 +439,10 @@ HIRCompileBase::setup_abi_options (tree fndecl, ABI abi)
     case Rust::ABI::CDECL:
       // `decl_attributes` function (not the macro) has the side-effect of
       // actually switching the codegen backend to use the ABI we annotated.
-      // However, since `cdecl` is the default ABI GCC will be using, explicitly
-      // specifying that ABI will cause GCC to emit a warning saying the
-      // attribute is useless (which is confusing to the user as the attribute
-      // is added by us).
+      // However, since `cdecl` is the default ABI GCC will be using,
+      // explicitly specifying that ABI will cause GCC to emit a warning
+      // saying the attribute is useless (which is confusing to the user as
+      // the attribute is added by us).
       DECL_ATTRIBUTES (fndecl)
 	= tree_cons (get_identifier ("cdecl"), NULL, DECL_ATTRIBUTES (fndecl));
 
@@ -358,7 +485,7 @@ HIRCompileBase::setup_abi_options (tree fndecl, ABI abi)
 // it is fine to use ARRAY_REFs for vector subscripts on vector
 // register variables.
 bool
-HIRCompileBase::mark_addressable (tree exp, Location locus)
+HIRCompileBase::mark_addressable (tree exp, location_t locus)
 {
   tree x = exp;
 
@@ -417,7 +544,7 @@ HIRCompileBase::mark_addressable (tree exp, Location locus)
 }
 
 tree
-HIRCompileBase::address_expression (tree expr, Location location)
+HIRCompileBase::address_expression (tree expr, location_t location)
 {
   if (expr == error_mark_node)
     return error_mark_node;
@@ -429,7 +556,7 @@ HIRCompileBase::address_expression (tree expr, Location location)
 }
 
 tree
-HIRCompileBase::indirect_expression (tree expr, Location locus)
+HIRCompileBase::indirect_expression (tree expr, location_t locus)
 {
   if (expr == error_mark_node)
     return error_mark_node;
@@ -483,15 +610,15 @@ HIRCompileBase::compile_function_body (tree fndecl,
 
   if (function_body.has_expr ())
     {
-      Location locus = function_body.get_final_expr ()->get_locus ();
+      location_t locus = function_body.get_final_expr ()->get_locus ();
       tree return_value = CompileExpr::Compile (function_body.expr.get (), ctx);
 
       // we can only return this if non unit value return type
       if (!fn_return_ty->is_unit ())
 	{
 	  HirId id = function_body.get_mappings ().get_hirid ();
-	  Location lvalue_locus = function_body.get_locus ();
-	  Location rvalue_locus = locus;
+	  location_t lvalue_locus = function_body.get_locus ();
+	  location_t rvalue_locus = locus;
 
 	  TyTy::BaseType *expected = fn_return_ty;
 	  TyTy::BaseType *actual = nullptr;
@@ -503,8 +630,7 @@ HIRCompileBase::compile_function_body (tree fndecl,
 					lvalue_locus, rvalue_locus);
 
 	  tree return_stmt
-	    = ctx->get_backend ()->return_statement (fndecl, return_value,
-						     locus);
+	    = Backend::return_statement (fndecl, return_value, locus);
 	  ctx->add_statement (return_stmt);
 	}
       else
@@ -515,7 +641,7 @@ HIRCompileBase::compile_function_body (tree fndecl,
 	  // now just return unit expression
 	  tree unit_expr = unit_expression (ctx, locus);
 	  tree return_stmt
-	    = ctx->get_backend ()->return_statement (fndecl, unit_expr, locus);
+	    = Backend::return_statement (fndecl, unit_expr, locus);
 	  ctx->add_statement (return_stmt);
 	}
     }
@@ -523,12 +649,27 @@ HIRCompileBase::compile_function_body (tree fndecl,
     {
       // we can only do this if the function is of unit type otherwise other
       // errors should have occurred
-      Location locus = function_body.get_locus ();
+      location_t locus = function_body.get_locus ();
       tree return_value = unit_expression (ctx, locus);
       tree return_stmt
-	= ctx->get_backend ()->return_statement (fndecl, return_value, locus);
+	= Backend::return_statement (fndecl, return_value, locus);
       ctx->add_statement (return_stmt);
     }
+}
+
+static ABI
+get_abi (const AST::AttrVec &outer_attrs,
+	 const HIR::FunctionQualifiers &qualifiers)
+{
+  bool is_proc_macro = std::any_of (outer_attrs.cbegin (), outer_attrs.cend (),
+				    [] (const AST::Attribute &attr) {
+				      auto path = attr.get_path ().as_string ();
+				      return path == "proc_macro"
+					     || path == "proc_macro_derive"
+					     || path == "proc_macro_attribute";
+				    });
+
+  return is_proc_macro ? ABI::CDECL : qualifiers.get_abi ();
 }
 
 tree
@@ -536,7 +677,7 @@ HIRCompileBase::compile_function (
   const std::string &fn_name, HIR::SelfParam &self_param,
   std::vector<HIR::FunctionParam> &function_params,
   const HIR::FunctionQualifiers &qualifiers, HIR::Visibility &visibility,
-  AST::AttrVec &outer_attrs, Location locus, HIR::BlockExpr *function_body,
+  AST::AttrVec &outer_attrs, location_t locus, HIR::BlockExpr *function_body,
   const Resolver::CanonicalPath *canonical_path, TyTy::FnType *fntype)
 {
   tree compiled_fn_type = TyTyResolveCompile::compile (ctx, fntype);
@@ -548,12 +689,12 @@ HIRCompileBase::compile_function (
   std::string asm_name = fn_name;
 
   unsigned int flags = 0;
-  tree fndecl = ctx->get_backend ()->function (compiled_fn_type, ir_symbol_name,
-					       "" /* asm_name */, flags, locus);
+  tree fndecl = Backend::function (compiled_fn_type, ir_symbol_name,
+				   "" /* asm_name */, flags, locus);
 
-  setup_fndecl (fndecl, is_main_fn, fntype->has_subsititions_defined (),
+  setup_fndecl (fndecl, is_main_fn, fntype->has_substitutions_defined (),
 		visibility, qualifiers, outer_attrs);
-  setup_abi_options (fndecl, qualifiers.get_abi ());
+  setup_abi_options (fndecl, get_abi (outer_attrs, qualifiers));
 
   // conditionally mangle the function name
   bool should_mangle = should_mangle_item (fndecl);
@@ -594,7 +735,7 @@ HIRCompileBase::compile_function (
       auto param_tyty = tyty_param.second;
       auto compiled_param_type = TyTyResolveCompile::compile (ctx, param_tyty);
 
-      Location param_locus = referenced_param.get_locus ();
+      location_t param_locus = referenced_param.get_locus ();
       Bvariable *compiled_param_var
 	= CompileFnParam::compile (ctx, fndecl, &referenced_param,
 				   compiled_param_type, param_locus);
@@ -602,11 +743,11 @@ HIRCompileBase::compile_function (
       param_vars.push_back (compiled_param_var);
 
       const HIR::Pattern &param_pattern = *referenced_param.get_param_name ();
-      ctx->insert_var_decl (param_pattern.get_pattern_mappings ().get_hirid (),
+      ctx->insert_var_decl (param_pattern.get_mappings ().get_hirid (),
 			    compiled_param_var);
     }
 
-  if (!ctx->get_backend ()->function_set_parameters (fndecl, param_vars))
+  if (!Backend::function_set_parameters (fndecl, param_vars))
     return error_mark_node;
 
   // lookup locals
@@ -620,11 +761,11 @@ HIRCompileBase::compile_function (
     = compile_locals_for_block (ctx, *rib, fndecl);
 
   tree enclosing_scope = NULL_TREE;
-  Location start_location = function_body->get_locus ();
-  Location end_location = function_body->get_end_locus ();
+  location_t start_location = function_body->get_locus ();
+  location_t end_location = function_body->get_end_locus ();
 
-  tree code_block = ctx->get_backend ()->block (fndecl, enclosing_scope, locals,
-						start_location, end_location);
+  tree code_block = Backend::block (fndecl, enclosing_scope, locals,
+				    start_location, end_location);
   ctx->push_block (code_block);
 
   Bvariable *return_address = nullptr;
@@ -633,9 +774,8 @@ HIRCompileBase::compile_function (
   bool address_is_taken = false;
   tree ret_var_stmt = NULL_TREE;
   return_address
-    = ctx->get_backend ()->temporary_variable (fndecl, code_block, return_type,
-					       NULL, address_is_taken, locus,
-					       &ret_var_stmt);
+    = Backend::temporary_variable (fndecl, code_block, return_type, NULL,
+				   address_is_taken, locus, &ret_var_stmt);
 
   ctx->add_statement (ret_var_stmt);
 
@@ -660,7 +800,7 @@ HIRCompileBase::compile_function (
 tree
 HIRCompileBase::compile_constant_item (
   TyTy::BaseType *resolved_type, const Resolver::CanonicalPath *canonical_path,
-  HIR::Expr *const_value_expr, Location locus)
+  HIR::Expr *const_value_expr, location_t locus)
 {
   const std::string &ident = canonical_path->get ();
 
@@ -674,17 +814,16 @@ HIRCompileBase::compile_constant_item (
   // make a _fake_ function with a block so it can hold onto temps then
   // use our constexpr code to fold it completely or error_mark_node
   Backend::typed_identifier receiver;
-  tree compiled_fn_type = ctx->get_backend ()->function_type (
+  tree compiled_fn_type = Backend::function_type (
     receiver, {}, {Backend::typed_identifier ("_", const_type, locus)}, NULL,
     locus);
-  tree fndecl
-    = ctx->get_backend ()->function (compiled_fn_type, ident, "", 0, locus);
+  tree fndecl = Backend::function (compiled_fn_type, ident, "", 0, locus);
   TREE_READONLY (fndecl) = 1;
 
   std::vector<Bvariable *> locals;
   tree enclosing_scope = NULL_TREE;
-  Location start_location = const_value_expr->get_locus ();
-  Location end_location = const_value_expr->get_locus ();
+  location_t start_location = const_value_expr->get_locus ();
+  location_t end_location = const_value_expr->get_locus ();
   if (is_block_expr)
     {
       HIR::BlockExpr *function_body
@@ -700,16 +839,15 @@ HIRCompileBase::compile_constant_item (
       locals = compile_locals_for_block (ctx, *rib, fndecl);
     }
 
-  tree code_block = ctx->get_backend ()->block (fndecl, enclosing_scope, locals,
-						start_location, end_location);
+  tree code_block = Backend::block (fndecl, enclosing_scope, locals,
+				    start_location, end_location);
   ctx->push_block (code_block);
 
   bool address_is_taken = false;
   tree ret_var_stmt = NULL_TREE;
   Bvariable *return_address
-    = ctx->get_backend ()->temporary_variable (fndecl, code_block, const_type,
-					       NULL, address_is_taken, locus,
-					       &ret_var_stmt);
+    = Backend::temporary_variable (fndecl, code_block, const_type, NULL,
+				   address_is_taken, locus, &ret_var_stmt);
 
   ctx->add_statement (ret_var_stmt);
   ctx->push_fn (fndecl, return_address, resolved_type);
@@ -724,8 +862,9 @@ HIRCompileBase::compile_constant_item (
     {
       tree value = CompileExpr::Compile (const_value_expr, ctx);
 
-      tree return_expr = ctx->get_backend ()->return_statement (
-	fndecl, value, const_value_expr->get_locus ());
+      tree return_expr
+	= Backend::return_statement (fndecl, value,
+				     const_value_expr->get_locus ());
       ctx->add_statement (return_expr);
     }
 
@@ -748,7 +887,7 @@ HIRCompileBase::compile_constant_item (
 tree
 HIRCompileBase::named_constant_expression (tree type_tree,
 					   const std::string &name,
-					   tree const_val, Location location)
+					   tree const_val, location_t location)
 {
   if (type_tree == error_mark_node || const_val == error_mark_node)
     return error_mark_node;
@@ -766,7 +905,7 @@ HIRCompileBase::named_constant_expression (tree type_tree,
 tree
 HIRCompileBase::resolve_method_address (TyTy::FnType *fntype,
 					TyTy::BaseType *receiver,
-					Location expr_locus)
+					location_t expr_locus)
 {
   rust_debug_loc (expr_locus, "resolve_method_address for %s and receiver %s",
 		  fntype->debug_str ().c_str (),
@@ -781,7 +920,7 @@ HIRCompileBase::resolve_method_address (TyTy::FnType *fntype,
   HIR::Item *resolved_item = ctx->get_mappings ()->lookup_defid (id);
   if (resolved_item != nullptr)
     {
-      if (!fntype->has_subsititions_defined ())
+      if (!fntype->has_substitutions_defined ())
 	return CompileItem::compile (resolved_item, ctx);
 
       return CompileItem::compile (resolved_item, ctx, fntype);
@@ -842,6 +981,12 @@ HIRCompileBase::resolve_method_address (TyTy::FnType *fntype,
   // look for the exact fntype
   for (auto &candidate : filteredFunctionCandidates)
     {
+      if (filteredFunctionCandidates.size () == 1)
+	{
+	  selectedCandidate = &candidate;
+	  break;
+	}
+
       bool compatable
 	= Resolver::types_compatable (TyTy::TyWithLocation (candidate.ty),
 				      TyTy::TyWithLocation (fntype), expr_locus,
@@ -885,11 +1030,10 @@ HIRCompileBase::resolve_method_address (TyTy::FnType *fntype,
 }
 
 tree
-HIRCompileBase::unit_expression (Context *ctx, Location locus)
+HIRCompileBase::unit_expression (Context *ctx, location_t locus)
 {
   tree unit_type = TyTyResolveCompile::get_unit_type (ctx);
-  return ctx->get_backend ()->constructor_expression (unit_type, false, {}, -1,
-						      locus);
+  return Backend::constructor_expression (unit_type, false, {}, -1, locus);
 }
 
 } // namespace Compile

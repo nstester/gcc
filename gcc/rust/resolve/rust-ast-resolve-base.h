@@ -107,7 +107,6 @@ public:
 
   void visit (AST::LifetimeWhereClauseItem &);
   void visit (AST::TypeBoundWhereClauseItem &);
-  void visit (AST::Method &);
   void visit (AST::Module &);
   void visit (AST::ExternCrate &);
 
@@ -197,6 +196,9 @@ public:
   void visit (AST::SliceType &);
   void visit (AST::InferredType &);
   void visit (AST::BareFunctionType &);
+  void visit (AST::FunctionParam &param);
+  void visit (AST::VariadicParam &param);
+  void visit (AST::SelfParam &param);
 
 protected:
   ResolverBase ()

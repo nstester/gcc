@@ -38,7 +38,7 @@ void
 ResolveTraitItemToRef::visit (HIR::TraitItemType &type)
 {
   // create trait-item-ref
-  Location locus = type.get_locus ();
+  location_t locus = type.get_locus ();
   bool is_optional = false;
   std::string identifier = type.get_name ().as_string ();
 
@@ -51,7 +51,7 @@ void
 ResolveTraitItemToRef::visit (HIR::TraitItemConst &cst)
 {
   // create trait-item-ref
-  Location locus = cst.get_locus ();
+  location_t locus = cst.get_locus ();
   bool is_optional = cst.has_expr ();
   std::string identifier = cst.get_name ().as_string ();
 
@@ -64,7 +64,7 @@ void
 ResolveTraitItemToRef::visit (HIR::TraitItemFunc &fn)
 {
   // create trait-item-ref
-  Location locus = fn.get_locus ();
+  location_t locus = fn.get_locus ();
   bool is_optional = fn.has_block_defined ();
   std::string identifier = fn.get_decl ().get_function_name ().as_string ();
 
@@ -156,7 +156,10 @@ TraitResolver::resolve_trait (HIR::Trait *trait_reference)
   DefId trait_id = trait_reference->get_mappings ().get_defid ();
   if (context->trait_query_in_progress (trait_id))
     {
-      rust_error_at (trait_reference->get_locus (), "trait cycle detected");
+      rust_error_at (
+	trait_reference->get_locus (), ErrorCode::E0391,
+	"cycle detected when computing the super predicates of %qs",
+	trait_reference->get_name ().as_string ().c_str ());
       return &TraitReference::error_node ();
     }
 
@@ -164,8 +167,8 @@ TraitResolver::resolve_trait (HIR::Trait *trait_reference)
   TyTy::BaseType *self = nullptr;
   std::vector<TyTy::SubstitutionParamMapping> substitutions;
 
-  // FIXME
-  // this should use the resolve_generic_params like everywhere else
+  // this needs to be special cased for the sized trait to not auto implemented
+  // Sized on Self
   for (auto &generic_param : trait_reference->get_generic_params ())
     {
       switch (generic_param.get ()->get_kind ())
@@ -177,16 +180,22 @@ TraitResolver::resolve_trait (HIR::Trait *trait_reference)
 	  break;
 
 	  case HIR::GenericParam::GenericKind::TYPE: {
-	    auto param_type
-	      = TypeResolveGenericParam::Resolve (generic_param.get ());
-	    context->insert_type (generic_param->get_mappings (), param_type);
-
 	    auto &typaram = static_cast<HIR::TypeParam &> (*generic_param);
+	    bool is_self
+	      = typaram.get_type_representation ().as_string ().compare ("Self")
+		== 0;
+
+	    // https://doc.rust-lang.org/std/marker/trait.Sized.html
+	    // The one exception is the implicit Self type of a trait
+	    bool apply_sized = !is_self;
+	    auto param_type
+	      = TypeResolveGenericParam::Resolve (generic_param.get (),
+						  apply_sized);
+	    context->insert_type (generic_param->get_mappings (), param_type);
 	    substitutions.push_back (
 	      TyTy::SubstitutionParamMapping (typaram, param_type));
 
-	    if (typaram.get_type_representation ().as_string ().compare ("Self")
-		== 0)
+	    if (is_self)
 	      {
 		rust_assert (param_type->get_kind () == TyTy::TypeKind::PARAM);
 		TyTy::ParamType *p
@@ -214,6 +223,7 @@ TraitResolver::resolve_trait (HIR::Trait *trait_reference)
   auto self_hrtb
     = TyTy::TypeBoundPredicate (trait_reference->get_mappings ().get_defid (),
 				std::move (self_subst_copy),
+				BoundPolarity::RegularBound,
 				trait_reference->get_locus ());
   specified_bounds.push_back (self_hrtb);
 
@@ -332,11 +342,11 @@ TraitItemReference::resolve_item (HIR::TraitItemConst &constant)
 void
 TraitItemReference::resolve_item (HIR::TraitItemFunc &func)
 {
-  if (!is_optional ())
-    return;
-
   TyTy::BaseType *item_tyty = get_tyty ();
   if (item_tyty->get_kind () == TyTy::TypeKind::ERROR)
+    return;
+
+  if (!is_optional ())
     return;
 
   // check the block and return types
@@ -349,7 +359,7 @@ TraitItemReference::resolve_item (HIR::TraitItemFunc &func)
 
   auto block_expr_ty = TypeCheckExpr::Resolve (func.get_block_expr ().get ());
 
-  Location fn_return_locus
+  location_t fn_return_locus
     = func.get_decl ().has_return_type ()
 	? func.get_decl ().get_return_type ()->get_locus ()
 	: func.get_locus ();
@@ -491,7 +501,7 @@ AssociatedImplTrait::setup_associated_types (
 
   // generate inference variables for these bound arguments so we can compute
   // their values
-  Location locus = UNKNOWN_LOCATION;
+  location_t locus = UNKNOWN_LOCATION;
   std::vector<TyTy::SubstitutionArg> subst_args;
   for (auto &p : substitutions)
     {

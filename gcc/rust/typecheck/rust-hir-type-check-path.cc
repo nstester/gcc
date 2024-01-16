@@ -133,7 +133,7 @@ TypeCheckExpr::visit (HIR::QualifiedPathInExpression &expr)
   // turbo-fish segment path::<ty>
   if (item_seg.has_generic_args ())
     {
-      if (!infered->has_subsititions_defined ())
+      if (!infered->has_substitutions_defined ())
 	{
 	  rust_error_at (item_seg.get_locus (),
 			 "substitutions not supported for %s",
@@ -320,7 +320,7 @@ TypeCheckExpr::resolve_segments (NodeId root_resolved_node_id,
 				 std::vector<HIR::PathExprSegment> &segments,
 				 size_t offset, TyTy::BaseType *tyseg,
 				 const Analysis::NodeMapping &expr_mappings,
-				 Location expr_locus)
+				 location_t expr_locus)
 {
   NodeId resolved_node_id = root_resolved_node_id;
   TyTy::BaseType *prev_segment = tyseg;
@@ -478,7 +478,7 @@ TypeCheckExpr::resolve_segments (NodeId root_resolved_node_id,
 	}
       else if (tyseg->needs_generic_substitutions () && !reciever_is_generic)
 	{
-	  Location locus = seg.get_locus ();
+	  location_t locus = seg.get_locus ();
 	  tyseg = SubstMapper::InferSubst (tyseg, locus);
 	  if (tyseg->get_kind () == TyTy::TypeKind::ERROR)
 	    return;
@@ -488,7 +488,7 @@ TypeCheckExpr::resolve_segments (NodeId root_resolved_node_id,
   rust_assert (resolved_node_id != UNKNOWN_NODEID);
   if (tyseg->needs_generic_substitutions () && !reciever_is_generic)
     {
-      Location locus = segments.back ().get_locus ();
+      location_t locus = segments.back ().get_locus ();
       tyseg = SubstMapper::InferSubst (tyseg, locus);
       if (tyseg->get_kind () == TyTy::TypeKind::ERROR)
 	return;

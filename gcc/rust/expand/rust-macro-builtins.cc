@@ -29,6 +29,7 @@
 #include "rust-macro.h"
 #include "rust-parse.h"
 #include "rust-session-manager.h"
+#include "rust-attribute-values.h"
 
 namespace Rust {
 
@@ -74,8 +75,7 @@ const BiMap<std::string, BuiltinMacro> MacroBuiltin::builtins = {{
 
 }};
 
-std::unordered_map<
-  std::string, std::function<AST::Fragment (Location, AST::MacroInvocData &)>>
+std::unordered_map<std::string, AST::MacroTranscriberFunc>
   MacroBuiltin::builtin_transcribers = {
     {"assert", MacroBuiltin::assert_handler},
     {"file", MacroBuiltin::file_handler},
@@ -167,7 +167,7 @@ make_token (const TokenPtr tok)
 }
 
 std::unique_ptr<AST::Expr>
-make_string (Location locus, std::string value)
+make_string (location_t locus, std::string value)
 {
   return std::unique_ptr<AST::Expr> (
     new AST::LiteralExpr (value, AST::Literal::STRING,
@@ -177,7 +177,7 @@ make_string (Location locus, std::string value)
 // TODO: Is this correct?
 static AST::Fragment
 make_eager_builtin_invocation (
-  BuiltinMacro kind, Location locus, AST::DelimTokenTree arguments,
+  BuiltinMacro kind, location_t locus, AST::DelimTokenTree arguments,
   std::vector<std::unique_ptr<AST::MacroInvocation>> &&pending_invocations)
 {
   auto path_str = make_macro_path_str (kind);
@@ -221,7 +221,7 @@ macro_end_token (AST::DelimTokenTree &invoc_token_tree,
 
 /* Expand and then extract a string literal from the macro */
 static std::unique_ptr<AST::LiteralExpr>
-try_extract_string_literal_from_fragment (const Location &parent_locus,
+try_extract_string_literal_from_fragment (const location_t &parent_locus,
 					  std::unique_ptr<AST::Expr> &node)
 {
   auto maybe_lit = static_cast<AST::LiteralExpr *> (node.get ());
@@ -287,7 +287,7 @@ try_expand_many_expr (Parser<MacroInvocLexer> &parser,
 std::unique_ptr<AST::Expr>
 parse_single_string_literal (BuiltinMacro kind,
 			     AST::DelimTokenTree &invoc_token_tree,
-			     Location invoc_locus, MacroExpander *expander)
+			     location_t invoc_locus, MacroExpander *expander)
 {
   MacroInvocLexer lex (invoc_token_tree.to_token_stream ());
   Parser<MacroInvocLexer> parser (lex);
@@ -352,7 +352,7 @@ parse_single_string_literal (BuiltinMacro kind,
    compiled, and return the absolute path for it.  */
 
 std::string
-source_relative_path (std::string path, Location locus)
+source_relative_path (std::string path, location_t locus)
 {
   std::string compile_fname = LOCATION_FILE (locus);
 
@@ -371,14 +371,14 @@ source_relative_path (std::string path, Location locus)
 /* Read the full contents of the file FILENAME and return them in a vector.
    FIXME: platform specific.  */
 
-std::vector<uint8_t>
-load_file_bytes (Location invoc_locus, const char *filename)
+tl::optional<std::vector<uint8_t>>
+load_file_bytes (location_t invoc_locus, const char *filename)
 {
   RAIIFile file_wrap (filename);
   if (file_wrap.get_raw () == nullptr)
     {
       rust_error_at (invoc_locus, "cannot open filename %s: %m", filename);
-      return std::vector<uint8_t> ();
+      return tl::nullopt;
     }
 
   FILE *f = file_wrap.get_raw ();
@@ -388,7 +388,7 @@ load_file_bytes (Location invoc_locus, const char *filename)
 
   std::vector<uint8_t> buf (fsize);
 
-  if (fread (&buf[0], fsize, 1, f) != 1)
+  if (fsize > 0 && fread (&buf[0], fsize, 1, f) != 1)
     {
       rust_error_at (invoc_locus, "error reading file %s: %m", filename);
       return std::vector<uint8_t> ();
@@ -398,16 +398,17 @@ load_file_bytes (Location invoc_locus, const char *filename)
 }
 } // namespace
 
-AST::Fragment
-MacroBuiltin::assert_handler (Location invoc_locus, AST::MacroInvocData &invoc)
+tl::optional<AST::Fragment>
+MacroBuiltin::assert_handler (location_t invoc_locus,
+			      AST::MacroInvocData &invoc)
 {
   rust_debug ("assert!() called");
 
   return AST::Fragment::create_error ();
 }
 
-AST::Fragment
-MacroBuiltin::file_handler (Location invoc_locus, AST::MacroInvocData &)
+tl::optional<AST::Fragment>
+MacroBuiltin::file_handler (location_t invoc_locus, AST::MacroInvocData &)
 {
   auto current_file = LOCATION_FILE (invoc_locus);
   auto file_str = AST::SingleASTNode (make_string (invoc_locus, current_file));
@@ -417,8 +418,8 @@ MacroBuiltin::file_handler (Location invoc_locus, AST::MacroInvocData &)
   return AST::Fragment ({file_str}, std::move (str_token));
 }
 
-AST::Fragment
-MacroBuiltin::column_handler (Location invoc_locus, AST::MacroInvocData &)
+tl::optional<AST::Fragment>
+MacroBuiltin::column_handler (location_t invoc_locus, AST::MacroInvocData &)
 {
   auto current_column = LOCATION_COLUMN (invoc_locus);
 
@@ -435,8 +436,8 @@ MacroBuiltin::column_handler (Location invoc_locus, AST::MacroInvocData &)
    of the given file as reference to a byte array. Yields an expression of type
    &'static [u8; N].  */
 
-AST::Fragment
-MacroBuiltin::include_bytes_handler (Location invoc_locus,
+tl::optional<AST::Fragment>
+MacroBuiltin::include_bytes_handler (location_t invoc_locus,
 				     AST::MacroInvocData &invoc)
 {
   /* Get target filename from the macro invocation, which is treated as a path
@@ -453,8 +454,12 @@ MacroBuiltin::include_bytes_handler (Location invoc_locus,
   std::string target_filename
     = source_relative_path (lit_expr->as_string (), invoc_locus);
 
-  std::vector<uint8_t> bytes
-    = load_file_bytes (invoc_locus, target_filename.c_str ());
+  auto maybe_bytes = load_file_bytes (invoc_locus, target_filename.c_str ());
+
+  if (!maybe_bytes.has_value ())
+    return AST::Fragment::create_error ();
+
+  std::vector<uint8_t> bytes = maybe_bytes.value ();
 
   /* Is there a more efficient way to do this?  */
   std::vector<std::unique_ptr<AST::Expr>> elts;
@@ -495,8 +500,8 @@ MacroBuiltin::include_bytes_handler (Location invoc_locus,
    of the given file as a string. The file must be UTF-8 encoded. Yields an
    expression of type &'static str.  */
 
-AST::Fragment
-MacroBuiltin::include_str_handler (Location invoc_locus,
+tl::optional<AST::Fragment>
+MacroBuiltin::include_str_handler (location_t invoc_locus,
 				   AST::MacroInvocData &invoc)
 {
   /* Get target filename from the macro invocation, which is treated as a path
@@ -518,8 +523,12 @@ MacroBuiltin::include_str_handler (Location invoc_locus,
   std::string target_filename
     = source_relative_path (lit_expr->as_string (), invoc_locus);
 
-  std::vector<uint8_t> bytes
-    = load_file_bytes (invoc_locus, target_filename.c_str ());
+  auto maybe_bytes = load_file_bytes (invoc_locus, target_filename.c_str ());
+
+  if (!maybe_bytes.has_value ())
+    return AST::Fragment::create_error ();
+
+  std::vector<uint8_t> bytes = maybe_bytes.value ();
 
   /* FIXME: reuse lexer */
   int expect_single = 0;
@@ -569,19 +578,18 @@ MacroBuiltin::include_str_handler (Location invoc_locus,
     rust_error_at (invoc_locus, "%s was not a valid utf-8 file",
 		   target_filename.c_str ());
   else
-    str = std::string ((const char *) &bytes[0], bytes.size ());
+    str = std::string ((const char *) bytes.data (), bytes.size ());
 
   auto node = AST::SingleASTNode (make_string (invoc_locus, str));
   auto str_tok = make_token (Token::make_string (invoc_locus, std::move (str)));
 
-  // FIXME: Do not return an empty token vector here
   return AST::Fragment ({node}, std::move (str_tok));
 }
 
 /* Expand builtin macro compile_error!("error"), which forces a compile error
    during the compile time. */
-AST::Fragment
-MacroBuiltin::compile_error_handler (Location invoc_locus,
+tl::optional<AST::Fragment>
+MacroBuiltin::compile_error_handler (location_t invoc_locus,
 				     AST::MacroInvocData &invoc)
 {
   auto lit_expr
@@ -641,8 +649,9 @@ MacroBuiltin::compile_error_handler (Location invoc_locus,
 // invocation?
 // Do we split the two passes of parsing the token tree and then expanding it?
 // Can we do that easily?
-AST::Fragment
-MacroBuiltin::concat_handler (Location invoc_locus, AST::MacroInvocData &invoc)
+tl::optional<AST::Fragment>
+MacroBuiltin::concat_handler (location_t invoc_locus,
+			      AST::MacroInvocData &invoc)
 {
   auto invoc_token_tree = invoc.get_delim_tok_tree ();
   MacroInvocLexer lex (invoc_token_tree.to_token_stream ());
@@ -705,8 +714,8 @@ MacroBuiltin::concat_handler (Location invoc_locus, AST::MacroInvocData &invoc)
 
 /* Expand builtin macro env!(), which inspects an environment variable at
    compile time. */
-AST::Fragment
-MacroBuiltin::env_handler (Location invoc_locus, AST::MacroInvocData &invoc)
+tl::optional<AST::Fragment>
+MacroBuiltin::env_handler (location_t invoc_locus, AST::MacroInvocData &invoc)
 {
   auto invoc_token_tree = invoc.get_delim_tok_tree ();
   MacroInvocLexer lex (invoc_token_tree.to_token_stream ());
@@ -775,12 +784,11 @@ MacroBuiltin::env_handler (Location invoc_locus, AST::MacroInvocData &invoc)
   auto tok
     = make_token (Token::make_string (invoc_locus, std::move (env_value)));
 
-  // FIXME: Do not return an empty token vector here
   return AST::Fragment ({node}, std::move (tok));
 }
 
-AST::Fragment
-MacroBuiltin::cfg_handler (Location invoc_locus, AST::MacroInvocData &invoc)
+tl::optional<AST::Fragment>
+MacroBuiltin::cfg_handler (location_t invoc_locus, AST::MacroInvocData &invoc)
 {
   // only parse if not already parsed
   if (!invoc.is_parsed ())
@@ -814,15 +822,15 @@ MacroBuiltin::cfg_handler (Location invoc_locus, AST::MacroInvocData &invoc)
   auto tok = make_token (
     Token::make (result ? TRUE_LITERAL : FALSE_LITERAL, invoc_locus));
 
-  // FIXME: Do not return an empty token vector here
   return AST::Fragment ({literal_exp}, std::move (tok));
 }
 
 /* Expand builtin macro include!(), which includes a source file at the current
  scope compile time. */
 
-AST::Fragment
-MacroBuiltin::include_handler (Location invoc_locus, AST::MacroInvocData &invoc)
+tl::optional<AST::Fragment>
+MacroBuiltin::include_handler (location_t invoc_locus,
+			       AST::MacroInvocData &invoc)
 {
   /* Get target filename from the macro invocation, which is treated as a path
      relative to the include!-ing file (currently being compiled).  */
@@ -890,8 +898,8 @@ MacroBuiltin::include_handler (Location invoc_locus, AST::MacroInvocData &invoc)
   return AST::Fragment (nodes, std::vector<std::unique_ptr<AST::Token>> ());
 }
 
-AST::Fragment
-MacroBuiltin::line_handler (Location invoc_locus, AST::MacroInvocData &)
+tl::optional<AST::Fragment>
+MacroBuiltin::line_handler (location_t invoc_locus, AST::MacroInvocData &)
 {
   auto current_line = LOCATION_LINE (invoc_locus);
 
@@ -901,12 +909,11 @@ MacroBuiltin::line_handler (Location invoc_locus, AST::MacroInvocData &)
   auto tok
     = make_token (Token::make_int (invoc_locus, std::to_string (current_line)));
 
-  // FIXME: Do not return an empty token vector here
   return AST::Fragment ({line_no}, std::move (tok));
 }
 
-AST::Fragment
-MacroBuiltin::stringify_handler (Location invoc_locus,
+tl::optional<AST::Fragment>
+MacroBuiltin::stringify_handler (location_t invoc_locus,
 				 AST::MacroInvocData &invoc)
 {
   std::string content;
@@ -935,8 +942,8 @@ MacroBuiltin::stringify_handler (Location invoc_locus,
   return AST::Fragment ({node}, std::move (token));
 }
 
-AST::Fragment
-MacroBuiltin::sorry (Location invoc_locus, AST::MacroInvocData &invoc)
+tl::optional<AST::Fragment>
+MacroBuiltin::sorry (location_t invoc_locus, AST::MacroInvocData &invoc)
 {
   rust_sorry_at (invoc_locus, "unimplemented builtin macro: %qs",
 		 invoc.get_path ().as_string ().c_str ());
@@ -944,8 +951,8 @@ MacroBuiltin::sorry (Location invoc_locus, AST::MacroInvocData &invoc)
   return AST::Fragment::create_error ();
 }
 
-AST::Fragment
-MacroBuiltin::proc_macro_builtin (Location invoc_locus,
+tl::optional<AST::Fragment>
+MacroBuiltin::proc_macro_builtin (location_t invoc_locus,
 				  AST::MacroInvocData &invoc)
 {
   rust_error_at (invoc_locus, "cannot invoke derive macro: %qs",

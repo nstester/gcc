@@ -25,6 +25,7 @@
 #include "rust-hir-type-check-pattern.h"
 #include "rust-hir-type-check-expr.h"
 #include "rust-hir-type-check-stmt.h"
+#include "rust-hir-type-check-item.h"
 #include "rust-type-util.h"
 
 namespace Rust {
@@ -150,9 +151,18 @@ TypeCheckExpr::visit (HIR::TupleExpr &expr)
 void
 TypeCheckExpr::visit (HIR::ReturnExpr &expr)
 {
+  if (!context->have_function_context ())
+    {
+      rust_error_at (expr.get_locus (), ErrorCode::E0572,
+		     "return statement outside of function body");
+      infered = new TyTy::ErrorType (expr.get_mappings ().get_hirid ());
+      return;
+    }
+
   auto fn_return_tyty = context->peek_return_type ();
-  Location expr_locus = expr.has_return_expr () ? expr.get_expr ()->get_locus ()
-						: expr.get_locus ();
+  location_t expr_locus = expr.has_return_expr ()
+			    ? expr.get_expr ()->get_locus ()
+			    : expr.get_locus ();
   TyTy::BaseType *expr_ty
     = expr.has_return_expr ()
 	? TypeCheckExpr::Resolve (expr.get_expr ().get ())
@@ -239,16 +249,14 @@ TypeCheckExpr::visit (HIR::CompoundAssignmentExpr &expr)
 {
   infered = TyTy::TupleType::get_unit_type (expr.get_mappings ().get_hirid ());
 
-  auto lhs = TypeCheckExpr::Resolve (expr.get_left_expr ().get ());
-  auto rhs = TypeCheckExpr::Resolve (expr.get_right_expr ().get ());
+  auto lhs = TypeCheckExpr::Resolve (expr.get_lhs ().get ());
+  auto rhs = TypeCheckExpr::Resolve (expr.get_rhs ().get ());
 
   // we dont care about the result of the unify from a compound assignment
   // since this is a unit-type expr
   coercion_site (expr.get_mappings ().get_hirid (),
-		 TyTy::TyWithLocation (lhs,
-				       expr.get_left_expr ()->get_locus ()),
-		 TyTy::TyWithLocation (rhs,
-				       expr.get_right_expr ()->get_locus ()),
+		 TyTy::TyWithLocation (lhs, expr.get_lhs ()->get_locus ()),
+		 TyTy::TyWithLocation (rhs, expr.get_rhs ()->get_locus ()),
 		 expr.get_locus ());
 
   auto lang_item_type
@@ -434,7 +442,18 @@ TypeCheckExpr::visit (HIR::NegationExpr &expr)
 void
 TypeCheckExpr::visit (HIR::IfExpr &expr)
 {
-  TypeCheckExpr::Resolve (expr.get_if_condition ().get ());
+  TyTy::BaseType *bool_ty = nullptr;
+  bool ok = context->lookup_builtin ("bool", &bool_ty);
+  rust_assert (ok);
+
+  TyTy::BaseType *cond_type
+    = TypeCheckExpr::Resolve (expr.get_if_condition ().get ());
+
+  unify_site (expr.get_mappings ().get_hirid (), TyTy::TyWithLocation (bool_ty),
+	      TyTy::TyWithLocation (cond_type,
+				    expr.get_if_condition ()->get_locus ()),
+	      expr.get_locus ());
+
   TypeCheckExpr::Resolve (expr.get_if_block ().get ());
 
   infered = TyTy::TupleType::get_unit_type (expr.get_mappings ().get_hirid ());
@@ -443,7 +462,18 @@ TypeCheckExpr::visit (HIR::IfExpr &expr)
 void
 TypeCheckExpr::visit (HIR::IfExprConseqElse &expr)
 {
-  TypeCheckExpr::Resolve (expr.get_if_condition ().get ());
+  TyTy::BaseType *bool_ty = nullptr;
+  bool ok = context->lookup_builtin ("bool", &bool_ty);
+  rust_assert (ok);
+
+  TyTy::BaseType *cond_type
+    = TypeCheckExpr::Resolve (expr.get_if_condition ().get ());
+
+  unify_site (expr.get_mappings ().get_hirid (), TyTy::TyWithLocation (bool_ty),
+	      TyTy::TyWithLocation (cond_type,
+				    expr.get_if_condition ()->get_locus ()),
+	      expr.get_locus ());
+
   auto if_blk_resolved = TypeCheckExpr::Resolve (expr.get_if_block ().get ());
   auto else_blk_resolved
     = TypeCheckExpr::Resolve (expr.get_else_block ().get ());
@@ -534,6 +564,10 @@ TypeCheckExpr::visit (HIR::UnsafeBlockExpr &expr)
 void
 TypeCheckExpr::visit (HIR::BlockExpr &expr)
 {
+  if (expr.has_label ())
+    context->push_new_loop_context (expr.get_mappings ().get_hirid (),
+				    expr.get_locus ());
+
   for (auto &s : expr.get_statements ())
     {
       if (!s->is_item ())
@@ -570,6 +604,20 @@ TypeCheckExpr::visit (HIR::BlockExpr &expr)
   else if (expr.is_tail_reachable ())
     infered
       = TyTy::TupleType::get_unit_type (expr.get_mappings ().get_hirid ());
+  else if (expr.has_label ())
+    {
+      TyTy::BaseType *loop_context_type = context->pop_loop_context ();
+
+      bool loop_context_type_infered
+	= (loop_context_type->get_kind () != TyTy::TypeKind::INFER)
+	  || ((loop_context_type->get_kind () == TyTy::TypeKind::INFER)
+	      && (((TyTy::InferType *) loop_context_type)->get_infer_kind ()
+		  != TyTy::InferType::GENERAL));
+
+      infered = loop_context_type_infered ? loop_context_type
+					  : TyTy::TupleType::get_unit_type (
+					    expr.get_mappings ().get_hirid ());
+    }
   else
     {
       // FIXME this seems wrong
@@ -870,7 +918,7 @@ TypeCheckExpr::visit (HIR::ArrayIndexExpr &expr)
   rich_location r (line_table, expr.get_locus ());
   r.add_range (expr.get_array_expr ()->get_locus ());
   r.add_range (expr.get_index_expr ()->get_locus ());
-  rust_error_at (r, ErrorCode ("E0277"),
+  rust_error_at (r, ErrorCode::E0277,
 		 "the type %<%s%> cannot be indexed by %<%s%>",
 		 array_expr_ty->get_name ().c_str (),
 		 index_expr_ty->get_name ().c_str ());
@@ -1045,9 +1093,11 @@ TypeCheckExpr::visit (HIR::MethodCallExpr &expr)
 			     expr.get_method_name ().get_segment ());
   if (candidates.empty ())
     {
+      rich_location richloc (line_table, expr.get_method_name ().get_locus ());
+      richloc.add_fixit_replace ("method not found");
       rust_error_at (
-	expr.get_method_name ().get_locus (),
-	"failed to resolve method for %<%s%>",
+	richloc, ErrorCode::E0599,
+	"no method named %qs found in the current scope",
 	expr.get_method_name ().get_segment ().as_string ().c_str ());
       return;
     }
@@ -1055,11 +1105,17 @@ TypeCheckExpr::visit (HIR::MethodCallExpr &expr)
   if (candidates.size () > 1)
     {
       rich_location r (line_table, expr.get_method_name ().get_locus ());
+      std::string rich_msg
+	= "multiple " + expr.get_method_name ().get_segment ().as_string ()
+	  + " found";
+
       for (auto &c : candidates)
 	r.add_range (c.candidate.locus);
 
+      r.add_fixit_replace (rich_msg.c_str ());
+
       rust_error_at (
-	r, "multiple candidates found for method %<%s%>",
+	r, ErrorCode::E0592, "duplicate definitions with name %qs",
 	expr.get_method_name ().get_segment ().as_string ().c_str ());
       return;
     }
@@ -1113,58 +1169,31 @@ TypeCheckExpr::visit (HIR::MethodCallExpr &expr)
     }
 
   fn->prepare_higher_ranked_bounds ();
-  auto root = receiver_tyty->get_root ();
-  if (root->get_kind () == TyTy::TypeKind::ADT)
+  rust_debug_loc (expr.get_locus (), "resolved method call to: {%u} {%s}",
+		  candidate.candidate.ty->get_ref (),
+		  candidate.candidate.ty->debug_str ().c_str ());
+
+  if (resolved_candidate.is_impl_candidate ())
     {
-      const TyTy::ADTType *adt = static_cast<const TyTy::ADTType *> (root);
-      if (adt->has_substitutions () && fn->needs_substitution ())
+      auto infer_arguments = TyTy::SubstitutionArgumentMappings::error ();
+      HIR::ImplBlock &impl = *resolved_candidate.item.impl.parent;
+      TyTy::BaseType *impl_self_infer
+	= TypeCheckItem::ResolveImplBlockSelfWithInference (impl,
+							    expr.get_locus (),
+							    &infer_arguments);
+      if (impl_self_infer->get_kind () == TyTy::TypeKind::ERROR)
 	{
-	  // consider the case where we have:
-	  //
-	  // struct Foo<X,Y>(X,Y);
-	  //
-	  // impl<T> Foo<T, i32> {
-	  //   fn test<X>(self, a:X) -> (T,X) { (self.0, a) }
-	  // }
-	  //
-	  // In this case we end up with an fn type of:
-	  //
-	  // fn <T,X> test(self:Foo<T,i32>, a:X) -> (T,X)
-	  //
-	  // This means the instance or self we are calling this method for
-	  // will be substituted such that we can get the inherited type
-	  // arguments but then need to use the turbo fish if available or
-	  // infer the remaining arguments. Luckily rust does not allow for
-	  // default types GenericParams on impl blocks since these must
-	  // always be at the end of the list
+	  rich_location r (line_table, expr.get_locus ());
+	  r.add_range (impl.get_type ()->get_locus ());
+	  rust_error_at (
+	    r, "failed to resolve impl type for method call resolution");
+	  return;
+	}
 
-	  auto s = fn->get_self_type ()->get_root ();
-	  rust_assert (s->can_eq (adt, false));
-	  rust_assert (s->get_kind () == TyTy::TypeKind::ADT);
-	  const TyTy::ADTType *self_adt
-	    = static_cast<const TyTy::ADTType *> (s);
-
-	  // we need to grab the Self substitutions as the inherit type
-	  // parameters for this
-	  if (self_adt->needs_substitution ())
-	    {
-	      rust_assert (adt->was_substituted ());
-
-	      TyTy::SubstitutionArgumentMappings used_args_in_prev_segment
-		= GetUsedSubstArgs::From (adt);
-
-	      TyTy::SubstitutionArgumentMappings inherit_type_args
-		= self_adt->solve_mappings_from_receiver_for_self (
-		  used_args_in_prev_segment);
-
-	      // there may or may not be inherited type arguments
-	      if (!inherit_type_args.is_error ())
-		{
-		  // need to apply the inherited type arguments to the
-		  // function
-		  lookup = fn->handle_substitions (inherit_type_args);
-		}
-	    }
+      if (!infer_arguments.is_empty ())
+	{
+	  lookup = SubstMapperInternal::Resolve (lookup, infer_arguments);
+	  lookup->debug ();
 	}
     }
 
@@ -1277,7 +1306,8 @@ TypeCheckExpr::visit (HIR::BreakExpr &expr)
 {
   if (!context->have_loop_context ())
     {
-      rust_error_at (expr.get_locus (), "cannot %<break%> outside of a loop");
+      rust_error_at (expr.get_locus (), ErrorCode::E0268,
+		     "%<break%> outside of a loop or labeled block");
       return;
     }
 
@@ -1289,8 +1319,9 @@ TypeCheckExpr::visit (HIR::BreakExpr &expr)
       TyTy::BaseType *loop_context = context->peek_loop_context ();
       if (loop_context->get_kind () == TyTy::TypeKind::ERROR)
 	{
-	  rust_error_at (expr.get_locus (),
-			 "can only break with a value inside %<loop%>");
+	  rust_error_at (
+	    expr.get_locus (), ErrorCode::E0571,
+	    "can only %<break%> with a value inside a %<loop%> block");
 	  return;
 	}
 
@@ -1311,8 +1342,8 @@ TypeCheckExpr::visit (HIR::ContinueExpr &expr)
 {
   if (!context->have_loop_context ())
     {
-      rust_error_at (expr.get_locus (),
-		     "cannot %<continue%> outside of a loop");
+      rust_error_at (expr.get_locus (), ErrorCode::E0268,
+		     "%<continue%> outside of a loop");
       return;
     }
 
@@ -1501,9 +1532,9 @@ TypeCheckExpr::visit (HIR::ClosureExpr &expr)
 			   parameter_types);
   context->insert_implicit_type (closure_args);
 
-  Location result_type_locus = expr.has_return_type ()
-				 ? expr.get_return_type ()->get_locus ()
-				 : expr.get_locus ();
+  location_t result_type_locus = expr.has_return_type ()
+				   ? expr.get_return_type ()->get_locus ()
+				   : expr.get_locus ();
   TyTy::TyVar result_type
     = expr.has_return_type ()
 	? TyTy::TyVar (
@@ -1511,7 +1542,7 @@ TypeCheckExpr::visit (HIR::ClosureExpr &expr)
 	: TyTy::TyVar::get_implicit_infer_var (expr.get_locus ());
 
   // resolve the block
-  Location closure_expr_locus = expr.get_expr ()->get_locus ();
+  location_t closure_expr_locus = expr.get_expr ()->get_locus ();
   TyTy::BaseType *closure_expr_ty
     = TypeCheckExpr::Resolve (expr.get_expr ().get ());
   coercion_site (expr.get_mappings ().get_hirid (),
@@ -1555,7 +1586,8 @@ TypeCheckExpr::visit (HIR::ClosureExpr &expr)
   TraitReference *trait = TraitResolver::Resolve (*trait_item);
   rust_assert (!trait->is_error ());
 
-  TyTy::TypeBoundPredicate predicate (*trait, expr.get_locus ());
+  TyTy::TypeBoundPredicate predicate (*trait, BoundPolarity::RegularBound,
+				      expr.get_locus ());
 
   // resolve the trait bound where the <(Args)> are the parameter tuple type
   HIR::GenericArgs args = HIR::GenericArgs::create_empty (expr.get_locus ());
@@ -1675,6 +1707,24 @@ TypeCheckExpr::resolve_operator_overload (
   rust_debug ("is_impl_item_candidate: %s",
 	      resolved_candidate.is_impl_candidate () ? "true" : "false");
 
+  if (resolved_candidate.is_impl_candidate ())
+    {
+      auto infer_arguments = TyTy::SubstitutionArgumentMappings::error ();
+      HIR::ImplBlock &impl = *resolved_candidate.item.impl.parent;
+      TyTy::BaseType *impl_self_infer
+	= TypeCheckItem::ResolveImplBlockSelfWithInference (impl,
+							    expr.get_locus (),
+							    &infer_arguments);
+      if (impl_self_infer->get_kind () == TyTy::TypeKind::ERROR)
+	{
+	  return false;
+	}
+      if (!infer_arguments.is_empty ())
+	{
+	  lookup = SubstMapperInternal::Resolve (lookup, infer_arguments);
+	}
+    }
+
   // in the case where we resolve to a trait bound we have to be careful we are
   // able to do so there is a case where we are currently resolving the deref
   // operator overload function which is generic and this might resolve to the
@@ -1722,61 +1772,6 @@ TypeCheckExpr::resolve_operator_overload (
   rust_debug_loc (expr.get_locus (), "resolved operator overload to: {%u} {%s}",
 		  candidate.candidate.ty->get_ref (),
 		  candidate.candidate.ty->debug_str ().c_str ());
-
-  auto root = lhs->get_root ();
-  if (root->get_kind () == TyTy::TypeKind::ADT)
-    {
-      const TyTy::ADTType *adt = static_cast<const TyTy::ADTType *> (root);
-      if (adt->has_substitutions () && fn->needs_substitution ())
-	{
-	  // consider the case where we have:
-	  //
-	  // struct Foo<X,Y>(X,Y);
-	  //
-	  // impl<T> Foo<T, i32> {
-	  //   fn test<X>(self, a:X) -> (T,X) { (self.0, a) }
-	  // }
-	  //
-	  // In this case we end up with an fn type of:
-	  //
-	  // fn <T,X> test(self:Foo<T,i32>, a:X) -> (T,X)
-	  //
-	  // This means the instance or self we are calling this method for
-	  // will be substituted such that we can get the inherited type
-	  // arguments but then need to use the turbo fish if available or
-	  // infer the remaining arguments. Luckily rust does not allow for
-	  // default types GenericParams on impl blocks since these must
-	  // always be at the end of the list
-
-	  auto s = fn->get_self_type ()->get_root ();
-	  rust_assert (s->can_eq (adt, false));
-	  rust_assert (s->get_kind () == TyTy::TypeKind::ADT);
-	  const TyTy::ADTType *self_adt
-	    = static_cast<const TyTy::ADTType *> (s);
-
-	  // we need to grab the Self substitutions as the inherit type
-	  // parameters for this
-	  if (self_adt->needs_substitution ())
-	    {
-	      rust_assert (adt->was_substituted ());
-
-	      TyTy::SubstitutionArgumentMappings used_args_in_prev_segment
-		= GetUsedSubstArgs::From (adt);
-
-	      TyTy::SubstitutionArgumentMappings inherit_type_args
-		= self_adt->solve_mappings_from_receiver_for_self (
-		  used_args_in_prev_segment);
-
-	      // there may or may not be inherited type arguments
-	      if (!inherit_type_args.is_error ())
-		{
-		  // need to apply the inherited type arguments to the
-		  // function
-		  lookup = fn->handle_substitions (inherit_type_args);
-		}
-	    }
-	}
-    }
 
   // handle generics
   if (lookup->needs_generic_substitutions ())
@@ -1870,6 +1865,7 @@ TypeCheckExpr::resolve_fn_trait_call (HIR::CallExpr &expr,
 				      TyTy::BaseType **result)
 {
   // we turn this into a method call expr
+  // TODO: add implicit self argument (?)
   auto associated_predicate = TyTy::TypeBoundPredicate::error ();
   HIR::PathIdentSegment method_name
     = resolve_possible_fn_trait_call_method_name (*receiver_tyty,

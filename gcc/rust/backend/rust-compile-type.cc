@@ -79,8 +79,9 @@ TyTyResolveCompile::get_implicit_enumeral_node_type (Context *ctx)
   static tree enum_node = NULL_TREE;
   if (enum_node == NULL_TREE)
     {
-      enum_node = ctx->get_backend ()->named_type (
-	"enumeral", ctx->get_backend ()->integer_type (false, 64),
+      // equivalent to isize
+      enum_node = Backend::named_type (
+	"enumeral", Backend::integer_type (false, Backend::get_pointer_size ()),
 	BUILTINS_LOCATION);
     }
   return enum_node;
@@ -92,9 +93,8 @@ TyTyResolveCompile::get_unit_type (Context *ctx)
   static tree unit_type;
   if (unit_type == nullptr)
     {
-      auto unit_type_node = ctx->get_backend ()->struct_type ({});
-      unit_type = ctx->get_backend ()->named_type ("()", unit_type_node,
-						   BUILTINS_LOCATION);
+      auto unit_type_node = Backend::struct_type ({});
+      unit_type = Backend::named_type ("()", unit_type_node, BUILTINS_LOCATION);
     }
   return unit_type;
 }
@@ -106,9 +106,24 @@ TyTyResolveCompile::visit (const TyTy::ErrorType &)
 }
 
 void
-TyTyResolveCompile::visit (const TyTy::InferType &)
+TyTyResolveCompile::visit (const TyTy::InferType &type)
 {
-  translated = error_mark_node;
+  const TyTy::BaseType *orig = &type;
+  TyTy::BaseType *lookup = nullptr;
+  bool ok = ctx->get_tyctx ()->lookup_type (type.get_ref (), &lookup);
+  if (!ok)
+    {
+      translated = error_mark_node;
+      return;
+    }
+
+  if (orig == lookup)
+    {
+      translated = error_mark_node;
+      return;
+    }
+
+  translated = TyTyResolveCompile::compile (ctx, lookup);
 }
 
 void
@@ -160,13 +175,13 @@ TyTyResolveCompile::visit (const TyTy::ClosureType &type)
 						   type.get_ident ().locus));
     }
 
-  tree type_record = ctx->get_backend ()->struct_type (fields);
+  tree type_record = Backend::struct_type (fields);
   RS_CLOSURE_FLAG (type_record) = 1;
 
   std::string named_struct_str
     = type.get_ident ().path.get () + "::{{closure}}";
-  translated = ctx->get_backend ()->named_type (named_struct_str, type_record,
-						type.get_ident ().locus);
+  translated = Backend::named_type (named_struct_str, type_record,
+				    type.get_ident ().locus);
 }
 
 void
@@ -185,7 +200,7 @@ TyTyResolveCompile::visit (const TyTy::FnType &type)
   if (!should_be_void)
     {
       auto ret = TyTyResolveCompile::compile (ctx, hir_type, trait_object_mode);
-      Location return_type_locus
+      location_t return_type_locus
 	= ctx->get_mappings ()->lookup_location (hir_type->get_ref ());
       results.push_back (
 	Backend::typed_identifier ("_", ret, return_type_locus));
@@ -204,15 +219,13 @@ TyTyResolveCompile::visit (const TyTy::FnType &type)
       parameters.push_back (compiled_param);
     }
 
-  if (!type.is_varadic ())
-    translated
-      = ctx->get_backend ()->function_type (receiver, parameters, results, NULL,
-					    type.get_ident ().locus);
+  if (!type.is_variadic ())
+    translated = Backend::function_type (receiver, parameters, results, NULL,
+					 type.get_ident ().locus);
   else
     translated
-      = ctx->get_backend ()->function_type_varadic (receiver, parameters,
-						    results, NULL,
-						    type.get_ident ().locus);
+      = Backend::function_type_variadic (receiver, parameters, results, NULL,
+					 type.get_ident ().locus);
 }
 
 void
@@ -229,8 +242,8 @@ TyTyResolveCompile::visit (const TyTy::FnPtr &type)
       parameters.push_back (pty);
     }
 
-  translated = ctx->get_backend ()->function_ptr_type (result_type, parameters,
-						       type.get_ident ().locus);
+  translated = Backend::function_ptr_type (result_type, parameters,
+					   type.get_ident ().locus);
 }
 
 void
@@ -255,9 +268,8 @@ TyTyResolveCompile::visit (const TyTy::ADTType &type)
 	  fields.push_back (std::move (f));
 	}
 
-      type_record = type.is_union ()
-		      ? ctx->get_backend ()->union_type (fields)
-		      : ctx->get_backend ()->struct_type (fields);
+      type_record = type.is_union () ? Backend::union_type (fields)
+				     : Backend::struct_type (fields);
     }
   else
     {
@@ -318,10 +330,10 @@ TyTyResolveCompile::visit (const TyTy::ADTType &type)
 	      fields.push_back (std::move (f));
 	    }
 
-	  tree variant_record = ctx->get_backend ()->struct_type (fields);
-	  tree named_variant_record = ctx->get_backend ()->named_type (
-	    variant->get_ident ().path.get (), variant_record,
-	    variant->get_ident ().locus);
+	  tree variant_record = Backend::struct_type (fields);
+	  tree named_variant_record
+	    = Backend::named_type (variant->get_ident ().path.get (),
+				   variant_record, variant->get_ident ().locus);
 
 	  // set the qualifier to be a builtin
 	  DECL_ARTIFICIAL (TYPE_FIELDS (variant_record)) = 1;
@@ -347,7 +359,7 @@ TyTyResolveCompile::visit (const TyTy::ADTType &type)
 	}
 
       // finally make the union or the enum
-      type_record = ctx->get_backend ()->union_type (enum_fields);
+      type_record = Backend::union_type (enum_fields);
     }
 
   // Handle repr options
@@ -372,8 +384,8 @@ TyTyResolveCompile::visit (const TyTy::ADTType &type)
 
   std::string named_struct_str
     = type.get_ident ().path.get () + type.subst_as_string ();
-  translated = ctx->get_backend ()->named_type (named_struct_str, type_record,
-						type.get_ident ().locus);
+  translated = Backend::named_type (named_struct_str, type_record,
+				    type.get_ident ().locus);
 }
 
 void
@@ -404,10 +416,9 @@ TyTyResolveCompile::visit (const TyTy::TupleType &type)
       fields.push_back (std::move (f));
     }
 
-  tree struct_type_record = ctx->get_backend ()->struct_type (fields);
-  translated
-    = ctx->get_backend ()->named_type (type.as_string (), struct_type_record,
-				       type.get_ident ().locus);
+  tree struct_type_record = Backend::struct_type (fields);
+  translated = Backend::named_type (type.as_string (), struct_type_record,
+				    type.get_ident ().locus);
 }
 
 void
@@ -422,8 +433,7 @@ TyTyResolveCompile::visit (const TyTy::ArrayType &type)
 
   tree folded_capacity_expr = fold_expr (capacity_expr);
 
-  translated
-    = ctx->get_backend ()->array_type (element_type, folded_capacity_expr);
+  translated = Backend::array_type (element_type, folded_capacity_expr);
 }
 
 void
@@ -433,17 +443,15 @@ TyTyResolveCompile::visit (const TyTy::SliceType &type)
 
   std::string named_struct_str
     = std::string ("[") + type.get_element_type ()->get_name () + "]";
-  translated = ctx->get_backend ()->named_type (named_struct_str, type_record,
-						type.get_ident ().locus);
+  translated = Backend::named_type (named_struct_str, type_record,
+				    type.get_ident ().locus);
 }
 
 void
 TyTyResolveCompile::visit (const TyTy::BoolType &)
 {
   translated
-    = ctx->get_backend ()->named_type ("bool",
-				       ctx->get_backend ()->bool_type (),
-				       BUILTINS_LOCATION);
+    = Backend::named_type ("bool", boolean_type_node, BUILTINS_LOCATION);
 }
 
 void
@@ -452,32 +460,32 @@ TyTyResolveCompile::visit (const TyTy::IntType &type)
   switch (type.get_int_kind ())
     {
     case TyTy::IntType::I8:
-      translated = ctx->get_backend ()->named_type (
-	"i8", ctx->get_backend ()->integer_type (false, 8), BUILTINS_LOCATION);
+      translated = Backend::named_type ("i8", Backend::integer_type (false, 8),
+					BUILTINS_LOCATION);
       return;
 
     case TyTy::IntType::I16:
-      translated = ctx->get_backend ()->named_type (
-	"i16", ctx->get_backend ()->integer_type (false, 16),
-	BUILTINS_LOCATION);
+      translated
+	= Backend::named_type ("i16", Backend::integer_type (false, 16),
+			       BUILTINS_LOCATION);
       return;
 
     case TyTy::IntType::I32:
-      translated = ctx->get_backend ()->named_type (
-	"i32", ctx->get_backend ()->integer_type (false, 32),
-	BUILTINS_LOCATION);
+      translated
+	= Backend::named_type ("i32", Backend::integer_type (false, 32),
+			       BUILTINS_LOCATION);
       return;
 
     case TyTy::IntType::I64:
-      translated = ctx->get_backend ()->named_type (
-	"i64", ctx->get_backend ()->integer_type (false, 64),
-	BUILTINS_LOCATION);
+      translated
+	= Backend::named_type ("i64", Backend::integer_type (false, 64),
+			       BUILTINS_LOCATION);
       return;
 
     case TyTy::IntType::I128:
-      translated = ctx->get_backend ()->named_type (
-	"i128", ctx->get_backend ()->integer_type (false, 128),
-	BUILTINS_LOCATION);
+      translated
+	= Backend::named_type ("i128", Backend::integer_type (false, 128),
+			       BUILTINS_LOCATION);
       return;
     }
 }
@@ -488,29 +496,29 @@ TyTyResolveCompile::visit (const TyTy::UintType &type)
   switch (type.get_uint_kind ())
     {
     case TyTy::UintType::U8:
-      translated = ctx->get_backend ()->named_type (
-	"u8", ctx->get_backend ()->integer_type (true, 8), BUILTINS_LOCATION);
+      translated = Backend::named_type ("u8", Backend::integer_type (true, 8),
+					BUILTINS_LOCATION);
       return;
 
     case TyTy::UintType::U16:
-      translated = ctx->get_backend ()->named_type (
-	"u16", ctx->get_backend ()->integer_type (true, 16), BUILTINS_LOCATION);
+      translated = Backend::named_type ("u16", Backend::integer_type (true, 16),
+					BUILTINS_LOCATION);
       return;
 
     case TyTy::UintType::U32:
-      translated = ctx->get_backend ()->named_type (
-	"u32", ctx->get_backend ()->integer_type (true, 32), BUILTINS_LOCATION);
+      translated = Backend::named_type ("u32", Backend::integer_type (true, 32),
+					BUILTINS_LOCATION);
       return;
 
     case TyTy::UintType::U64:
-      translated = ctx->get_backend ()->named_type (
-	"u64", ctx->get_backend ()->integer_type (true, 64), BUILTINS_LOCATION);
+      translated = Backend::named_type ("u64", Backend::integer_type (true, 64),
+					BUILTINS_LOCATION);
       return;
 
     case TyTy::UintType::U128:
-      translated = ctx->get_backend ()->named_type (
-	"u128", ctx->get_backend ()->integer_type (true, 128),
-	BUILTINS_LOCATION);
+      translated
+	= Backend::named_type ("u128", Backend::integer_type (true, 128),
+			       BUILTINS_LOCATION);
       return;
     }
 }
@@ -521,17 +529,13 @@ TyTyResolveCompile::visit (const TyTy::FloatType &type)
   switch (type.get_float_kind ())
     {
     case TyTy::FloatType::F32:
-      translated
-	= ctx->get_backend ()->named_type ("f32",
-					   ctx->get_backend ()->float_type (32),
-					   BUILTINS_LOCATION);
+      translated = Backend::named_type ("f32", Backend::float_type (32),
+					BUILTINS_LOCATION);
       return;
 
     case TyTy::FloatType::F64:
-      translated
-	= ctx->get_backend ()->named_type ("f64",
-					   ctx->get_backend ()->float_type (64),
-					   BUILTINS_LOCATION);
+      translated = Backend::named_type ("f64", Backend::float_type (64),
+					BUILTINS_LOCATION);
       return;
     }
 }
@@ -539,30 +543,28 @@ TyTyResolveCompile::visit (const TyTy::FloatType &type)
 void
 TyTyResolveCompile::visit (const TyTy::USizeType &)
 {
-  translated = ctx->get_backend ()->named_type (
-    "usize",
-    ctx->get_backend ()->integer_type (
-      true, ctx->get_backend ()->get_pointer_size ()),
-    BUILTINS_LOCATION);
+  translated
+    = Backend::named_type ("usize",
+			   Backend::integer_type (true,
+						  Backend::get_pointer_size ()),
+			   BUILTINS_LOCATION);
 }
 
 void
 TyTyResolveCompile::visit (const TyTy::ISizeType &)
 {
-  translated = ctx->get_backend ()->named_type (
-    "isize",
-    ctx->get_backend ()->integer_type (
-      false, ctx->get_backend ()->get_pointer_size ()),
-    BUILTINS_LOCATION);
+  translated
+    = Backend::named_type ("isize",
+			   Backend::integer_type (false,
+						  Backend::get_pointer_size ()),
+			   BUILTINS_LOCATION);
 }
 
 void
 TyTyResolveCompile::visit (const TyTy::CharType &)
 {
   translated
-    = ctx->get_backend ()->named_type ("char",
-				       ctx->get_backend ()->wchar_type (),
-				       BUILTINS_LOCATION);
+    = Backend::named_type ("char", Backend::wchar_type (), BUILTINS_LOCATION);
 }
 
 void
@@ -578,9 +580,8 @@ TyTyResolveCompile::visit (const TyTy::ReferenceType &type)
 	= std::string (type.is_mutable () ? "&mut " : "&") + "["
 	  + slice->get_element_type ()->get_name () + "]";
 
-      translated
-	= ctx->get_backend ()->named_type (dyn_slice_type_str, type_record,
-					   slice->get_locus ());
+      translated = Backend::named_type (dyn_slice_type_str, type_record,
+					slice->get_locus ());
 
       return;
     }
@@ -590,9 +591,8 @@ TyTyResolveCompile::visit (const TyTy::ReferenceType &type)
       std::string dyn_str_type_str
 	= std::string (type.is_mutable () ? "&mut " : "&") + "str";
 
-      translated
-	= ctx->get_backend ()->named_type (dyn_str_type_str, type_record,
-					   str->get_locus ());
+      translated = Backend::named_type (dyn_str_type_str, type_record,
+					str->get_locus ());
 
       return;
     }
@@ -602,9 +602,8 @@ TyTyResolveCompile::visit (const TyTy::ReferenceType &type)
       std::string dyn_str_type_str
 	= std::string (type.is_mutable () ? "&mut " : "& ") + dyn->get_name ();
 
-      translated
-	= ctx->get_backend ()->named_type (dyn_str_type_str, type_record,
-					   dyn->get_locus ());
+      translated = Backend::named_type (dyn_str_type_str, type_record,
+					dyn->get_locus ());
 
       return;
     }
@@ -613,12 +612,12 @@ TyTyResolveCompile::visit (const TyTy::ReferenceType &type)
     = TyTyResolveCompile::compile (ctx, type.get_base (), trait_object_mode);
   if (type.is_mutable ())
     {
-      translated = ctx->get_backend ()->reference_type (base_compiled_type);
+      translated = Backend::reference_type (base_compiled_type);
     }
   else
     {
-      auto base = ctx->get_backend ()->immutable_type (base_compiled_type);
-      translated = ctx->get_backend ()->reference_type (base);
+      auto base = Backend::immutable_type (base_compiled_type);
+      translated = Backend::reference_type (base);
     }
 }
 
@@ -635,9 +634,8 @@ TyTyResolveCompile::visit (const TyTy::PointerType &type)
 	= std::string (type.is_mutable () ? "*mut " : "*const ") + "["
 	  + slice->get_element_type ()->get_name () + "]";
 
-      translated
-	= ctx->get_backend ()->named_type (dyn_slice_type_str, type_record,
-					   slice->get_locus ());
+      translated = Backend::named_type (dyn_slice_type_str, type_record,
+					slice->get_locus ());
 
       return;
     }
@@ -647,9 +645,8 @@ TyTyResolveCompile::visit (const TyTy::PointerType &type)
       std::string dyn_str_type_str
 	= std::string (type.is_mutable () ? "*mut " : "*const ") + "str";
 
-      translated
-	= ctx->get_backend ()->named_type (dyn_str_type_str, type_record,
-					   str->get_locus ());
+      translated = Backend::named_type (dyn_str_type_str, type_record,
+					str->get_locus ());
 
       return;
     }
@@ -660,9 +657,8 @@ TyTyResolveCompile::visit (const TyTy::PointerType &type)
 	= std::string (type.is_mutable () ? "*mut " : "*const ")
 	  + dyn->get_name ();
 
-      translated
-	= ctx->get_backend ()->named_type (dyn_str_type_str, type_record,
-					   dyn->get_locus ());
+      translated = Backend::named_type (dyn_str_type_str, type_record,
+					dyn->get_locus ());
 
       return;
     }
@@ -671,12 +667,12 @@ TyTyResolveCompile::visit (const TyTy::PointerType &type)
     = TyTyResolveCompile::compile (ctx, type.get_base (), trait_object_mode);
   if (type.is_mutable ())
     {
-      translated = ctx->get_backend ()->pointer_type (base_compiled_type);
+      translated = Backend::pointer_type (base_compiled_type);
     }
   else
     {
-      auto base = ctx->get_backend ()->immutable_type (base_compiled_type);
-      translated = ctx->get_backend ()->pointer_type (base);
+      auto base = Backend::immutable_type (base_compiled_type);
+      translated = Backend::pointer_type (base);
     }
 }
 
@@ -684,8 +680,7 @@ void
 TyTyResolveCompile::visit (const TyTy::StrType &type)
 {
   tree raw_str = create_str_type_record (type);
-  translated
-    = ctx->get_backend ()->named_type ("str", raw_str, BUILTINS_LOCATION);
+  translated = Backend::named_type ("str", raw_str, BUILTINS_LOCATION);
 }
 
 void
@@ -699,14 +694,13 @@ TyTyResolveCompile::visit (const TyTy::DynamicObjectType &type)
 {
   if (trait_object_mode)
     {
-      translated = ctx->get_backend ()->integer_type (
-	true, ctx->get_backend ()->get_pointer_size ());
+      translated = Backend::integer_type (true, Backend::get_pointer_size ());
       return;
     }
 
   tree type_record = create_dyn_obj_record (type);
-  translated = ctx->get_backend ()->named_type (type.get_name (), type_record,
-						type.get_ident ().locus);
+  translated = Backend::named_type (type.get_name (), type_record,
+				    type.get_ident ().locus);
 }
 
 tree
@@ -716,8 +710,7 @@ TyTyResolveCompile::create_dyn_obj_record (const TyTy::DynamicObjectType &type)
   auto items = type.get_object_items ();
   std::vector<Backend::typed_identifier> fields;
 
-  tree uint = ctx->get_backend ()->integer_type (
-    true, ctx->get_backend ()->get_pointer_size ());
+  tree uint = Backend::integer_type (true, Backend::get_pointer_size ());
   tree uintptr_ty = build_pointer_type (uint);
 
   Backend::typed_identifier f ("pointer", uintptr_ty,
@@ -726,13 +719,13 @@ TyTyResolveCompile::create_dyn_obj_record (const TyTy::DynamicObjectType &type)
   fields.push_back (std::move (f));
 
   tree vtable_size = build_int_cst (size_type_node, items.size ());
-  tree vtable_type = ctx->get_backend ()->array_type (uintptr_ty, vtable_size);
+  tree vtable_type = Backend::array_type (uintptr_ty, vtable_size);
   Backend::typed_identifier vtf ("vtable", vtable_type,
 				 ctx->get_mappings ()->lookup_location (
 				   type.get_ty_ref ()));
   fields.push_back (std::move (vtf));
 
-  tree record = ctx->get_backend ()->struct_type (fields);
+  tree record = Backend::struct_type (fields);
   RS_DST_FLAG (record) = 1;
   TYPE_MAIN_VARIANT (record) = ctx->insert_main_variant (record);
 
@@ -756,7 +749,7 @@ TyTyResolveCompile::create_slice_type_record (const TyTy::SliceType &type)
   tree len_field_ty = TyTyResolveCompile::compile (ctx, usize);
   Backend::typed_identifier len_field ("len", len_field_ty, type.get_locus ());
 
-  tree record = ctx->get_backend ()->struct_type ({data_field, len_field});
+  tree record = Backend::struct_type ({data_field, len_field});
   RS_DST_FLAG (record) = 1;
   TYPE_MAIN_VARIANT (record) = ctx->insert_main_variant (record);
 
@@ -782,7 +775,7 @@ TyTyResolveCompile::create_str_type_record (const TyTy::StrType &type)
   tree len_field_ty = TyTyResolveCompile::compile (ctx, usize);
   Backend::typed_identifier len_field ("len", len_field_ty, type.get_locus ());
 
-  tree record = ctx->get_backend ()->struct_type ({data_field, len_field});
+  tree record = Backend::struct_type ({data_field, len_field});
   RS_DST_FLAG (record) = 1;
   TYPE_MAIN_VARIANT (record) = ctx->insert_main_variant (record);
 

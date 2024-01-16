@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
+#include "rust-ast.h"
 #include "rust-system.h"
 #include "rust-ast-full.h"
 #include "rust-diagnostics.h"
@@ -27,6 +28,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "rust-parse.h"
 #include "rust-operators.h"
 #include "rust-dir-owner.h"
+#include "rust-attribute-values.h"
 
 /* Compilation unit used for various AST-related functions that would make
  * the headers too long if they were defined inline and don't receive any
@@ -35,6 +37,179 @@ along with GCC; see the file COPYING3.  If not see
 
 namespace Rust {
 namespace AST {
+
+SingleASTNode::SingleASTNode (SingleASTNode const &other)
+{
+  kind = other.kind;
+  switch (kind)
+    {
+    case EXPRESSION:
+      expr = other.expr->clone_expr ();
+      break;
+
+    case ITEM:
+      item = other.item->clone_item ();
+      break;
+
+    case STMT:
+      stmt = other.stmt->clone_stmt ();
+      break;
+
+    case EXTERN:
+      external_item = other.external_item->clone_external_item ();
+      break;
+
+    case TRAIT:
+      trait_item = other.trait_item->clone_trait_item ();
+      break;
+
+    case IMPL:
+      impl_item = other.impl_item->clone_inherent_impl_item ();
+      break;
+
+    case TRAIT_IMPL:
+      trait_impl_item = other.trait_impl_item->clone_trait_impl_item ();
+      break;
+
+    case TYPE:
+      type = other.type->clone_type ();
+      break;
+    }
+}
+
+SingleASTNode
+SingleASTNode::operator= (SingleASTNode const &other)
+{
+  kind = other.kind;
+  switch (kind)
+    {
+    case EXPRESSION:
+      expr = other.expr->clone_expr ();
+      break;
+
+    case ITEM:
+      item = other.item->clone_item ();
+      break;
+
+    case STMT:
+      stmt = other.stmt->clone_stmt ();
+      break;
+
+    case EXTERN:
+      external_item = other.external_item->clone_external_item ();
+      break;
+
+    case TRAIT:
+      trait_item = other.trait_item->clone_trait_item ();
+      break;
+
+    case IMPL:
+      impl_item = other.impl_item->clone_inherent_impl_item ();
+      break;
+
+    case TRAIT_IMPL:
+      trait_impl_item = other.trait_impl_item->clone_trait_impl_item ();
+      break;
+
+    case TYPE:
+      type = other.type->clone_type ();
+      break;
+    }
+  return *this;
+}
+
+void
+SingleASTNode::accept_vis (ASTVisitor &vis)
+{
+  switch (kind)
+    {
+    case EXPRESSION:
+      expr->accept_vis (vis);
+      break;
+
+    case ITEM:
+      item->accept_vis (vis);
+      break;
+
+    case STMT:
+      stmt->accept_vis (vis);
+      break;
+
+    case EXTERN:
+      external_item->accept_vis (vis);
+      break;
+
+    case TRAIT:
+      trait_item->accept_vis (vis);
+      break;
+
+    case IMPL:
+      impl_item->accept_vis (vis);
+      break;
+
+    case TRAIT_IMPL:
+      trait_impl_item->accept_vis (vis);
+      break;
+
+    case TYPE:
+      type->accept_vis (vis);
+      break;
+    }
+}
+
+bool
+SingleASTNode::is_error ()
+{
+  switch (kind)
+    {
+    case EXPRESSION:
+      return expr == nullptr;
+    case ITEM:
+      return item == nullptr;
+    case STMT:
+      return stmt == nullptr;
+    case EXTERN:
+      return external_item == nullptr;
+    case TRAIT:
+      return trait_item == nullptr;
+    case IMPL:
+      return impl_item == nullptr;
+    case TRAIT_IMPL:
+      return trait_impl_item == nullptr;
+    case TYPE:
+      return type == nullptr;
+    }
+
+  rust_unreachable ();
+  return true;
+}
+
+std::string
+SingleASTNode::as_string () const
+{
+  switch (kind)
+    {
+    case EXPRESSION:
+      return "Expr: " + expr->as_string ();
+    case ITEM:
+      return "Item: " + item->as_string ();
+    case STMT:
+      return "Stmt: " + stmt->as_string ();
+    case EXTERN:
+      return "External Item: " + external_item->as_string ();
+    case TRAIT:
+      return "Trait Item: " + trait_item->as_string ();
+    case IMPL:
+      return "Impl Item: " + impl_item->as_string ();
+    case TRAIT_IMPL:
+      return "Trait Impl Item: " + trait_impl_item->as_string ();
+    case TYPE:
+      return "Type: " + type->as_string ();
+    }
+
+  rust_unreachable ();
+  return "";
+}
 
 std::string
 Crate::as_string () const
@@ -79,6 +254,87 @@ Attribute::as_string () const
     return path_str;
   else
     return path_str + attr_input->as_string ();
+}
+
+bool
+Attribute::is_derive () const
+{
+  return has_attr_input () && get_path () == "derive";
+}
+
+/**
+ * Returns a list of traits to derive from within a given attribute.
+ *
+ * @param attrs The attributes on the item to derive
+ */
+std::vector<std::reference_wrapper<AST::SimplePath>>
+Attribute::get_traits_to_derive ()
+{
+  rust_assert (this->is_derive ());
+
+  this->parse_attr_to_meta_item ();
+  std::vector<std::reference_wrapper<AST::SimplePath>> result;
+  auto &input = get_attr_input ();
+  switch (input.get_attr_input_type ())
+    {
+      case AST::AttrInput::META_ITEM: {
+	auto &meta = static_cast<AST::AttrInputMetaItemContainer &> (input);
+	for (auto &current : meta.get_items ())
+	  {
+	    // HACK: Find a better way to achieve the downcast.
+	    switch (current->get_kind ())
+	      {
+		case AST::MetaItemInner::Kind::MetaItem: {
+		  // Let raw pointer go out of scope without freeing, it doesn't
+		  // own the data anyway
+		  auto meta_item
+		    = static_cast<AST::MetaItem *> (current.get ());
+		  switch (meta_item->get_item_kind ())
+		    {
+		      case AST::MetaItem::ItemKind::Path: {
+			auto path
+			  = static_cast<AST::MetaItemPath *> (meta_item);
+			result.push_back (path->get_path ());
+		      }
+		      break;
+		      case AST::MetaItem::ItemKind::Word: {
+			auto word = static_cast<AST::MetaWord *> (meta_item);
+			// Convert current word to path
+			current
+			  = make_unique<AST::MetaItemPath> (AST::MetaItemPath (
+			    AST::SimplePath (word->get_ident ())));
+			auto path
+			  = static_cast<AST::MetaItemPath *> (current.get ());
+
+			result.push_back (path->get_path ());
+		      }
+		      break;
+		    case AST::MetaItem::ItemKind::ListPaths:
+		    case AST::MetaItem::ItemKind::NameValueStr:
+		    case AST::MetaItem::ItemKind::PathLit:
+		    case AST::MetaItem::ItemKind::Seq:
+		    case AST::MetaItem::ItemKind::ListNameValueStr:
+		    default:
+		      gcc_unreachable ();
+		      break;
+		    }
+		}
+		break;
+	      case AST::MetaItemInner::Kind::LitExpr:
+	      default:
+		gcc_unreachable ();
+		break;
+	      }
+	  }
+      }
+      break;
+    case AST::AttrInput::TOKEN_TREE:
+    case AST::AttrInput::LITERAL:
+    case AST::AttrInput::MACRO:
+      rust_unreachable ();
+      break;
+    }
+  return result;
 }
 
 // Copy constructor must deep copy attr_input as unique pointer
@@ -173,7 +429,7 @@ SimplePathSegment::as_string () const
   return segment_name;
 }
 
-std::string
+const std::string
 SimplePath::as_string () const
 {
   std::string path;
@@ -465,69 +721,6 @@ InherentImpl::as_string () const
       for (const auto &item : impl_items)
 	str += "\n  " + item->as_string ();
     }
-
-  return str;
-}
-
-std::string
-Method::as_string () const
-{
-  std::string str ("Method: \n ");
-
-  str += vis.as_string () + " " + qualifiers.as_string ();
-
-  str += " fn " + method_name.as_string ();
-
-  // generic params
-  str += "\n Generic params: ";
-  if (generic_params.empty ())
-    {
-      str += "none";
-    }
-  else
-    {
-      for (const auto &param : generic_params)
-	{
-	  // DEBUG: null pointer check
-	  if (param == nullptr)
-	    {
-	      rust_debug (
-		"something really terrible has gone wrong - null pointer "
-		"generic param in method.");
-	      return "NULL_POINTER_MARK";
-	    }
-
-	  str += "\n  " + param->as_string ();
-	}
-    }
-
-  str += "\n Self param: " + self_param.as_string ();
-
-  str += "\n Function params: ";
-  if (function_params.empty ())
-    {
-      str += "none";
-    }
-  else
-    {
-      for (const auto &param : function_params)
-	str += "\n  " + param.as_string ();
-    }
-
-  str += "\n Return type: ";
-  if (has_return_type ())
-    str += return_type->as_string ();
-  else
-    str += "none (void)";
-
-  str += "\n Where clause: ";
-  if (has_where_clause ())
-    str += where_clause.as_string ();
-  else
-    str += "none";
-
-  str += "\n Block expr (body): \n  ";
-  str += function_body->as_string ();
 
   return str;
 }
@@ -897,6 +1090,62 @@ Union::as_string () const
   return str;
 }
 
+Function::Function (Function const &other)
+  : VisItem (other), qualifiers (other.qualifiers),
+    function_name (other.function_name), where_clause (other.where_clause),
+    locus (other.locus), is_default (other.is_default)
+{
+  // guard to prevent null dereference (always required)
+  if (other.return_type != nullptr)
+    return_type = other.return_type->clone_type ();
+
+  // guard to prevent null dereference (only required if error state)
+  if (other.function_body != nullptr)
+    function_body = other.function_body->clone_block_expr ();
+
+  generic_params.reserve (other.generic_params.size ());
+  for (const auto &e : other.generic_params)
+    generic_params.push_back (e->clone_generic_param ());
+
+  function_params.reserve (other.function_params.size ());
+  for (const auto &e : other.function_params)
+    function_params.push_back (e->clone_param ());
+}
+
+Function &
+Function::operator= (Function const &other)
+{
+  VisItem::operator= (other);
+  function_name = other.function_name;
+  qualifiers = other.qualifiers;
+  where_clause = other.where_clause;
+  // visibility = other.visibility->clone_visibility();
+  // outer_attrs = other.outer_attrs;
+  locus = other.locus;
+  is_default = other.is_default;
+
+  // guard to prevent null dereference (always required)
+  if (other.return_type != nullptr)
+    return_type = other.return_type->clone_type ();
+  else
+    return_type = nullptr;
+
+  // guard to prevent null dereference (only required if error state)
+  if (other.function_body != nullptr)
+    function_body = other.function_body->clone_block_expr ();
+  else
+    function_body = nullptr;
+
+  generic_params.reserve (other.generic_params.size ());
+  for (const auto &e : other.generic_params)
+    generic_params.push_back (e->clone_generic_param ());
+
+  function_params.reserve (other.function_params.size ());
+  for (const auto &e : other.function_params)
+    function_params.push_back (e->clone_param ());
+
+  return *this;
+}
 std::string
 Function::as_string () const
 {
@@ -956,7 +1205,7 @@ Function::as_string () const
       str += "(";
       for (; i != e; i++)
 	{
-	  str += (*i).as_string ();
+	  str += (*i)->as_string ();
 	  if (e != i + 1)
 	    str += ", ";
 	}
@@ -2052,6 +2301,33 @@ FunctionParam::as_string () const
   return param_name->as_string () + " : " + type->as_string ();
 }
 
+void
+FunctionParam::accept_vis (ASTVisitor &vis)
+{
+  vis.visit (*this);
+}
+
+void
+SelfParam::accept_vis (ASTVisitor &vis)
+{
+  vis.visit (*this);
+}
+
+void
+VariadicParam::accept_vis (ASTVisitor &vis)
+{
+  vis.visit (*this);
+}
+
+std::string
+VariadicParam::as_string () const
+{
+  if (has_pattern ())
+    return get_pattern ()->as_string () + " : ...";
+  else
+    return "...";
+}
+
 std::string
 FunctionQualifiers::as_string () const
 {
@@ -2780,7 +3056,7 @@ ExternalFunctionItem::as_string () const
 
   // function params
   str += "\n Function params: ";
-  if (function_params.empty () && !has_variadics)
+  if (function_params.empty ())
     {
       str += "none";
     }
@@ -2788,21 +3064,6 @@ ExternalFunctionItem::as_string () const
     {
       for (const auto &param : function_params)
 	str += "\n  " + param.as_string ();
-
-      if (has_variadics)
-	{
-	  str += "\n  variadic outer attrs: ";
-	  if (has_variadic_outer_attrs ())
-	    {
-	      for (const auto &attr : variadic_outer_attrs)
-		str += "\n   " + attr.as_string ();
-	    }
-	  else
-	    {
-	      str += "none";
-	    }
-	  str += "\n  ... (variadic)";
-	}
     }
 
   // add type on new line
@@ -2824,13 +3085,44 @@ NamedFunctionParam::as_string () const
 {
   std::string str = append_attributes (outer_attrs, OUTER);
 
-  str += "\n" + name;
+  if (has_name ())
+    str += "\n" + name;
 
-  str += "\n Type: " + param_type->as_string ();
+  if (is_variadic ())
+    str += "...";
+  else
+    str += "\n Type: " + param_type->as_string ();
 
   return str;
 }
 
+TraitItemFunc::TraitItemFunc (TraitItemFunc const &other)
+  : TraitItem (other.locus), outer_attrs (other.outer_attrs), decl (other.decl)
+{
+  node_id = other.node_id;
+
+  // guard to prevent null dereference
+  if (other.block_expr != nullptr)
+    block_expr = other.block_expr->clone_block_expr ();
+}
+
+TraitItemFunc &
+TraitItemFunc::operator= (TraitItemFunc const &other)
+{
+  TraitItem::operator= (other);
+  outer_attrs = other.outer_attrs;
+  decl = other.decl;
+  locus = other.locus;
+  node_id = other.node_id;
+
+  // guard to prevent null dereference
+  if (other.block_expr != nullptr)
+    block_expr = other.block_expr->clone_block_expr ();
+  else
+    block_expr = nullptr;
+
+  return *this;
+}
 std::string
 TraitItemFunc::as_string () const
 {
@@ -2880,7 +3172,7 @@ TraitFunctionDecl::as_string () const
   if (has_params ())
     {
       for (const auto &param : function_params)
-	str += "\n  " + param.as_string ();
+	str += "\n  " + param->as_string ();
     }
   else
     {
@@ -2900,6 +3192,34 @@ TraitFunctionDecl::as_string () const
     str += "none";
 
   return str;
+}
+
+TraitItemMethod::TraitItemMethod (TraitItemMethod const &other)
+  : TraitItem (other.locus), outer_attrs (other.outer_attrs), decl (other.decl)
+{
+  node_id = other.node_id;
+
+  // guard to prevent null dereference
+  if (other.block_expr != nullptr)
+    block_expr = other.block_expr->clone_block_expr ();
+}
+
+TraitItemMethod &
+TraitItemMethod::operator= (TraitItemMethod const &other)
+{
+  TraitItem::operator= (other);
+  outer_attrs = other.outer_attrs;
+  decl = other.decl;
+  locus = other.locus;
+  node_id = other.node_id;
+
+  // guard to prevent null dereference
+  if (other.block_expr != nullptr)
+    block_expr = other.block_expr->clone_block_expr ();
+  else
+    block_expr = nullptr;
+
+  return *this;
 }
 
 std::string
@@ -2947,13 +3267,11 @@ TraitMethodDecl::as_string () const
 	}
     }
 
-  str += "\n Self param: " + self_param.as_string ();
-
   str += "\n Function params: ";
   if (has_params ())
     {
       for (const auto &param : function_params)
-	str += "\n  " + param.as_string ();
+	str += "\n  " + param->as_string ();
     }
   else
     {
@@ -3643,7 +3961,7 @@ AttributeParser::parse_path_meta_item ()
       case EQUAL: {
 	skip_token ();
 
-	Location locus = peek_token ()->get_locus ();
+	location_t locus = peek_token ()->get_locus ();
 	Literal lit = parse_literal ();
 	if (lit.is_error ())
 	  {
@@ -3848,7 +4166,7 @@ AttributeParser::parse_simple_path_segment ()
 std::unique_ptr<MetaItemLitExpr>
 AttributeParser::parse_meta_item_lit ()
 {
-  Location locus = peek_token ()->get_locus ();
+  location_t locus = peek_token ()->get_locus ();
   LiteralExpr lit_expr (parse_literal (), {}, locus);
   return std::unique_ptr<MetaItemLitExpr> (
     new MetaItemLitExpr (std::move (lit_expr)));
@@ -4190,7 +4508,8 @@ Attribute::check_cfg_predicate (const Session &session) const
   /* assume that cfg predicate actually can exist, i.e. attribute has cfg or
    * cfg_attr path */
   if (!has_attr_input ()
-      || (path.as_string () != "cfg" && path.as_string () != "cfg_attr"))
+      || (path.as_string () != Values::Attributes::CFG
+	  && path.as_string () != Values::Attributes::CFG_ATTR))
     {
       // DEBUG message
       rust_debug (
@@ -4212,7 +4531,7 @@ Attribute::check_cfg_predicate (const Session &session) const
 std::vector<Attribute>
 Attribute::separate_cfg_attrs () const
 {
-  if (!has_attr_input () || path.as_string () != "cfg_attr")
+  if (!has_attr_input () || path.as_string () != Values::Attributes::CFG_ATTR)
     return {};
 
   // assume that it has already been parsed
@@ -4633,12 +4952,6 @@ LifetimeWhereClauseItem::accept_vis (ASTVisitor &vis)
 
 void
 TypeBoundWhereClauseItem::accept_vis (ASTVisitor &vis)
-{
-  vis.visit (*this);
-}
-
-void
-Method::accept_vis (ASTVisitor &vis)
 {
   vis.visit (*this);
 }

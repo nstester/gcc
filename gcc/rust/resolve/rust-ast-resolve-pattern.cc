@@ -42,7 +42,7 @@ PatternDeclaration::go (AST::Pattern *pattern, Rib::ItemType type,
       auto ident = map_entry.first; // key
       auto info = map_entry.second; // value
 
-      rust_error_at (info.get_locus (), ErrorCode ("E0408"),
+      rust_error_at (info.get_locus (), ErrorCode::E0408,
 		     "variable '%s' is not bound in all patterns",
 		     ident.as_string ().c_str ());
     }
@@ -53,7 +53,7 @@ PatternDeclaration::go (AST::Pattern *pattern, Rib::ItemType type,
       auto info = map_entry.second; // value
 
       rust_error_at (
-	info.get_locus (), ErrorCode ("E0409"),
+	info.get_locus (), ErrorCode::E0409,
 	"variable '%s' is bound inconsistently across pattern alternatives",
 	ident.as_string ().c_str ());
     }
@@ -124,8 +124,10 @@ PatternDeclaration::visit (AST::StructPattern &pattern)
       switch (field->get_item_type ())
 	{
 	  case AST::StructPatternField::ItemType::TUPLE_PAT: {
-	    // TODO
-	    rust_unreachable ();
+	    AST::StructPatternFieldTuplePat &tuple
+	      = static_cast<AST::StructPatternFieldTuplePat &> (*field);
+
+	    tuple.get_index_pattern ()->accept_vis (*this);
 	  }
 	  break;
 
@@ -151,9 +153,6 @@ PatternDeclaration::visit (AST::StructPattern &pattern)
 	  break;
 	}
     }
-
-  // TODO
-  rust_assert (!struct_pattern_elems.has_etc ());
 }
 
 void
@@ -278,7 +277,7 @@ PatternDeclaration::add_new_binding (Identifier ident, NodeId node_id,
     {
       if (type == Rib::ItemType::Param)
 	{
-	  rust_error_at (info.get_locus (), ErrorCode ("E0415"),
+	  rust_error_at (info.get_locus (), ErrorCode::E0415,
 			 "identifier '%s' is bound more than once in the "
 			 "same parameter list",
 			 ident.as_string ().c_str ());
@@ -286,7 +285,7 @@ PatternDeclaration::add_new_binding (Identifier ident, NodeId node_id,
       else
 	{
 	  rust_error_at (
-	    info.get_locus (), ErrorCode ("E0416"),
+	    info.get_locus (), ErrorCode::E0416,
 	    "identifier '%s' is bound more than once in the same pattern",
 	    ident.as_string ().c_str ());
 	}

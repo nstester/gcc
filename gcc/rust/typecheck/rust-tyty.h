@@ -31,7 +31,9 @@ namespace Rust {
 
 namespace Resolver {
 class TraitReference;
+
 class TraitItemReference;
+
 class AssociatedImplTrait;
 } // namespace Resolver
 
@@ -116,9 +118,12 @@ public:
 
   bool satisfies_bound (const TypeBoundPredicate &predicate,
 			bool emit_error) const;
-  bool bounds_compatible (const BaseType &other, Location locus,
+
+  bool bounds_compatible (const BaseType &other, location_t locus,
 			  bool emit_error) const;
+
   void inherit_bounds (const BaseType &other);
+
   void inherit_bounds (
     const std::vector<TyTy::TypeBoundPredicate> &specified_bounds);
 
@@ -138,10 +143,13 @@ public:
 
   // get_combined_refs returns the chain of node refs involved in unification
   std::set<HirId> get_combined_refs () const;
+
   void append_reference (HirId id);
 
   std::string mappings_str () const;
+
   std::string debug_str () const;
+
   void debug () const;
 
   // FIXME this will eventually go away
@@ -153,14 +161,69 @@ public:
   const BaseType *destructure () const;
 
   const RustIdent &get_ident () const;
-  Location get_locus () const;
+  location_t get_locus () const;
 
-  bool has_subsititions_defined () const;
+  bool has_substitutions_defined () const;
   bool needs_generic_substitutions () const;
+
+  std::string mangle_string () const
+  {
+    return TypeKindFormat::to_string (get_kind ()) + ":" + as_string () + ":"
+	   + mappings_str () + ":" + bounds_as_string ();
+  }
 
   /* Returns a pointer to a clone of this. The caller is responsible for
    * releasing the memory of the returned ty. */
   virtual BaseType *clone () const = 0;
+
+  // Check if TyTy::BaseType is of a specific type.
+  template <typename T>[[nodiscard]] bool is () const
+  {
+    static_assert (std::is_base_of<BaseType, T>::value,
+		   "Can only safely cast to TyTy types.");
+    return this->get_kind () == T::KIND;
+  }
+
+  template <typename T> T *as () const
+  {
+    static_assert (std::is_base_of<BaseType, T>::value,
+		   "Can only safely cast to TyTy types.");
+    rust_assert (this->is<T> ());
+    return static_cast<T *> (this);
+  }
+
+  template <typename T> T *as ()
+  {
+    static_assert (std::is_base_of<BaseType, T>::value,
+		   "Can only safely cast to TyTy types.");
+    rust_assert (this->is<T> ());
+    return static_cast<T *> (this);
+  }
+
+  // Check if TyTy::BaseType is of a specific type and convert it to that type
+  // if so.
+  // Returns nullptr otherwise. Works as a dynamic_cast, but without compiler
+  // RTTI.
+  template <typename T> T *try_as () const
+  {
+    static_assert (std::is_base_of<BaseType, T>::value,
+		   "Can only safely cast to TyTy types.");
+    if (!this->is<T> ())
+      return nullptr;
+
+    return static_cast<T *> (this);
+  }
+
+  // See above.
+  template <typename T> T *try_as ()
+  {
+    static_assert (std::is_base_of<BaseType, T>::value,
+		   "Can only safely cast to TyTy types.");
+    if (!this->is<T> ())
+      return nullptr;
+
+    return static_cast<T *> (this);
+  }
 
 protected:
   BaseType (HirId ref, HirId ty_ref, TypeKind kind, RustIdent ident,
@@ -182,6 +245,8 @@ protected:
 class InferType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::INFER;
+
   enum InferTypeKind
   {
     GENERAL,
@@ -218,13 +283,14 @@ public:
     }
   };
 
-  InferType (HirId ref, InferTypeKind infer_kind, TypeHint hint, Location locus,
-	     std::set<HirId> refs = std::set<HirId> ());
+  InferType (HirId ref, InferTypeKind infer_kind, TypeHint hint,
+	     location_t locus, std::set<HirId> refs = std::set<HirId> ());
 
   InferType (HirId ref, HirId ty_ref, InferTypeKind infer_kind, TypeHint hint,
-	     Location locus, std::set<HirId> refs = std::set<HirId> ());
+	     location_t locus, std::set<HirId> refs = std::set<HirId> ());
 
   void accept_vis (TyVisitor &vis) override;
+
   void accept_vis (TyConstVisitor &vis) const override;
 
   std::string as_string () const override;
@@ -249,6 +315,8 @@ private:
 class ErrorType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::ERROR;
+
   ErrorType (HirId ref, std::set<HirId> refs = std::set<HirId> ());
 
   ErrorType (HirId ref, HirId ty_ref,
@@ -269,13 +337,15 @@ public:
 class ParamType : public BaseType
 {
 public:
-  ParamType (std::string symbol, Location locus, HirId ref,
+  static constexpr auto KIND = TypeKind::PARAM;
+
+  ParamType (std::string symbol, location_t locus, HirId ref,
 	     HIR::GenericParam &param,
 	     std::vector<TypeBoundPredicate> specified_bounds,
 	     std::set<HirId> refs = std::set<HirId> ());
 
-  ParamType (bool is_trait_self, std::string symbol, Location locus, HirId ref,
-	     HirId ty_ref, HIR::GenericParam &param,
+  ParamType (bool is_trait_self, std::string symbol, location_t locus,
+	     HirId ref, HirId ty_ref, HIR::GenericParam &param,
 	     std::vector<TypeBoundPredicate> specified_bounds,
 	     std::set<HirId> refs = std::set<HirId> ());
 
@@ -314,7 +384,7 @@ private:
 class StructFieldType
 {
 public:
-  StructFieldType (HirId ref, std::string name, BaseType *ty, Location locus);
+  StructFieldType (HirId ref, std::string name, BaseType *ty, location_t locus);
 
   HirId get_ref () const;
 
@@ -329,24 +399,26 @@ public:
   StructFieldType *monomorphized_clone () const;
 
   void debug () const;
-  Location get_locus () const;
+  location_t get_locus () const;
   std::string as_string () const;
 
 private:
   HirId ref;
   std::string name;
   BaseType *ty;
-  Location locus;
+  location_t locus;
 };
 
 class TupleType : public BaseType
 {
 public:
-  TupleType (HirId ref, Location locus,
+  static constexpr auto KIND = TypeKind::TUPLE;
+
+  TupleType (HirId ref, location_t locus,
 	     std::vector<TyVar> fields = std::vector<TyVar> (),
 	     std::set<HirId> refs = std::set<HirId> ());
 
-  TupleType (HirId ref, HirId ty_ref, Location locus,
+  TupleType (HirId ref, HirId ty_ref, location_t locus,
 	     std::vector<TyVar> fields = std::vector<TyVar> (),
 	     std::set<HirId> refs = std::set<HirId> ());
 
@@ -381,11 +453,11 @@ class TypeBoundPredicate : public SubstitutionRef
 {
 public:
   TypeBoundPredicate (const Resolver::TraitReference &trait_reference,
-		      Location locus);
+		      BoundPolarity polarity, location_t locus);
 
   TypeBoundPredicate (DefId reference,
 		      std::vector<SubstitutionParamMapping> substitutions,
-		      Location locus);
+		      BoundPolarity polarity, location_t locus);
 
   TypeBoundPredicate (const TypeBoundPredicate &other);
 
@@ -401,13 +473,13 @@ public:
 
   const Resolver::TraitReference *get () const;
 
-  Location get_locus () const { return locus; }
+  location_t get_locus () const { return locus; }
 
   std::string get_name () const;
 
   // check that this predicate is object-safe see:
   // https://doc.rust-lang.org/reference/items/traits.html#object-safety
-  bool is_object_safe (bool emit_error, Location locus) const;
+  bool is_object_safe (bool emit_error, location_t locus) const;
 
   void apply_generic_arguments (HIR::GenericArgs *generic_args,
 				bool has_associated_self);
@@ -432,6 +504,8 @@ public:
 
   DefId get_id () const { return reference; }
 
+  BoundPolarity get_polarity () const { return polarity; }
+
   std::vector<TypeBoundPredicateItem> get_associated_type_items ();
 
   size_t get_num_associated_bindings () const override final;
@@ -442,9 +516,16 @@ public:
   bool is_equal (const TypeBoundPredicate &other) const;
 
 private:
+  struct mark_is_error
+  {
+  };
+
+  TypeBoundPredicate (mark_is_error);
+
   DefId reference;
-  Location locus;
+  location_t locus;
   bool error_flag;
+  BoundPolarity polarity;
 };
 
 // https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/struct.VariantDef.html
@@ -496,7 +577,9 @@ public:
   std::string as_string () const;
 
   bool is_equal (const VariantDef &other) const;
+
   VariantDef *clone () const;
+
   VariantDef *monomorphized_clone () const;
 
   const RustIdent &get_ident () const;
@@ -515,6 +598,8 @@ private:
 class ADTType : public BaseType, public SubstitutionRef
 {
 public:
+  static constexpr auto KIND = TypeKind::ADT;
+
   enum ADTKind
   {
     STRUCT_STRUCT,
@@ -572,14 +657,19 @@ public:
   {}
 
   ADTKind get_adt_kind () const { return adt_kind; }
+
   ReprOptions get_repr_options () const { return repr; }
 
   bool is_struct_struct () const { return adt_kind == STRUCT_STRUCT; }
+
   bool is_tuple_struct () const { return adt_kind == TUPLE_STRUCT; }
+
   bool is_union () const { return adt_kind == UNION; }
+
   bool is_enum () const { return adt_kind == ENUM; }
 
   void accept_vis (TyVisitor &vis) override;
+
   void accept_vis (TyConstVisitor &vis) const override;
 
   std::string as_string () const override;
@@ -600,6 +690,7 @@ public:
   size_t number_of_variants () const { return variants.size (); }
 
   std::vector<VariantDef *> &get_variants () { return variants; }
+
   const std::vector<VariantDef *> &get_variants () const { return variants; }
 
   bool lookup_variant (const std::string &lookup,
@@ -648,6 +739,8 @@ private:
 class FnType : public BaseType, public SubstitutionRef
 {
 public:
+  static constexpr auto KIND = TypeKind::FNDEF;
+
   static const uint8_t FNTYPE_DEFAULT_FLAGS = 0x00;
   static const uint8_t FNTYPE_IS_METHOD_FLAG = 0x01;
   static const uint8_t FNTYPE_IS_EXTERN_FLAG = 0x02;
@@ -708,7 +801,7 @@ public:
 
   bool is_extern () const { return (flags & FNTYPE_IS_EXTERN_FLAG) != 0; }
 
-  bool is_varadic () const { return (flags & FNTYPE_IS_VARADIC_FLAG) != 0; }
+  bool is_variadic () const { return (flags & FNTYPE_IS_VARADIC_FLAG) != 0; }
 
   DefId get_id () const { return id; }
 
@@ -761,14 +854,16 @@ private:
 class FnPtr : public BaseType
 {
 public:
-  FnPtr (HirId ref, Location locus, std::vector<TyVar> params,
+  static constexpr auto KIND = TypeKind::FNPTR;
+
+  FnPtr (HirId ref, location_t locus, std::vector<TyVar> params,
 	 TyVar result_type, std::set<HirId> refs = std::set<HirId> ())
     : BaseType (ref, ref, TypeKind::FNPTR,
 		{Resolver::CanonicalPath::create_empty (), locus}, refs),
       params (std::move (params)), result_type (result_type)
   {}
 
-  FnPtr (HirId ref, HirId ty_ref, Location locus, std::vector<TyVar> params,
+  FnPtr (HirId ref, HirId ty_ref, location_t locus, std::vector<TyVar> params,
 	 TyVar result_type, std::set<HirId> refs = std::set<HirId> ())
     : BaseType (ref, ty_ref, TypeKind::FNPTR,
 		{Resolver::CanonicalPath::create_empty (), locus}, refs),
@@ -806,6 +901,8 @@ private:
 class ClosureType : public BaseType, public SubstitutionRef
 {
 public:
+  static constexpr auto KIND = TypeKind::CLOSURE;
+
   ClosureType (HirId ref, DefId id, RustIdent ident,
 	       TyTy::TupleType *parameters, TyVar result_type,
 	       std::vector<SubstitutionParamMapping> subst_refs,
@@ -876,15 +973,18 @@ private:
 class ArrayType : public BaseType
 {
 public:
-  ArrayType (HirId ref, Location locus, HIR::Expr &capacity_expr, TyVar base,
+  static constexpr auto KIND = TypeKind::ARRAY;
+
+  ArrayType (HirId ref, location_t locus, HIR::Expr &capacity_expr, TyVar base,
 	     std::set<HirId> refs = std::set<HirId> ())
     : BaseType (ref, ref, TypeKind::ARRAY,
 		{Resolver::CanonicalPath::create_empty (), locus}, refs),
       element_type (base), capacity_expr (capacity_expr)
   {}
 
-  ArrayType (HirId ref, HirId ty_ref, Location locus, HIR::Expr &capacity_expr,
-	     TyVar base, std::set<HirId> refs = std::set<HirId> ())
+  ArrayType (HirId ref, HirId ty_ref, location_t locus,
+	     HIR::Expr &capacity_expr, TyVar base,
+	     std::set<HirId> refs = std::set<HirId> ())
     : BaseType (ref, ty_ref, TypeKind::ARRAY,
 		{Resolver::CanonicalPath::create_empty (), locus}, refs),
       element_type (base), capacity_expr (capacity_expr)
@@ -912,20 +1012,24 @@ public:
 
 private:
   TyVar element_type;
+  // FIXME: I dont think this should be in tyty - tyty should already be const
+  // evaluated
   HIR::Expr &capacity_expr;
 };
 
 class SliceType : public BaseType
 {
 public:
-  SliceType (HirId ref, Location locus, TyVar base,
+  static constexpr auto KIND = TypeKind::SLICE;
+
+  SliceType (HirId ref, location_t locus, TyVar base,
 	     std::set<HirId> refs = std::set<HirId> ())
     : BaseType (ref, ref, TypeKind::SLICE,
 		{Resolver::CanonicalPath::create_empty (), locus}, refs),
       element_type (base)
   {}
 
-  SliceType (HirId ref, HirId ty_ref, Location locus, TyVar base,
+  SliceType (HirId ref, HirId ty_ref, location_t locus, TyVar base,
 	     std::set<HirId> refs = std::set<HirId> ())
     : BaseType (ref, ty_ref, TypeKind::SLICE,
 		{Resolver::CanonicalPath::create_empty (), locus}, refs),
@@ -957,6 +1061,8 @@ private:
 class BoolType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::BOOL;
+
   BoolType (HirId ref, std::set<HirId> refs = std::set<HirId> ());
   BoolType (HirId ref, HirId ty_ref, std::set<HirId> refs = std::set<HirId> ());
 
@@ -984,6 +1090,8 @@ public:
     I128
   };
 
+  static constexpr auto KIND = TypeKind::INT;
+
   IntType (HirId ref, IntKind kind, std::set<HirId> refs = std::set<HirId> ());
   IntType (HirId ref, HirId ty_ref, IntKind kind,
 	   std::set<HirId> refs = std::set<HirId> ());
@@ -1010,6 +1118,8 @@ private:
 class UintType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::UINT;
+
   enum UintKind
   {
     U8,
@@ -1046,6 +1156,8 @@ private:
 class FloatType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::FLOAT;
+
   enum FloatKind
   {
     F32,
@@ -1078,6 +1190,8 @@ private:
 class USizeType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::USIZE;
+
   USizeType (HirId ref, std::set<HirId> refs = std::set<HirId> ());
   USizeType (HirId ref, HirId ty_ref,
 	     std::set<HirId> refs = std::set<HirId> ());
@@ -1096,6 +1210,8 @@ public:
 class ISizeType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::ISIZE;
+
   ISizeType (HirId ref, std::set<HirId> refs = std::set<HirId> ());
   ISizeType (HirId ref, HirId ty_ref,
 	     std::set<HirId> refs = std::set<HirId> ());
@@ -1114,6 +1230,8 @@ public:
 class CharType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::CHAR;
+
   CharType (HirId ref, std::set<HirId> refs = std::set<HirId> ());
   CharType (HirId ref, HirId ty_ref, std::set<HirId> refs = std::set<HirId> ());
 
@@ -1131,6 +1249,8 @@ public:
 class StrType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::STR;
+
   StrType (HirId ref, std::set<HirId> refs = std::set<HirId> ());
   StrType (HirId ref, HirId ty_ref, std::set<HirId> refs = std::set<HirId> ());
 
@@ -1151,6 +1271,8 @@ public:
 class DynamicObjectType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::DYNAMIC;
+
   DynamicObjectType (HirId ref, RustIdent ident,
 		     std::vector<TypeBoundPredicate> specified_bounds,
 		     std::set<HirId> refs = std::set<HirId> ());
@@ -1181,6 +1303,8 @@ public:
 class ReferenceType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::REF;
+
   ReferenceType (HirId ref, TyVar base, Mutability mut,
 		 std::set<HirId> refs = std::set<HirId> ());
   ReferenceType (HirId ref, HirId ty_ref, TyVar base, Mutability mut,
@@ -1220,6 +1344,8 @@ private:
 class PointerType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::POINTER;
+
   PointerType (HirId ref, TyVar base, Mutability mut,
 	       std::set<HirId> refs = std::set<HirId> ());
   PointerType (HirId ref, HirId ty_ref, TyVar base, Mutability mut,
@@ -1268,11 +1394,15 @@ private:
 class NeverType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::NEVER;
+
   NeverType (HirId ref, std::set<HirId> refs = std::set<HirId> ());
+
   NeverType (HirId ref, HirId ty_ref,
 	     std::set<HirId> refs = std::set<HirId> ());
 
   void accept_vis (TyVisitor &vis) override;
+
   void accept_vis (TyConstVisitor &vis) const override;
 
   std::string as_string () const override;
@@ -1289,6 +1419,8 @@ public:
 class PlaceholderType : public BaseType
 {
 public:
+  static constexpr auto KIND = TypeKind::PLACEHOLDER;
+
   PlaceholderType (std::string symbol, HirId ref,
 		   std::set<HirId> refs = std::set<HirId> ());
   PlaceholderType (std::string symbol, HirId ref, HirId ty_ref,
@@ -1324,6 +1456,8 @@ private:
 class ProjectionType : public BaseType, public SubstitutionRef
 {
 public:
+  static constexpr auto KIND = TypeKind::PROJECTION;
+
   ProjectionType (HirId ref, BaseType *base,
 		  const Resolver::TraitReference *trait, DefId item,
 		  std::vector<SubstitutionParamMapping> subst_refs,

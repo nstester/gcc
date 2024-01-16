@@ -54,7 +54,26 @@ struct TargetOptions
   std::unordered_map<std::string, std::unordered_set<tl::optional<std::string>>>
     features;
 
+  enum class CrateType
+  {
+    BIN = 0,
+    LIB,
+    RLIB,
+    DYLIB,
+    CDYLIB,
+    STATICLIB,
+    PROC_MACRO
+  } crate_type
+    = CrateType::BIN;
+
 public:
+  void set_crate_type (int raw_type)
+  {
+    crate_type = static_cast<CrateType> (raw_type);
+  }
+
+  const CrateType &get_crate_type () const { return crate_type; }
+
   // Returns whether a key is defined in the feature set.
   bool has_key (std::string key) const
   {
@@ -202,6 +221,7 @@ struct CompileOptions
     TARGET_OPTION_DUMP,
     HIR_DUMP,
     HIR_DUMP_PRETTY,
+    BIR_DUMP,
   };
 
   std::set<DumpOption> dump_options;
@@ -214,7 +234,6 @@ struct CompileOptions
   bool crate_name_set_manually = false;
   bool enable_test = false;
   bool debug_assertions = false;
-  bool proc_macro = false;
   std::string metadata_output_path;
 
   enum class Edition
@@ -230,12 +249,15 @@ struct CompileOptions
     Ast,
     AttributeCheck,
     Expansion,
+    ASTValidation,
+    FeatureGating,
     NameResolution,
     Lowering,
     TypeCheck,
     Privacy,
     Unsafety,
     Const,
+    BorrowCheck,
     Compilation,
     End,
   } compile_until
@@ -259,6 +281,7 @@ struct CompileOptions
     enable_dump_option (DumpOption::TARGET_OPTION_DUMP);
     enable_dump_option (DumpOption::HIR_DUMP);
     enable_dump_option (DumpOption::HIR_DUMP_PRETTY);
+    enable_dump_option (DumpOption::BIR_DUMP);
   }
 
   void set_crate_name (std::string name)
@@ -280,6 +303,14 @@ struct CompileOptions
   }
 
   const Edition &get_edition () const { return edition; }
+
+  void set_crate_type (int raw_type) { target_data.set_crate_type (raw_type); }
+
+  bool is_proc_macro () const
+  {
+    return target_data.get_crate_type ()
+	   == TargetOptions::CrateType::PROC_MACRO;
+  }
 
   void set_compile_step (int raw_step)
   {
@@ -317,9 +348,6 @@ struct Session
   /* extra files get included during late stages of compilation (e.g. macro
    * expansion) */
   std::vector<std::string> extra_files;
-
-  // backend wrapper to GCC GENERIC
-  Backend *backend;
 
   // backend linemap
   Linemap *linemap;
@@ -359,7 +387,7 @@ public:
     return extra_files.back ().c_str ();
   }
 
-  NodeId load_extern_crate (const std::string &crate_name, Location locus);
+  NodeId load_extern_crate (const std::string &crate_name, location_t locus);
 
 private:
   void compile_crate (const char *filename);

@@ -27,31 +27,29 @@ namespace AST {
 class LiteralPattern : public Pattern
 {
   Literal lit;
-  Location locus;
+  location_t locus;
   NodeId node_id;
 
 public:
   std::string as_string () const override;
 
   // Constructor for a literal pattern
-  LiteralPattern (Literal lit, Location locus)
+  LiteralPattern (Literal lit, location_t locus)
     : lit (std::move (lit)), locus (locus),
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
 
-  LiteralPattern (std::string val, Literal::LitType type, Location locus,
+  LiteralPattern (std::string val, Literal::LitType type, location_t locus,
 		  PrimitiveCoreType type_hint)
     : lit (Literal (std::move (val), type, type_hint)), locus (locus),
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   void accept_vis (ASTVisitor &vis) override;
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
   Literal &get_literal () { return lit; }
 
@@ -75,7 +73,7 @@ class IdentifierPattern : public Pattern
 
   // bool has_pattern;
   std::unique_ptr<Pattern> to_bind;
-  Location locus;
+  location_t locus;
   NodeId node_id;
 
 public:
@@ -85,7 +83,7 @@ public:
   bool has_pattern_to_bind () const { return to_bind != nullptr; }
 
   // Constructor
-  IdentifierPattern (Identifier ident, Location locus, bool is_ref = false,
+  IdentifierPattern (Identifier ident, location_t locus, bool is_ref = false,
 		     bool is_mut = false,
 		     std::unique_ptr<Pattern> to_bind = nullptr)
     : Pattern (), variable_ident (std::move (ident)), is_ref (is_ref),
@@ -93,7 +91,7 @@ public:
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
 
-  IdentifierPattern (NodeId node_id, Identifier ident, Location locus,
+  IdentifierPattern (NodeId node_id, Identifier ident, location_t locus,
 		     bool is_ref = false, bool is_mut = false,
 		     std::unique_ptr<Pattern> to_bind = nullptr)
     : Pattern (), variable_ident (std::move (ident)), is_ref (is_ref),
@@ -133,7 +131,7 @@ public:
   IdentifierPattern (IdentifierPattern &&other) = default;
   IdentifierPattern &operator= (IdentifierPattern &&other) = default;
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -149,9 +147,7 @@ public:
   bool get_is_mut () const { return is_mut; }
   bool get_is_ref () const { return is_ref; }
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -165,23 +161,21 @@ protected:
 // AST node for using the '_' wildcard "match any value" pattern
 class WildcardPattern : public Pattern
 {
-  Location locus;
+  location_t locus;
   NodeId node_id;
 
 public:
   std::string as_string () const override { return std::string (1, '_'); }
 
-  WildcardPattern (Location locus)
+  WildcardPattern (location_t locus)
     : locus (locus), node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   void accept_vis (ASTVisitor &vis) override;
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -194,21 +188,21 @@ protected:
 
 class RestPattern : public Pattern
 {
-  Location locus;
+  location_t locus;
   NodeId node_id;
 
 public:
   std::string as_string () const override { return ".."; }
 
-  RestPattern (Location locus)
+  RestPattern (location_t locus)
     : locus (locus), node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   void accept_vis (ASTVisitor &vis) override;
 
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override final { return node_id; }
 
 protected:
   RestPattern *clone_pattern_impl () const override
@@ -258,11 +252,11 @@ class RangePatternBoundLiteral : public RangePatternBound
   // Minus prefixed to literal (if integer or floating-point)
   bool has_minus;
 
-  Location locus;
+  location_t locus;
 
 public:
   // Constructor
-  RangePatternBoundLiteral (Literal literal, Location locus,
+  RangePatternBoundLiteral (Literal literal, location_t locus,
 			    bool has_minus = false)
     : literal (literal), has_minus (has_minus), locus (locus)
   {}
@@ -273,7 +267,7 @@ public:
 
   bool get_has_minus () const { return has_minus; }
 
-  Location get_locus () const { return locus; }
+  location_t get_locus () const { return locus; }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -304,7 +298,7 @@ public:
 
   std::string as_string () const override { return path.as_string (); }
 
-  Location get_locus () const { return path.get_locus (); }
+  location_t get_locus () const { return path.get_locus (); }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -341,7 +335,7 @@ public:
 
   std::string as_string () const override { return path.as_string (); }
 
-  Location get_locus () const { return path.get_locus (); }
+  location_t get_locus () const { return path.get_locus (); }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -373,7 +367,7 @@ class RangePattern : public Pattern
 
   /* location only stored to avoid a dereference - lower pattern should give
    * correct location so maybe change in future */
-  Location locus;
+  location_t locus;
   NodeId node_id;
 
 public:
@@ -381,7 +375,7 @@ public:
 
   // Constructor
   RangePattern (std::unique_ptr<RangePatternBound> lower,
-		std::unique_ptr<RangePatternBound> upper, Location locus,
+		std::unique_ptr<RangePatternBound> upper, location_t locus,
 		bool has_ellipsis_syntax = false)
     : lower (std::move (lower)), upper (std::move (upper)),
       has_ellipsis_syntax (has_ellipsis_syntax), locus (locus),
@@ -412,7 +406,7 @@ public:
   RangePattern (RangePattern &&other) = default;
   RangePattern &operator= (RangePattern &&other) = default;
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   bool get_has_ellipsis_syntax () { return has_ellipsis_syntax; }
 
@@ -435,9 +429,7 @@ public:
     return upper;
   }
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -454,14 +446,14 @@ class ReferencePattern : public Pattern
   bool has_two_amps;
   bool is_mut;
   std::unique_ptr<Pattern> pattern;
-  Location locus;
+  location_t locus;
   NodeId node_id;
 
 public:
   std::string as_string () const override;
 
   ReferencePattern (std::unique_ptr<Pattern> pattern, bool is_mut_reference,
-		    bool ref_has_two_amps, Location locus)
+		    bool ref_has_two_amps, location_t locus)
     : has_two_amps (ref_has_two_amps), is_mut (is_mut_reference),
       pattern (std::move (pattern)), locus (locus),
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
@@ -490,7 +482,7 @@ public:
   ReferencePattern (ReferencePattern &&other) = default;
   ReferencePattern &operator= (ReferencePattern &&other) = default;
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -505,9 +497,7 @@ public:
 
   bool get_is_mut () const { return is_mut; }
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -544,7 +534,7 @@ public:
 class StructPatternField
 {
   std::vector<Attribute> outer_attrs;
-  Location locus;
+  location_t locus;
 
 protected:
   NodeId node_id;
@@ -568,7 +558,7 @@ public:
 
   virtual std::string as_string () const;
 
-  Location get_locus () const { return locus; }
+  location_t get_locus () const { return locus; }
 
   virtual void accept_vis (ASTVisitor &vis) = 0;
 
@@ -583,7 +573,7 @@ public:
   const std::vector<Attribute> &get_outer_attrs () const { return outer_attrs; }
 
 protected:
-  StructPatternField (std::vector<Attribute> outer_attribs, Location locus,
+  StructPatternField (std::vector<Attribute> outer_attribs, location_t locus,
 		      NodeId node_id)
     : outer_attrs (std::move (outer_attribs)), locus (locus), node_id (node_id)
   {}
@@ -602,7 +592,7 @@ public:
   StructPatternFieldTuplePat (TupleIndex index,
 			      std::unique_ptr<Pattern> tuple_pattern,
 			      std::vector<Attribute> outer_attribs,
-			      Location locus)
+			      location_t locus)
     : StructPatternField (std::move (outer_attribs), locus,
 			  Analysis::Mappings::get ()->get_next_node_id ()),
       index (index), tuple_pattern (std::move (tuple_pattern))
@@ -682,7 +672,7 @@ public:
   StructPatternFieldIdentPat (Identifier ident,
 			      std::unique_ptr<Pattern> ident_pattern,
 			      std::vector<Attribute> outer_attrs,
-			      Location locus)
+			      location_t locus)
     : StructPatternField (std::move (outer_attrs), locus,
 			  Analysis::Mappings::get ()->get_next_node_id ()),
       ident (std::move (ident)), ident_pattern (std::move (ident_pattern))
@@ -761,7 +751,7 @@ class StructPatternFieldIdent : public StructPatternField
 
 public:
   StructPatternFieldIdent (Identifier ident, bool is_ref, bool is_mut,
-			   std::vector<Attribute> outer_attrs, Location locus)
+			   std::vector<Attribute> outer_attrs, location_t locus)
     : StructPatternField (std::move (outer_attrs), locus,
 			  Analysis::Mappings::get ()->get_next_node_id ()),
       has_ref (is_ref), has_mut (is_mut), ident (std::move (ident))
@@ -908,13 +898,13 @@ class StructPattern : public Pattern
   StructPatternElements elems;
 
   NodeId node_id;
-  Location locus;
+  location_t locus;
 
 public:
   std::string as_string () const override;
 
   // Constructs a struct pattern from specified StructPatternElements
-  StructPattern (PathInExpression struct_path, Location locus,
+  StructPattern (PathInExpression struct_path, location_t locus,
 		 StructPatternElements elems
 		 = StructPatternElements::create_empty ())
     : path (std::move (struct_path)), elems (std::move (elems)),
@@ -928,7 +918,7 @@ public:
    * is empty). */
   bool has_struct_pattern_elems () const { return !elems.is_empty (); }
 
-  Location get_locus () const override { return path.get_locus (); }
+  location_t get_locus () const override { return path.get_locus (); }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -942,9 +932,7 @@ public:
   PathInExpression &get_path () { return path; }
   const PathInExpression &get_path () const { return path; }
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -1172,23 +1160,16 @@ public:
   TupleStructPattern (TupleStructPattern &&other) = default;
   TupleStructPattern &operator= (TupleStructPattern &&other) = default;
 
-  Location get_locus () const override { return path.get_locus (); }
+  location_t get_locus () const override { return path.get_locus (); }
 
   void accept_vis (ASTVisitor &vis) override;
 
-  // TODO: seems kinda dodgy. Think of better way.
-  std::unique_ptr<TupleStructItems> &get_items ()
-  {
-    rust_assert (has_items ());
-    return items;
-  }
+  std::unique_ptr<TupleStructItems> &get_items () { return items; }
 
   PathInExpression &get_path () { return path; }
   const PathInExpression &get_path () const { return path; }
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -1379,7 +1360,7 @@ class TuplePattern : public Pattern
 {
   // bool has_tuple_pattern_items;
   std::unique_ptr<TuplePatternItems> items;
-  Location locus;
+  location_t locus;
   NodeId node_id;
 
 public:
@@ -1388,7 +1369,7 @@ public:
   // Returns true if the tuple pattern has items
   bool has_tuple_pattern_items () const { return items != nullptr; }
 
-  TuplePattern (std::unique_ptr<TuplePatternItems> items, Location locus)
+  TuplePattern (std::unique_ptr<TuplePatternItems> items, location_t locus)
     : items (std::move (items)), locus (locus),
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
@@ -1417,7 +1398,7 @@ public:
     return *this;
   }
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -1428,9 +1409,7 @@ public:
     return items;
   }
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -1445,7 +1424,7 @@ protected:
 class GroupedPattern : public Pattern
 {
   std::unique_ptr<Pattern> pattern_in_parens;
-  Location locus;
+  location_t locus;
   NodeId node_id;
 
 public:
@@ -1454,7 +1433,7 @@ public:
     return "(" + pattern_in_parens->as_string () + ")";
   }
 
-  GroupedPattern (std::unique_ptr<Pattern> pattern_in_parens, Location locus)
+  GroupedPattern (std::unique_ptr<Pattern> pattern_in_parens, location_t locus)
     : pattern_in_parens (std::move (pattern_in_parens)), locus (locus),
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
@@ -1479,7 +1458,7 @@ public:
   GroupedPattern (GroupedPattern &&other) = default;
   GroupedPattern &operator= (GroupedPattern &&other) = default;
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -1490,9 +1469,7 @@ public:
     return pattern_in_parens;
   }
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -1507,13 +1484,13 @@ protected:
 class SlicePattern : public Pattern
 {
   std::vector<std::unique_ptr<Pattern>> items;
-  Location locus;
+  location_t locus;
   NodeId node_id;
 
 public:
   std::string as_string () const override;
 
-  SlicePattern (std::vector<std::unique_ptr<Pattern>> items, Location locus)
+  SlicePattern (std::vector<std::unique_ptr<Pattern>> items, location_t locus)
     : items (std::move (items)), locus (locus),
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
@@ -1545,7 +1522,7 @@ public:
   SlicePattern (SlicePattern &&other) = default;
   SlicePattern &operator= (SlicePattern &&other) = default;
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -1556,9 +1533,7 @@ public:
     return items;
   }
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -1574,13 +1549,13 @@ protected:
 class AltPattern : public Pattern
 {
   std::vector<std::unique_ptr<Pattern>> alts;
-  Location locus;
+  location_t locus;
   NodeId node_id;
 
 public:
   std::string as_string () const override;
 
-  AltPattern (std::vector<std::unique_ptr<Pattern>> alts, Location locus)
+  AltPattern (std::vector<std::unique_ptr<Pattern>> alts, location_t locus)
     : alts (std::move (alts)), locus (locus),
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
@@ -1612,7 +1587,7 @@ public:
   AltPattern (AltPattern &&other) = default;
   AltPattern &operator= (AltPattern &&other) = default;
 
-  Location get_locus () const override final { return locus; }
+  location_t get_locus () const override final { return locus; }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -1623,9 +1598,7 @@ public:
     return alts;
   }
 
-  NodeId get_node_id () const { return node_id; }
-
-  NodeId get_pattern_node_id () const override final { return node_id; }
+  NodeId get_node_id () const override { return node_id; }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather

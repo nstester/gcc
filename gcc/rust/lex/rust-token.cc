@@ -19,6 +19,7 @@
 #include "rust-system.h"
 #include "rust-token.h"
 #include "rust-diagnostics.h"
+#include "rust-unicode.h"
 
 namespace Rust {
 // Hackily defined way to get token description for enum value using x-macros
@@ -150,6 +151,23 @@ Token::get_type_hint_str () const
   return get_type_hint_string (type_hint);
 }
 
+std::string
+nfc_normalize_token_string (location_t loc, TokenId id, const std::string &str)
+{
+  if (id == IDENTIFIER || id == LIFETIME)
+    {
+      tl::optional<Utf8String> ustring = Utf8String::make_utf8_string (str);
+      if (ustring.has_value ())
+	return ustring.value ().nfc_normalize ().as_string ();
+      else
+	rust_internal_error_at (loc,
+				"identifier '%s' is not a valid UTF-8 string",
+				str.c_str ());
+    }
+  else
+    return str;
+}
+
 const std::string &
 Token::get_str () const
 {
@@ -227,6 +245,8 @@ Token::as_string () const
 	  return "b'" + escape_special_chars (get_str (), Context::Char) + "'";
 	case LIFETIME:
 	  return "'" + get_str ();
+	case SCOPE_RESOLUTION:
+	  return "::";
 	case INT_LITERAL:
 	  if (get_type_hint () == CORETYPE_UNKNOWN)
 	    return get_str ();

@@ -19,6 +19,7 @@
 #include "rust-cfg-strip.h"
 #include "rust-ast-full.h"
 #include "rust-session-manager.h"
+#include "rust-attribute-values.h"
 
 namespace Rust {
 
@@ -33,7 +34,8 @@ fails_cfg (const AST::AttrVec &attrs)
 
   for (const auto &attr : attrs)
     {
-      if (attr.get_path () == "cfg" && !attr.check_cfg_predicate (session))
+      if (attr.get_path () == Values::Attributes::CFG
+	  && !attr.check_cfg_predicate (session))
 	return true;
     }
   return false;
@@ -51,7 +53,7 @@ fails_cfg_with_expand (AST::AttrVec &attrs)
   // TODO: maybe have something that strips cfg attributes that evaluate true?
   for (auto &attr : attrs)
     {
-      if (attr.get_path () == "cfg")
+      if (attr.get_path () == Values::Attributes::CFG)
 	{
 	  if (!attr.is_parsed_to_meta_item ())
 	    attr.parse_attr_to_meta_item ();
@@ -96,7 +98,7 @@ expand_cfg_attrs (AST::AttrVec &attrs)
   for (std::size_t i = 0; i < attrs.size (); i++)
     {
       auto &attr = attrs[i];
-      if (attr.get_path () == "cfg_attr")
+      if (attr.get_path () == Values::Attributes::CFG_ATTR)
 	{
 	  if (!attr.is_parsed_to_meta_item ())
 	    attr.parse_attr_to_meta_item ();
@@ -216,34 +218,37 @@ CfgStrip::maybe_strip_tuple_fields (std::vector<AST::TupleField> &fields)
 }
 
 void
-CfgStrip::maybe_strip_function_params (std::vector<AST::FunctionParam> &params)
+CfgStrip::maybe_strip_function_params (
+  std::vector<std::unique_ptr<AST::Param>> &params)
 {
   for (auto it = params.begin (); it != params.end ();)
     {
-      auto &param = *it;
-
-      auto &param_attrs = param.get_outer_attrs ();
-      expand_cfg_attrs (param_attrs);
-      if (fails_cfg_with_expand (param_attrs))
+      if (!(*it)->is_self () && !(*it)->is_variadic ())
 	{
-	  it = params.erase (it);
-	  continue;
+	  auto param = static_cast<AST::FunctionParam *> (it->get ());
+
+	  auto &param_attrs = param->get_outer_attrs ();
+	  expand_cfg_attrs (param_attrs);
+	  if (fails_cfg_with_expand (param_attrs))
+	    {
+	      it = params.erase (it);
+	      continue;
+	    }
+
+	  // TODO: should an unwanted strip lead to break out of loop?
+	  auto &pattern = param->get_pattern ();
+	  pattern->accept_vis (*this);
+	  if (pattern->is_marked_for_strip ())
+	    rust_error_at (pattern->get_locus (),
+			   "cannot strip pattern in this position");
+
+	  auto &type = param->get_type ();
+	  type->accept_vis (*this);
+
+	  if (type->is_marked_for_strip ())
+	    rust_error_at (type->get_locus (),
+			   "cannot strip type in this position");
 	}
-
-      // TODO: should an unwanted strip lead to break out of loop?
-      auto &pattern = param.get_pattern ();
-      pattern->accept_vis (*this);
-      if (pattern->is_marked_for_strip ())
-	rust_error_at (pattern->get_locus (),
-		       "cannot strip pattern in this position");
-
-      auto &type = param.get_type ();
-      type->accept_vis (*this);
-
-      if (type->is_marked_for_strip ())
-	rust_error_at (type->get_locus (),
-		       "cannot strip type in this position");
-
       // increment
       ++it;
     }
@@ -358,22 +363,6 @@ CfgStrip::CfgStrip::maybe_strip_closure_params (
 }
 
 void
-CfgStrip::maybe_strip_self_param (AST::SelfParam &self_param)
-{
-  if (self_param.has_type ())
-    {
-      auto &type = self_param.get_type ();
-      type->accept_vis (*this);
-
-      if (type->is_marked_for_strip ())
-	rust_error_at (type->get_locus (),
-		       "cannot strip type in this position");
-    }
-  /* TODO: maybe check for invariants being violated - e.g. both type and
-   * lifetime? */
-}
-
-void
 CfgStrip::maybe_strip_where_clause (AST::WhereClause &where_clause)
 {
   // items cannot be stripped conceptually, so just accept visitor
@@ -412,11 +401,6 @@ CfgStrip::maybe_strip_trait_method_decl (AST::TraitMethodDecl &decl)
   // just expand sub-stuff - can't actually strip generic params themselves
   for (auto &param : decl.get_generic_params ())
     param->accept_vis (*this);
-
-  /* assuming you can't strip self param - wouldn't be a method
-   * anymore. spec allows outer attrs on self param, but doesn't
-   * specify whether cfg is used. */
-  maybe_strip_self_param (decl.get_self_param ());
 
   /* strip function parameters if required - this is specifically
    * allowed by spec */
@@ -1943,53 +1927,6 @@ CfgStrip::visit (AST::TypeBoundWhereClauseItem &item)
     bound->accept_vis (*this);
 }
 void
-CfgStrip::visit (AST::Method &method)
-{
-  // initial test based on outer attrs
-  expand_cfg_attrs (method.get_outer_attrs ());
-  if (fails_cfg_with_expand (method.get_outer_attrs ()))
-    {
-      method.mark_for_strip ();
-      return;
-    }
-
-  // just expand sub-stuff - can't actually strip generic params themselves
-  for (auto &param : method.get_generic_params ())
-    param->accept_vis (*this);
-
-  /* assuming you can't strip self param - wouldn't be a method
-   * anymore. spec allows outer attrs on self param, but doesn't
-   * specify whether cfg is used. */
-  maybe_strip_self_param (method.get_self_param ());
-
-  /* strip method parameters if required - this is specifically
-   * allowed by spec */
-  maybe_strip_function_params (method.get_function_params ());
-
-  if (method.has_return_type ())
-    {
-      auto &return_type = method.get_return_type ();
-      return_type->accept_vis (*this);
-
-      if (return_type->is_marked_for_strip ())
-	rust_error_at (return_type->get_locus (),
-		       "cannot strip type in this position");
-    }
-
-  if (method.has_where_clause ())
-    maybe_strip_where_clause (method.get_where_clause ());
-
-  /* body should always exist - if error state, should have returned
-   * before now */
-  // can't strip block itself, but can strip sub-expressions
-  auto &block_expr = method.get_definition ();
-  block_expr->accept_vis (*this);
-  if (block_expr->is_marked_for_strip ())
-    rust_error_at (block_expr->get_locus (),
-		   "cannot strip block expression in this position - outer "
-		   "attributes not allowed");
-}
-void
 CfgStrip::visit (AST::Module &module)
 {
   // strip test based on outer attrs
@@ -2291,12 +2228,15 @@ CfgStrip::visit (AST::ConstantItem &const_item)
   /* strip any internal sub-expressions - expression itself isn't
    * allowed to have external attributes in this position so can't be
    * stripped. */
-  auto &expr = const_item.get_expr ();
-  expr->accept_vis (*this);
-  if (expr->is_marked_for_strip ())
-    rust_error_at (expr->get_locus (),
-		   "cannot strip expression in this position - outer "
-		   "attributes not allowed");
+  if (const_item.has_expr ())
+    {
+      auto &expr = const_item.get_expr ();
+      expr->accept_vis (*this);
+      if (expr->is_marked_for_strip ())
+	rust_error_at (expr->get_locus (),
+		       "cannot strip expression in this position - outer "
+		       "attributes not allowed");
+    }
 }
 void
 CfgStrip::visit (AST::StaticItem &static_item)
@@ -2598,12 +2538,15 @@ CfgStrip::visit (AST::ExternalFunctionItem &item)
 	  continue;
 	}
 
-      auto &type = param.get_type ();
-      type->accept_vis (*this);
+      if (!param.is_variadic ())
+	{
+	  auto &type = param.get_type ();
+	  param.get_type ()->accept_vis (*this);
 
-      if (type->is_marked_for_strip ())
-	rust_error_at (type->get_locus (),
-		       "cannot strip type in this position");
+	  if (type->is_marked_for_strip ())
+	    rust_error_at (type->get_locus (),
+			   "cannot strip type in this position");
+	}
 
       // increment if nothing else happens
       ++it;
@@ -3197,6 +3140,30 @@ CfgStrip::visit (AST::BareFunctionType &type)
     }
 
   // no where clause, apparently
+}
+
+void
+CfgStrip::visit (AST::VariadicParam &type)
+{}
+
+void
+CfgStrip::visit (AST::FunctionParam &type)
+{}
+
+void
+CfgStrip::visit (AST::SelfParam &param)
+{
+  if (param.has_type ())
+    {
+      auto &type = param.get_type ();
+      type->accept_vis (*this);
+
+      if (type->is_marked_for_strip ())
+	rust_error_at (type->get_locus (),
+		       "cannot strip type in this position");
+    }
+  /* TODO: maybe check for invariants being violated - e.g. both type and
+   * lifetime? */
 }
 
 } // namespace Rust

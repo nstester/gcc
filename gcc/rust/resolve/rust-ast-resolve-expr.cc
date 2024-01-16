@@ -19,7 +19,6 @@
 #include "rust-ast-resolve-expr.h"
 #include "rust-ast-resolve-stmt.h"
 #include "rust-ast-resolve-struct-expr-field.h"
-#include "rust-ast-verify-assignee.h"
 #include "rust-ast-resolve-type.h"
 #include "rust-ast-resolve-pattern.h"
 #include "rust-ast-resolve-path.h"
@@ -101,9 +100,6 @@ ResolveExpr::visit (AST::AssignmentExpr &expr)
 {
   ResolveExpr::go (expr.get_left_expr ().get (), prefix, canonical_prefix);
   ResolveExpr::go (expr.get_right_expr ().get (), prefix, canonical_prefix);
-
-  // need to verify the assignee
-  VerifyAsignee::go (expr.get_left_expr ().get ());
 }
 
 /* The "break rust" Easter egg.
@@ -173,7 +169,7 @@ ResolveExpr::visit (AST::IdentifierExpr &expr)
     }
   else
     {
-      rust_error_at (expr.get_locus (), ErrorCode ("E0425"),
+      rust_error_at (expr.get_locus (), ErrorCode::E0425,
 		     "cannot find value %qs in this scope",
 		     expr.as_string ().c_str ());
     }
@@ -191,9 +187,6 @@ ResolveExpr::visit (AST::CompoundAssignmentExpr &expr)
 {
   ResolveExpr::go (expr.get_left_expr ().get (), prefix, canonical_prefix);
   ResolveExpr::go (expr.get_right_expr ().get (), prefix, canonical_prefix);
-
-  // need to verify the assignee
-  VerifyAsignee::go (expr.get_left_expr ().get ());
 }
 
 void
@@ -310,6 +303,28 @@ ResolveExpr::visit (AST::BlockExpr &expr)
   resolver->push_new_type_rib (resolver->get_type_scope ().peek ());
   resolver->push_new_label_rib (resolver->get_type_scope ().peek ());
 
+  if (expr.has_label ())
+    {
+      auto label = expr.get_label ();
+      if (label.get_lifetime ().get_lifetime_type ()
+	  != AST::Lifetime::LifetimeType::NAMED)
+	{
+	  rust_error_at (label.get_locus (),
+			 "Labels must be a named lifetime value");
+	  return;
+	}
+
+      auto label_name = label.get_lifetime ().get_lifetime_name ();
+      auto label_lifetime_node_id = label.get_lifetime ().get_node_id ();
+      resolver->get_label_scope ().insert (
+	CanonicalPath::new_seg (label.get_node_id (), label_name),
+	label_lifetime_node_id, label.get_locus (), false, Rib::ItemType::Label,
+	[&] (const CanonicalPath &, NodeId, location_t locus) -> void {
+	  rust_error_at (label.get_locus (), "label redefined multiple times");
+	  rust_error_at (locus, "was defined here");
+	});
+    }
+
   for (auto &s : expr.get_statements ())
     {
       if (s->is_item ())
@@ -424,7 +439,7 @@ ResolveExpr::visit (AST::LoopExpr &expr)
       resolver->get_label_scope ().insert (
 	CanonicalPath::new_seg (expr.get_node_id (), label_name),
 	label_lifetime_node_id, label.get_locus (), false, Rib::ItemType::Label,
-	[&] (const CanonicalPath &, NodeId, Location locus) -> void {
+	[&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	  rust_error_at (label.get_locus (), "label redefined multiple times");
 	  rust_error_at (locus, "was defined here");
 	});
@@ -437,7 +452,7 @@ ResolveExpr::visit (AST::BreakExpr &expr)
 {
   if (expr.has_label ())
     {
-      auto label = expr.get_label ();
+      auto label = expr.get_label ().get_lifetime ();
       if (label.get_lifetime_type () != AST::Lifetime::LifetimeType::NAMED)
 	{
 	  rust_error_at (label.get_locus (),
@@ -451,8 +466,9 @@ ResolveExpr::visit (AST::BreakExpr &expr)
 				    label.get_lifetime_name ()),
 	    &resolved_node))
 	{
-	  rust_error_at (expr.get_label ().get_locus (),
-			 "failed to resolve label");
+	  rust_error_at (label.get_locus (), ErrorCode::E0426,
+			 "use of undeclared label %qs in %<break%>",
+			 label.get_lifetime_name ().c_str ());
 	  return;
 	}
       resolver->insert_resolved_label (label.get_node_id (), resolved_node);
@@ -498,7 +514,7 @@ ResolveExpr::visit (AST::WhileLoopExpr &expr)
       resolver->get_label_scope ().insert (
 	CanonicalPath::new_seg (label.get_node_id (), label_name),
 	label_lifetime_node_id, label.get_locus (), false, Rib::ItemType::Label,
-	[&] (const CanonicalPath &, NodeId, Location locus) -> void {
+	[&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	  rust_error_at (label.get_locus (), "label redefined multiple times");
 	  rust_error_at (locus, "was defined here");
 	});
@@ -527,7 +543,7 @@ ResolveExpr::visit (AST::ForLoopExpr &expr)
       resolver->get_label_scope ().insert (
 	CanonicalPath::new_seg (label.get_node_id (), label_name),
 	label_lifetime_node_id, label.get_locus (), false, Rib::ItemType::Label,
-	[&] (const CanonicalPath &, NodeId, Location locus) -> void {
+	[&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	  rust_error_at (label.get_locus (), "label redefined multiple times");
 	  rust_error_at (locus, "was defined here");
 	});
@@ -572,8 +588,9 @@ ResolveExpr::visit (AST::ContinueExpr &expr)
 				    label.get_lifetime_name ()),
 	    &resolved_node))
 	{
-	  rust_error_at (expr.get_label ().get_locus (),
-			 "failed to resolve label");
+	  rust_error_at (expr.get_label ().get_locus (), ErrorCode::E0426,
+			 "use of undeclared label %qs in %<continue%>",
+			 label.get_lifetime_name ().c_str ());
 	  return;
 	}
       resolver->insert_resolved_label (label.get_node_id (), resolved_node);

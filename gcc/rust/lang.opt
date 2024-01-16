@@ -82,6 +82,34 @@ frust-max-recursion-depth=
 Rust RejectNegative Type(int) Var(rust_max_recursion_depth) Init(64)
 -frust-max-recursion-depth=<integer>
 
+frust-crate-type=
+Rust Joined RejectNegative Enum(frust_crate_type) Var(flag_rust_crate_type)
+-frust-crate-type=[bin|lib|rlib|dylib|cdylib|staticlib|proc-macro]     Crate type to emit
+
+Enum
+Name(frust_crate_type) Type(int) UnknownError(unknown crate type: '%qs')
+
+EnumValue
+Enum(frust_crate_type) String(bin) Value(0)
+
+EnumValue
+Enum(frust_crate_type) String(lib) Value(1)
+
+EnumValue
+Enum(frust_crate_type) String(rlib) Value(2)
+
+EnumValue
+Enum(frust_crate_type) String(dylib) Value(3)
+
+EnumValue
+Enum(frust_crate_type) String(cdylib) Value(4)
+
+EnumValue
+Enum(frust_crate_type) String(staticlib) Value(5)
+
+EnumValue
+Enum(frust_crate_type) String(proc-macro) Value(6)
+
 frust-mangling=
 Rust Joined RejectNegative Enum(frust_mangling) Var(flag_rust_mangling)
 -frust-mangling=[legacy|v0]     Version to use for name mangling
@@ -129,7 +157,7 @@ Rust Joined Separate
 
 frust-compile-until=
 Rust Joined RejectNegative Enum(frust_compile_until) Var(flag_rust_compile_until)
--frust-compile-until=[ast|attributecheck|expansion|nameresolution|lowering|typecheck|privacy|unsafety|const|compilation|end]             The pipeline will run up until this stage when compiling Rust code
+-frust-compile-until=[ast|attributecheck|expansion|astvalidation|featuregating|nameresolution|lowering|typecheck|privacy|unsafety|const|borrowcheck|compilation|end]             The pipeline will run up until this stage when compiling Rust code
 
 Enum
 Name(frust_compile_until) Type(int) UnknownError(unknown rust compile-until %qs)
@@ -144,31 +172,44 @@ EnumValue
 Enum(frust_compile_until) String(expansion) Value(2)
 
 EnumValue
-Enum(frust_compile_until) String(nameresolution) Value(3)
+Enum(frust_compile_until) String(astvalidation) Value(3)
 
 EnumValue
-Enum(frust_compile_until) String(lowering) Value(4)
+Enum(frust_compile_until) String(featuregating) Value(4)
 
 EnumValue
-Enum(frust_compile_until) String(typecheck) Value(5)
+Enum(frust_compile_until) String(nameresolution) Value(5)
 
 EnumValue
-Enum(frust_compile_until) String(privacy) Value(6)
+Enum(frust_compile_until) String(lowering) Value(6)
 
 EnumValue
-Enum(frust_compile_until) String(unsafety) Value(7)
+Enum(frust_compile_until) String(typecheck) Value(7)
 
 EnumValue
-Enum(frust_compile_until) String(const) Value(8)
+Enum(frust_compile_until) String(privacy) Value(8)
 
 EnumValue
-Enum(frust_compile_until) String(compilation) Value(9)
+Enum(frust_compile_until) String(unsafety) Value(9)
 
 EnumValue
-Enum(frust_compile_until) String(end) Value(10)
+Enum(frust_compile_until) String(const) Value(10)
+
+EnumValue
+Enum(frust_compile_until) String(borrowcheck) Value(11)
+
+EnumValue
+Enum(frust_compile_until) String(compilation) Value(12)
+
+EnumValue
+Enum(frust_compile_until) String(end) Value(13)
 
 frust-name-resolution-2.0
 Rust Var(flag_name_resolution_2_0)
 Use the temporary and experimental name resolution pipeline instead of the stable one
+
+frust-borrowcheck
+Rust Var(flag_borrowcheck)
+Use the WIP borrow checker.
 
 ; This comment is to ensure we retain the blank line above.

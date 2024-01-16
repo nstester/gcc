@@ -23,6 +23,7 @@
 #include "rust-ast-resolve-type.h"
 #include "rust-ast-resolve-pattern.h"
 #include "rust-ast-resolve-expr.h"
+#include "rust-item.h"
 
 namespace Rust {
 namespace Resolver {
@@ -59,7 +60,7 @@ public:
     resolver->get_name_scope ().insert (
       path, constant.get_node_id (), constant.get_locus (), false,
       Rib::ItemType::Const,
-      [&] (const CanonicalPath &, NodeId, Location locus) -> void {
+      [&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	rich_location r (line_table, constant.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
@@ -94,7 +95,7 @@ public:
     resolver->get_type_scope ().insert (
       path, struct_decl.get_node_id (), struct_decl.get_locus (), false,
       Rib::ItemType::Type,
-      [&] (const CanonicalPath &, NodeId, Location locus) -> void {
+      [&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	rich_location r (line_table, struct_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
@@ -127,7 +128,7 @@ public:
     resolver->get_type_scope ().insert (
       path, enum_decl.get_node_id (), enum_decl.get_locus (), false,
       Rib::ItemType::Type,
-      [&] (const CanonicalPath &, NodeId, Location locus) -> void {
+      [&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	rich_location r (line_table, enum_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
@@ -159,7 +160,7 @@ public:
 
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
-      [&] (const CanonicalPath &, NodeId, Location locus) -> void {
+      [&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
@@ -179,7 +180,7 @@ public:
 
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
-      [&] (const CanonicalPath &, NodeId, Location locus) -> void {
+      [&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
@@ -205,7 +206,7 @@ public:
 
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
-      [&] (const CanonicalPath &, NodeId, Location locus) -> void {
+      [&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
@@ -231,7 +232,7 @@ public:
 
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
-      [&] (const CanonicalPath &, NodeId, Location locus) -> void {
+      [&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
@@ -252,7 +253,7 @@ public:
     resolver->get_type_scope ().insert (
       path, struct_decl.get_node_id (), struct_decl.get_locus (), false,
       Rib::ItemType::Type,
-      [&] (const CanonicalPath &, NodeId, Location locus) -> void {
+      [&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	rich_location r (line_table, struct_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
@@ -290,7 +291,7 @@ public:
     resolver->get_type_scope ().insert (
       path, union_decl.get_node_id (), union_decl.get_locus (), false,
       Rib::ItemType::Type,
-      [&] (const CanonicalPath &, NodeId, Location locus) -> void {
+      [&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	rich_location r (line_table, union_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
@@ -326,7 +327,7 @@ public:
     resolver->get_name_scope ().insert (
       path, function.get_node_id (), function.get_locus (), false,
       Rib::ItemType::Function,
-      [&] (const CanonicalPath &, NodeId, Location locus) -> void {
+      [&] (const CanonicalPath &, NodeId, location_t locus) -> void {
 	rich_location r (line_table, function.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
@@ -352,11 +353,28 @@ public:
 
     // we make a new scope so the names of parameters are resolved and shadowed
     // correctly
-    for (auto &param : function.get_function_params ())
+    for (auto &p : function.get_function_params ())
       {
-	ResolveType::go (param.get_type ().get ());
-	PatternDeclaration::go (param.get_pattern ().get (),
-				Rib::ItemType::Param, bindings);
+	if (p->is_variadic ())
+	  {
+	    auto param = static_cast<AST::VariadicParam *> (p.get ());
+	    PatternDeclaration::go (param->get_pattern ().get (),
+				    Rib::ItemType::Param, bindings);
+	  }
+
+	else if (p->is_self ())
+	  {
+	    auto param = static_cast<AST::SelfParam *> (p.get ());
+	    ResolveType::go (param->get_type ().get ());
+	  }
+	else
+	  {
+	    auto param = static_cast<AST::FunctionParam *> (p.get ());
+
+	    ResolveType::go (param->get_type ().get ());
+	    PatternDeclaration::go (param->get_pattern ().get (),
+				    Rib::ItemType::Param, bindings);
+	  }
       }
 
     // resolve the function body

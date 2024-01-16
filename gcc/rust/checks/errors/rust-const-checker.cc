@@ -214,8 +214,8 @@ ConstChecker::visit (AssignmentExpr &expr)
 void
 ConstChecker::visit (CompoundAssignmentExpr &expr)
 {
-  expr.get_left_expr ()->accept_vis (*this);
-  expr.get_right_expr ()->accept_vis (*this);
+  expr.get_lhs ()->accept_vis (*this);
+  expr.get_rhs ()->accept_vis (*this);
 }
 
 void
@@ -301,7 +301,7 @@ ConstChecker::visit (StructExprStructBase &)
 {}
 
 void
-ConstChecker::check_function_call (HirId fn_id, Location locus)
+ConstChecker::check_function_call (HirId fn_id, location_t locus)
 {
   if (!const_context.is_in_context ())
     return;
@@ -339,8 +339,9 @@ ConstChecker::check_function_call (HirId fn_id, Location locus)
     }
 
   if (is_error)
-    rust_error_at (locus, "only functions marked as %<const%> are allowed to "
-			  "be called from constant contexts");
+    rust_error_at (locus, ErrorCode::E0015,
+		   "only functions marked as %<const%> are allowed to be "
+		   "called from constant contexts");
 }
 
 void
@@ -473,13 +474,6 @@ void
 ConstChecker::visit (WhileLetLoopExpr &expr)
 {
   expr.get_cond ()->accept_vis (*this);
-  expr.get_loop_block ()->accept_vis (*this);
-}
-
-void
-ConstChecker::visit (ForLoopExpr &expr)
-{
-  expr.get_iterator_expr ()->accept_vis (*this);
   expr.get_loop_block ()->accept_vis (*this);
 }
 
@@ -861,7 +855,7 @@ void
 ConstChecker::visit (ReferenceType &type)
 {
   if (const_context.is_in_context () && type.is_mut ())
-    rust_error_at (type.get_locus (),
+    rust_error_at (type.get_locus (), ErrorCode::E0658,
 		   "mutable references are not allowed in constant functions");
 }
 

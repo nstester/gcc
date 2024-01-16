@@ -49,8 +49,8 @@ FeatureGate::check (AST::Crate &crate)
 		    }
 
 		  else
-		    rust_error_at (item->get_locus (), "unknown feature '%s'",
-				   name_str.c_str ());
+		    rust_error_at (item->get_locus (), ErrorCode::E0635,
+				   "unknown feature %qs", name_str.c_str ());
 		}
 	    }
 	}
@@ -65,7 +65,7 @@ FeatureGate::check (AST::Crate &crate)
 }
 
 void
-FeatureGate::gate (Feature::Name name, Location loc,
+FeatureGate::gate (Feature::Name name, location_t loc,
 		   const std::string &error_msg)
 {
   if (!valid_features.count (name))
@@ -79,14 +79,14 @@ FeatureGate::gate (Feature::Name name, Location loc,
 	      "<https://github.com/rust-lang/rust/issues/%u> for more "
 	      "information. add `#![feature(%s)]` to the crate attributes to "
 	      "enable.";
-	  rust_error_at (loc, ErrorCode ("E0658"), fmt_str, error_msg.c_str (),
+	  rust_error_at (loc, ErrorCode::E0658, fmt_str, error_msg.c_str (),
 			 issue, issue, feature.as_string ().c_str ());
 	}
       else
 	{
 	  const char *fmt_str
 	    = "%s. add `#![feature(%s)]` to the crate attributes to enable.";
-	  rust_error_at (loc, fmt_str, error_msg.c_str (),
+	  rust_error_at (loc, ErrorCode::E0658, fmt_str, error_msg.c_str (),
 			 feature.as_string ().c_str ());
 	}
     }
@@ -145,12 +145,6 @@ FeatureGate::visit (AST::TraitImpl &impl)
     {
       item->accept_vis (*this);
     }
-}
-
-void
-FeatureGate::visit (AST::Method &method)
-{
-  check_rustc_attri (method.get_outer_attrs ());
 }
 
 void

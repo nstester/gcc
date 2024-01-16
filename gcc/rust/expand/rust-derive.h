@@ -38,9 +38,9 @@ public:
 				       BuiltinMacro to_derive);
 
 protected:
-  DeriveVisitor (Location loc);
+  DeriveVisitor (location_t loc);
 
-  Location loc;
+  location_t loc;
   AstBuilder builder;
 
 private:
@@ -145,7 +145,6 @@ private:
   virtual void visit (TypeParam &param) override final{};
   virtual void visit (LifetimeWhereClauseItem &item) override final{};
   virtual void visit (TypeBoundWhereClauseItem &item) override final{};
-  virtual void visit (Method &method) override final{};
   virtual void visit (Module &module) override final{};
   virtual void visit (ExternCrate &crate) override final{};
   virtual void visit (UseTreeGlob &use_tree) override final{};
@@ -221,6 +220,9 @@ private:
   virtual void visit (SliceType &type) override final{};
   virtual void visit (InferredType &type) override final{};
   virtual void visit (BareFunctionType &type) override final{};
+  virtual void visit (SelfParam &param) override final{};
+  virtual void visit (FunctionParam &param) override final{};
+  virtual void visit (VariadicParam &param) override final{};
 };
 
 } // namespace AST

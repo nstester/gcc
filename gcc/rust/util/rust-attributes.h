@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with GCC; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
+#ifndef RUST_ATTRIBUTES_H
+#define RUST_ATTRIBUTES_H
 
 #include "rust-ast.h"
 #include "rust-system.h"
@@ -171,7 +173,6 @@ private:
   void visit (AST::TypeParam &param);
   void visit (AST::LifetimeWhereClauseItem &item);
   void visit (AST::TypeBoundWhereClauseItem &item);
-  void visit (AST::Method &method);
   void visit (AST::Module &module);
   void visit (AST::ExternCrate &crate);
   void visit (AST::UseTreeGlob &use_tree);
@@ -263,7 +264,12 @@ private:
   void visit (AST::SliceType &type);
   void visit (AST::InferredType &type);
   void visit (AST::BareFunctionType &type);
+  void visit (AST::FunctionParam &param);
+  void visit (AST::VariadicParam &param);
+  void visit (AST::SelfParam &param);
 };
 
 } // namespace Analysis
 } // namespace Rust
+
+#endif /* ! RUST_ATTRIBUTES_H */

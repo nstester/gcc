@@ -36,7 +36,7 @@ public:
   void visit (HIR::TypePathSegmentGeneric &generic);
 
 private:
-  TypeCheckResolveGenericArguments (Location locus)
+  TypeCheckResolveGenericArguments (location_t locus)
     : TypeCheckBase (), args (HIR::GenericArgs::create_empty (locus))
   {}
 
@@ -88,7 +88,7 @@ private:
     NodeId root_resolved_node_id, HirId expr_id,
     std::vector<std::unique_ptr<HIR::TypePathSegment>> &segments, size_t offset,
     TyTy::BaseType *tyseg, const Analysis::NodeMapping &expr_mappings,
-    Location expr_locus);
+    location_t expr_locus);
 
   TyTy::BaseType *translated;
 };
@@ -96,7 +96,8 @@ private:
 class TypeResolveGenericParam : public TypeCheckBase
 {
 public:
-  static TyTy::ParamType *Resolve (HIR::GenericParam *param);
+  static TyTy::ParamType *Resolve (HIR::GenericParam *param,
+				   bool apply_sized = true);
 
 protected:
   void visit (HIR::TypeParam &param);
@@ -104,9 +105,12 @@ protected:
   void visit (HIR::ConstGenericParam &param);
 
 private:
-  TypeResolveGenericParam () : TypeCheckBase (), resolved (nullptr) {}
+  TypeResolveGenericParam (bool apply_sized)
+    : TypeCheckBase (), resolved (nullptr), apply_sized (apply_sized)
+  {}
 
   TyTy::ParamType *resolved;
+  bool apply_sized;
 };
 
 class ResolveWhereClauseItem : public TypeCheckBase

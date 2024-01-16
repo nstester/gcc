@@ -1,3 +1,6 @@
+#[lang = "sized"]
+pub trait Sized {}
+
 struct S;
 trait A {
     fn foo(&self);
@@ -14,9 +17,9 @@ impl A for S {
 impl B for S {
     fn foo(&self) {}
 }
-
+// E0592
 fn test() {
     let a = S;
     a.foo();
-    // { dg-error "multiple candidates found for method .foo." "" { target *-*-* } .-1 }
+    // { dg-error "duplicate definitions with name .foo." "" { target *-*-* } .-1 }
 }

@@ -44,10 +44,15 @@ public:
   Bvariable (tree t, tree orig_type) : t_ (t), orig_type_ (orig_type) {}
 
   // Get the tree for use as an expression.
-  tree get_tree (Location) const;
+  tree get_tree (location_t) const;
 
   // Get the actual decl;
   tree get_decl () const { return this->t_; }
+
+  // Create an error variable.  This is used for cases which should
+  // not occur in a correct program, in order to keep the compilation
+  // going without crashing.
+  static Bvariable *error_variable ();
 
 private:
   tree t_;

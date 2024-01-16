@@ -22,46 +22,49 @@
 namespace Rust {
 namespace Compile {
 
-class CompilePatternCaseLabelExpr : public HIRCompileBase,
-				    public HIR::HIRPatternVisitor
+class CompilePatternCheckExpr : public HIRCompileBase,
+				public HIR::HIRPatternVisitor
 {
 public:
-  static tree Compile (HIR::Pattern *pattern, tree associated_case_label,
+  static tree Compile (HIR::Pattern *pattern, tree match_scrutinee_expr,
 		       Context *ctx)
   {
-    CompilePatternCaseLabelExpr compiler (ctx, associated_case_label);
+    CompilePatternCheckExpr compiler (ctx, match_scrutinee_expr);
     pattern->accept_vis (compiler);
-    return compiler.case_label_expr;
+    rust_assert (compiler.check_expr);
+    return compiler.check_expr;
   }
 
   void visit (HIR::PathInExpression &pattern) override;
-  void visit (HIR::StructPattern &pattern) override;
-  void visit (HIR::TupleStructPattern &pattern) override;
-  void visit (HIR::WildcardPattern &pattern) override;
+  void visit (HIR::LiteralPattern &) override;
   void visit (HIR::RangePattern &pattern) override;
+  void visit (HIR::ReferencePattern &) override;
+  void visit (HIR::AltPattern &) override;
+  void visit (HIR::StructPattern &) override;
+  void visit (HIR::TupleStructPattern &) override;
+  void visit (HIR::TuplePattern &) override;
 
-  // unsupported
-  void visit (HIR::AltPattern &pattern) override
+  // Always succeeds
+  void visit (HIR::IdentifierPattern &) override
   {
-    rust_sorry_at (pattern.get_locus (),
-		   "alternate pattern case labels not supported");
+    check_expr = boolean_true_node;
+  }
+  void visit (HIR::WildcardPattern &) override
+  {
+    check_expr = boolean_true_node;
   }
 
   // Empty visit for unused Pattern HIR nodes.
-  void visit (HIR::IdentifierPattern &) override {}
-  void visit (HIR::LiteralPattern &) override;
   void visit (HIR::QualifiedPathInExpression &) override {}
-  void visit (HIR::ReferencePattern &) override {}
   void visit (HIR::SlicePattern &) override {}
-  void visit (HIR::TuplePattern &) override {}
 
-  CompilePatternCaseLabelExpr (Context *ctx, tree associated_case_label)
-    : HIRCompileBase (ctx), case_label_expr (error_mark_node),
-      associated_case_label (associated_case_label)
+  CompilePatternCheckExpr (Context *ctx, tree match_scrutinee_expr)
+    : HIRCompileBase (ctx), match_scrutinee_expr (match_scrutinee_expr),
+      check_expr (NULL_TREE)
   {}
 
-  tree case_label_expr;
-  tree associated_case_label;
+  tree match_scrutinee_expr;
+  tree check_expr;
 };
 
 class CompilePatternBindings : public HIRCompileBase,
@@ -80,14 +83,8 @@ public:
   void visit (HIR::ReferencePattern &pattern) override;
   void visit (HIR::IdentifierPattern &) override;
 
-  // unsupported
-  void visit (HIR::AltPattern &pattern) override
-  {
-    rust_sorry_at (pattern.get_locus (),
-		   "alternate pattern bindings not supported");
-  }
-
   // Empty visit for unused Pattern HIR nodes.
+  void visit (HIR::AltPattern &) override {}
   void visit (HIR::LiteralPattern &) override {}
   void visit (HIR::PathInExpression &) override {}
   void visit (HIR::QualifiedPathInExpression &) override {}
@@ -108,7 +105,7 @@ class CompilePatternLet : public HIRCompileBase, public HIR::HIRPatternVisitor
 {
 public:
   static void Compile (HIR::Pattern *pattern, tree init_expr,
-		       TyTy::BaseType *ty, Location rval_locus, Context *ctx)
+		       TyTy::BaseType *ty, location_t rval_locus, Context *ctx)
   {
     CompilePatternLet compiler (ctx, init_expr, ty, rval_locus);
     pattern->accept_vis (compiler);
@@ -176,14 +173,14 @@ public:
 
 protected:
   CompilePatternLet (Context *ctx, tree init_expr, TyTy::BaseType *ty,
-		     Location rval_locus)
+		     location_t rval_locus)
     : HIRCompileBase (ctx), init_expr (init_expr), ty (ty),
       rval_locus (rval_locus)
   {}
 
   tree init_expr;
   TyTy::BaseType *ty;
-  Location rval_locus;
+  location_t rval_locus;
 };
 
 } // namespace Compile

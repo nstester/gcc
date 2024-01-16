@@ -21,6 +21,7 @@
 #include "rust-hir-expr.h"
 #include "rust-hir-stmt.h"
 #include "rust-hir-item.h"
+#include "rust-attribute-values.h"
 
 namespace Rust {
 namespace HIR {
@@ -39,7 +40,7 @@ UnsafeChecker::go (HIR::Crate &crate)
 }
 
 static void
-check_static_mut (HIR::Item *maybe_static, Location locus)
+check_static_mut (HIR::Item *maybe_static, location_t locus)
 {
   if (maybe_static->get_hir_kind () == Node::BaseKind::VIS_ITEM)
     {
@@ -55,7 +56,7 @@ check_static_mut (HIR::Item *maybe_static, Location locus)
 }
 
 static void
-check_extern_static (HIR::ExternalItem *maybe_static, Location locus)
+check_extern_static (HIR::ExternalItem *maybe_static, location_t locus)
 {
   if (maybe_static->get_extern_kind () == ExternalItem::ExternKind::Static)
     rust_error_at (locus,
@@ -63,7 +64,7 @@ check_extern_static (HIR::ExternalItem *maybe_static, Location locus)
 }
 
 void
-UnsafeChecker::check_use_of_static (HirId node_id, Location locus)
+UnsafeChecker::check_use_of_static (HirId node_id, location_t locus)
 {
   if (unsafe_context.is_in_context ())
     return;
@@ -83,10 +84,10 @@ UnsafeChecker::check_use_of_static (HirId node_id, Location locus)
 }
 
 static void
-check_unsafe_call (HIR::Function *fn, Location locus, const std::string &kind)
+check_unsafe_call (HIR::Function *fn, location_t locus, const std::string &kind)
 {
   if (fn->get_qualifiers ().is_unsafe ())
-    rust_error_at (locus, ErrorCode ("E0133"),
+    rust_error_at (locus, ErrorCode::E0133,
 		   "call to unsafe %s requires unsafe function or block",
 		   kind.c_str ());
 }
@@ -137,7 +138,7 @@ is_safe_intrinsic (const std::string &fn_name)
 
 static void
 check_extern_call (HIR::ExternalItem *maybe_fn, HIR::ExternBlock *parent_block,
-		   Location locus)
+		   location_t locus)
 {
   // We have multiple operations to perform here
   //     1. Is the item an actual function we're calling
@@ -161,7 +162,7 @@ check_extern_call (HIR::ExternalItem *maybe_fn, HIR::ExternBlock *parent_block,
 }
 
 void
-UnsafeChecker::check_function_call (HirId node_id, Location locus)
+UnsafeChecker::check_function_call (HirId node_id, location_t locus)
 {
   if (unsafe_context.is_in_context ())
     return;
@@ -181,12 +182,13 @@ UnsafeChecker::check_function_call (HirId node_id, Location locus)
 }
 
 static void
-check_target_attr (HIR::Function *fn, Location locus)
+check_target_attr (HIR::Function *fn, location_t locus)
 {
   if (std::any_of (fn->get_outer_attrs ().begin (),
 		   fn->get_outer_attrs ().end (),
 		   [] (const AST::Attribute &attr) {
-		     return attr.get_path ().as_string () == "target_feature";
+		     return attr.get_path ().as_string ()
+			    == Values::Attributes::TARGET_FEATURE;
 		   }))
     rust_error_at (locus,
 		   "call to function with %<#[target_feature]%> requires "
@@ -194,7 +196,7 @@ check_target_attr (HIR::Function *fn, Location locus)
 }
 
 void
-UnsafeChecker::check_function_attr (HirId node_id, Location locus)
+UnsafeChecker::check_function_attr (HirId node_id, location_t locus)
 {
   if (unsafe_context.is_in_context ())
     return;
@@ -325,8 +327,8 @@ UnsafeChecker::visit (AssignmentExpr &expr)
 void
 UnsafeChecker::visit (CompoundAssignmentExpr &expr)
 {
-  expr.get_left_expr ()->accept_vis (*this);
-  expr.get_right_expr ()->accept_vis (*this);
+  expr.get_lhs ()->accept_vis (*this);
+  expr.get_rhs ()->accept_vis (*this);
 }
 
 void
@@ -576,13 +578,6 @@ void
 UnsafeChecker::visit (WhileLetLoopExpr &expr)
 {
   expr.get_cond ()->accept_vis (*this);
-  expr.get_loop_block ()->accept_vis (*this);
-}
-
-void
-UnsafeChecker::visit (ForLoopExpr &expr)
-{
-  expr.get_iterator_expr ()->accept_vis (*this);
   expr.get_loop_block ()->accept_vis (*this);
 }
 
