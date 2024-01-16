@@ -34,7 +34,7 @@ UnsafeChecker::UnsafeChecker ()
 void
 UnsafeChecker::go (HIR::Crate &crate)
 {
-  for (auto &item : crate.items)
+  for (auto &item : crate.get_items ())
     item->accept_vis (*this);
 }
 
@@ -86,7 +86,8 @@ static void
 check_unsafe_call (HIR::Function *fn, Location locus, const std::string &kind)
 {
   if (fn->get_qualifiers ().is_unsafe ())
-    rust_error_at (locus, "call to unsafe %s requires unsafe function or block",
+    rust_error_at (locus, ErrorCode ("E0133"),
+		   "call to unsafe %s requires unsafe function or block",
 		   kind.c_str ());
 }
 
@@ -152,7 +153,7 @@ check_extern_call (HIR::ExternalItem *maybe_fn, HIR::ExternBlock *parent_block,
 
   // Some intrinsics are safe to call
   if (parent_block->get_abi () == Rust::ABI::INTRINSIC
-      && is_safe_intrinsic (maybe_fn->get_item_name ()))
+      && is_safe_intrinsic (maybe_fn->get_item_name ().as_string ()))
     return;
 
   rust_error_at (locus,
@@ -407,11 +408,10 @@ UnsafeChecker::visit (StructExprStructBase &)
 void
 UnsafeChecker::visit (CallExpr &expr)
 {
-  auto fn = expr.get_fnexpr ();
-  if (!fn)
+  if (!expr.get_fnexpr ())
     return;
 
-  NodeId ast_node_id = fn->get_mappings ().get_nodeid ();
+  NodeId ast_node_id = expr.get_fnexpr ()->get_mappings ().get_nodeid ();
   NodeId ref_node_id;
   HirId definition_id;
 
@@ -888,13 +888,7 @@ UnsafeChecker::visit (LetStmt &stmt)
 }
 
 void
-UnsafeChecker::visit (ExprStmtWithoutBlock &stmt)
-{
-  stmt.get_expr ()->accept_vis (*this);
-}
-
-void
-UnsafeChecker::visit (ExprStmtWithBlock &stmt)
+UnsafeChecker::visit (ExprStmt &stmt)
 {
   stmt.get_expr ()->accept_vis (*this);
 }

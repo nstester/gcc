@@ -35,7 +35,8 @@
 #include "rust-cfg-parser.h"
 #include "rust-privacy-ctx.h"
 #include "rust-ast-resolve-item.h"
-#include "rust-optional.h"
+#include "rust-lex.h"
+#include "optional.h"
 
 #include <mpfr.h>
 // note: header files must be in this order or else forward declarations don't
@@ -159,6 +160,8 @@ grs_langhook_init_options_struct (struct gcc_options *opts)
   opts->x_warn_unused_const_variable = 1;
   /* And finally unused result for #[must_use] */
   opts->x_warn_unused_result = 1;
+  /* lets warn for infinite recursion*/
+  opts->x_warn_infinite_recursion = 1;
 
   // nothing yet - used by frontends to change specific options for the language
   Rust::Session::get_instance ().init_options ();
@@ -233,18 +236,18 @@ grs_langhook_type_for_mode (machine_mode mode, int unsignedp)
   /* See (a) <https://github.com/Rust-GCC/gccrs/issues/1713>
      "Test failure on msp430-elfbare target", and
      (b) <https://gcc.gnu.org/PR46805>
-     "ICE: SIGSEGV in optab_for_tree_code (optabs.c:407) with -O -fno-tree-scev-cprop -ftree-vectorize"
+     "ICE: SIGSEGV in optab_for_tree_code (optabs.c:407) with -O
+     -fno-tree-scev-cprop -ftree-vectorize"
      -- we have to support "random" modes/types here.
      TODO Clean all this up (either locally, or preferably per PR46805:
-     "Ideally we'd never use lang_hooks.types.type_for_mode (or _for_size) in the
-     middle-end but had a pure middle-end based implementation".  */
-  for (size_t i = 0; i < NUM_INT_N_ENTS; i ++)
-    if (int_n_enabled_p[i]
-	&& mode == int_n_data[i].m)
+     "Ideally we'd never use lang_hooks.types.type_for_mode (or _for_size) in
+     the middle-end but had a pure middle-end based implementation".  */
+  for (size_t i = 0; i < NUM_INT_N_ENTS; i++)
+    if (int_n_enabled_p[i] && mode == int_n_data[i].m)
       return (unsignedp ? int_n_trees[i].unsigned_type
-	      : int_n_trees[i].signed_type);
+			: int_n_trees[i].signed_type);
 
-  /* gcc_unreachable */
+  /* rust_unreachable */
   return NULL;
 }
 
@@ -261,7 +264,7 @@ static bool
 grs_langhook_global_bindings_p (void)
 {
   // return current_function_decl == NULL_TREE;
-  // gcc_unreachable();
+  // rust_unreachable();
   // return true;
   return false;
 }
@@ -275,7 +278,7 @@ grs_langhook_global_bindings_p (void)
 static tree
 grs_langhook_pushdecl (tree decl ATTRIBUTE_UNUSED)
 {
-  gcc_unreachable ();
+  rust_unreachable ();
   return NULL;
 }
 
@@ -285,7 +288,7 @@ grs_langhook_pushdecl (tree decl ATTRIBUTE_UNUSED)
 static tree
 grs_langhook_getdecls (void)
 {
-  // gcc_unreachable();
+  // rust_unreachable();
   return NULL;
 }
 
@@ -374,7 +377,7 @@ convert (tree type, tree expr)
       break;
     }
 
-  gcc_unreachable ();
+  rust_unreachable ();
 }
 
 /* FIXME: This is a hack to preserve trees that we create from the
@@ -447,11 +450,11 @@ void
 run_rust_tests ()
 {
   // Call tests for the rust frontend here
+  rust_input_source_test ();
   rust_cfg_parser_test ();
   rust_privacy_ctx_test ();
   rust_crate_name_validation_test ();
   rust_simple_path_resolve_test ();
-  rust_optional_test ();
 }
 } // namespace selftest
 

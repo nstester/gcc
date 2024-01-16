@@ -1131,7 +1131,7 @@ base_field_constructor_elt (vec<constructor_elt, va_gc> *v, tree ref)
     if (ce->index == field)
       return ce;
 
-  gcc_unreachable ();
+  rust_unreachable ();
   return NULL;
 }
 
@@ -1617,7 +1617,7 @@ eval_array_reference (const constexpr_ctx *ctx, tree t, bool lval,
       /* We can't do anything with other tree codes, so use
 	 VERIFY_CONSTANT to complain and fail.  */
       VERIFY_CONSTANT (ary);
-      gcc_unreachable ();
+      rust_unreachable ();
     }
 
   bool found;
@@ -1854,7 +1854,7 @@ label_matches (const constexpr_ctx *ctx, tree *jump_target, tree stmt)
       break;
 
     default:
-      gcc_unreachable ();
+      rust_unreachable ();
     }
   return false;
 }
@@ -1912,7 +1912,7 @@ eval_constant_expression (const constexpr_ctx *ctx, tree t, bool lval,
   if (++ctx->global->constexpr_ops_count >= constexpr_ops_limit)
     {
       rust_error_at (
-	Location (loc),
+	loc,
 	"%<constexpr%> evaluation operation count exceeds limit of "
 	"%wd (use %<-fconstexpr-ops-limit=%> to increase the limit)",
 	constexpr_ops_limit);
@@ -2247,7 +2247,6 @@ eval_constant_expression (const constexpr_ctx *ctx, tree t, bool lval,
 	/* Don't VERIFY_CONSTANT here.  */
 	if (*non_constant_p)
 	  return t;
-	gcc_checking_assert (TREE_CODE (op) != CONSTRUCTOR);
 	/* This function does more aggressive folding than fold itself.  */
 	r = build_fold_addr_expr_with_type (op, TREE_TYPE (t));
 	if (TREE_CODE (r) == ADDR_EXPR && TREE_OPERAND (r, 0) == oldop)
@@ -2695,7 +2694,7 @@ eval_store_expression (const constexpr_ctx *ctx, tree t, bool lval,
 	    if (TREE_CODE (probe) == ARRAY_REF)
 	      {
 		// TODO
-		gcc_unreachable ();
+		rust_unreachable ();
 		// elt = eval_and_check_array_index (ctx, probe, false,
 		// 				  non_constant_p, overflow_p);
 		if (*non_constant_p)
@@ -3372,7 +3371,7 @@ eval_call_expression (const constexpr_ctx *ctx, tree t, bool lval,
     {
       // return cxx_eval_internal_function (ctx, t, lval,
       //     			       non_constant_p, overflow_p);
-      gcc_unreachable ();
+      rust_unreachable ();
       return error_mark_node;
     }
 
@@ -3831,7 +3830,8 @@ build_data_member_initialization (tree t, vec<constructor_elt, va_gc> **vec)
 	member = TREE_OPERAND (member, 1);
       else if (ANON_AGGR_TYPE_P (TREE_TYPE (aggr)))
 	/* Initializing a member of an anonymous union.  */
-	rust_sorry_at (Location (), "cannot handle value initialization yet");
+	rust_sorry_at (UNDEF_LOCATION,
+		       "cannot handle value initialization yet");
       // return build_anon_member_initialization (member, init, vec);
       else
 	/* We're initializing a vtable pointer in a base.  Leave it as
@@ -3842,10 +3842,10 @@ build_data_member_initialization (tree t, vec<constructor_elt, va_gc> **vec)
   /* Value-initialization can produce multiple initializers for the
      same field; use the last one.  */
   if (!vec_safe_is_empty (*vec) && (*vec)->last ().index == member)
-    rust_sorry_at (Location (), "cannot handle value initialization yet");
+    rust_sorry_at (UNDEF_LOCATION, "cannot handle value initialization yet");
   // (*vec)->last ().value = init;
   else
-    rust_sorry_at (Location (), "cannot handle value initialization yet");
+    rust_sorry_at (UNDEF_LOCATION, "cannot handle value initialization yet");
   // CONSTRUCTOR_APPEND_ELT (*vec, member, init);
   return true;
 }
@@ -3875,7 +3875,7 @@ build_data_member_initialization (tree t, vec<constructor_elt, va_gc> **vec)
 //	goto found;
 //
 //      default:
-//	gcc_unreachable ();
+//	rust_unreachable ();
 //      }
 // found:
 //
@@ -4142,7 +4142,7 @@ array_index_cmp (tree key, tree index)
 	  return 0;
       }
     default:
-      gcc_unreachable ();
+      rust_unreachable ();
     }
 }
 
@@ -4434,7 +4434,7 @@ get_array_or_vector_nelts (const constexpr_ctx *ctx, tree type,
   else if (VECTOR_TYPE_P (type))
     nelts = size_int (TYPE_VECTOR_SUBPARTS (type));
   else
-    gcc_unreachable ();
+    rust_unreachable ();
 
   /* For VLAs, the number of elements won't be an integer constant.  */
   nelts
@@ -4522,7 +4522,7 @@ is_valid_constexpr_fn (tree fun, bool complain)
 	    // error ("invalid type for parameter %d of %<constexpr%> "
 	    //        "function %q+#D",
 	    //        DECL_PARM_INDEX (parm), fun);
-	    Location locus = Location (DECL_SOURCE_LOCATION (fun));
+	    Location locus = DECL_SOURCE_LOCATION (fun);
 	    rust_error_at (
 	      locus, "invalid type for parameter %d of %<constexpr%> function",
 	      DECL_PARM_INDEX (parm));
@@ -4786,7 +4786,7 @@ eval_bit_field_ref (const constexpr_ctx *ctx, tree t, bool lval,
     }
   if (fld_seen)
     return fold_convert (TREE_TYPE (t), retval);
-  gcc_unreachable ();
+  rust_unreachable ();
   return error_mark_node;
 }
 
@@ -4875,7 +4875,7 @@ eval_loop_expr (const constexpr_ctx *ctx, tree t, bool *non_constant_p,
       count = -1;
       break;
     default:
-      gcc_unreachable ();
+      rust_unreachable ();
     }
   auto_vec<tree, 10> save_exprs;
   new_ctx.save_exprs = &save_exprs;
@@ -6431,7 +6431,7 @@ potential_constant_expression_1 (tree t, bool want_rval, bool strict, bool now,
 
     default:
       sorry ("unexpected AST of kind %s", get_tree_code_name (TREE_CODE (t)));
-      gcc_unreachable ();
+      rust_unreachable ();
       return false;
     }
 #undef RECUR

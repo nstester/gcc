@@ -136,6 +136,12 @@ TypeCheckContext::lookup_type_by_node_id (NodeId ref, HirId *id)
   return true;
 }
 
+bool
+TypeCheckContext::have_function_context () const
+{
+  return !return_type_stack.empty ();
+}
+
 TyTy::BaseType *
 TypeCheckContext::peek_return_type ()
 {
@@ -157,7 +163,7 @@ TypeCheckContext::pop_return_type ()
   return_type_stack.pop_back ();
 }
 
-TypeCheckContextItem &
+TypeCheckContextItem
 TypeCheckContext::peek_context ()
 {
   rust_assert (!return_type_stack.empty ());
@@ -519,6 +525,71 @@ TypeCheckContextItem::TypeCheckContextItem (HIR::TraitItemFunc *trait_item)
   : type (ItemType::TRAIT_ITEM), item (trait_item)
 {}
 
+TypeCheckContextItem::TypeCheckContextItem (const TypeCheckContextItem &other)
+  : type (other.type), item (other.item)
+{
+  switch (other.type)
+    {
+    case ITEM:
+      item.item = other.item.item;
+      break;
+
+    case IMPL_ITEM:
+      item.impl_item = other.item.impl_item;
+      break;
+
+    case TRAIT_ITEM:
+      item.trait_item = other.item.trait_item;
+      break;
+
+    case ERROR:
+      item.item = nullptr;
+      break;
+    }
+}
+
+TypeCheckContextItem::TypeCheckContextItem ()
+  : type (ItemType::ERROR), item (static_cast<HIR::Function *> (nullptr))
+{}
+
+TypeCheckContextItem &
+TypeCheckContextItem::operator= (const TypeCheckContextItem &other)
+{
+  type = other.type;
+  switch (other.type)
+    {
+    case ITEM:
+      item.item = other.item.item;
+      break;
+
+    case IMPL_ITEM:
+      item.impl_item = other.item.impl_item;
+      break;
+
+    case TRAIT_ITEM:
+      item.trait_item = other.item.trait_item;
+      break;
+
+    case ERROR:
+      item.item = nullptr;
+      break;
+    }
+
+  return *this;
+}
+
+TypeCheckContextItem
+TypeCheckContextItem::get_error ()
+{
+  return TypeCheckContextItem ();
+}
+
+bool
+TypeCheckContextItem::is_error () const
+{
+  return type == ERROR;
+}
+
 HIR::Function *
 TypeCheckContextItem::get_item ()
 {
@@ -565,6 +636,10 @@ TypeCheckContextItem::get_context_type ()
     case TRAIT_ITEM:
       reference = get_trait_item ()->get_mappings ().get_hirid ();
       break;
+
+    case ERROR:
+      rust_unreachable ();
+      return nullptr;
     }
 
   rust_assert (reference != UNKNOWN_HIRID);
@@ -574,6 +649,27 @@ TypeCheckContextItem::get_context_type ()
   rust_assert (ok);
   rust_assert (lookup->get_kind () == TyTy::TypeKind::FNDEF);
   return static_cast<TyTy::FnType *> (lookup);
+}
+
+DefId
+TypeCheckContextItem::get_defid () const
+{
+  switch (get_type ())
+    {
+    case ITEM:
+      return item.item->get_mappings ().get_defid ();
+
+    case IMPL_ITEM:
+      return item.impl_item.second->get_mappings ().get_defid ();
+
+    case TRAIT_ITEM:
+      return item.trait_item->get_mappings ().get_defid ();
+
+    case ERROR:
+      return UNKNOWN_DEFID;
+    }
+
+  return UNKNOWN_DEFID;
 }
 
 } // namespace Resolver

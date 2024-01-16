@@ -87,6 +87,9 @@ void
 ASTLoweringBase::visit (AST::AttrInputLiteral &)
 {}
 void
+ASTLoweringBase::visit (AST::AttrInputMacro &)
+{}
+void
 ASTLoweringBase::visit (AST::MetaItemLitExpr &)
 {}
 void
@@ -230,22 +233,10 @@ void
 ASTLoweringBase::visit (AST::IfExprConseqElse &)
 {}
 void
-ASTLoweringBase::visit (AST::IfExprConseqIf &)
-{}
-void
-ASTLoweringBase::visit (AST::IfExprConseqIfLet &)
-{}
-void
 ASTLoweringBase::visit (AST::IfLetExpr &)
 {}
 void
 ASTLoweringBase::visit (AST::IfLetExprConseqElse &)
-{}
-void
-ASTLoweringBase::visit (AST::IfLetExprConseqIf &)
-{}
-void
-ASTLoweringBase::visit (AST::IfLetExprConseqIfLet &)
 {}
 //  void ASTLoweringBase::visit(MatchCasematch_case) {}
 // void ASTLoweringBase:: (AST::MatchCaseBlockExpr &) {}
@@ -479,10 +470,7 @@ void
 ASTLoweringBase::visit (AST::LetStmt &)
 {}
 void
-ASTLoweringBase::visit (AST::ExprStmtWithoutBlock &)
-{}
-void
-ASTLoweringBase::visit (AST::ExprStmtWithBlock &)
+ASTLoweringBase::visit (AST::ExprStmt &)
 {}
 
 // rust-type.h
@@ -633,7 +621,7 @@ ASTLoweringBase::lower_generic_args (AST::GenericArgs &args)
 	    break;
 	  }
 	default:
-	  gcc_unreachable ();
+	  rust_unreachable ();
 	}
     }
 
@@ -687,12 +675,15 @@ struct_field_name_exists (std::vector<HIR::StructField> &fields,
 {
   for (auto &field : fields)
     {
-      if (field.get_field_name ().compare (new_field.get_field_name ()) == 0)
+      if (field.get_field_name ().as_string ().compare (
+	    new_field.get_field_name ().as_string ())
+	  == 0)
 	{
-	  RichLocation r (new_field.get_locus ());
+	  rich_location r (line_table, new_field.get_locus ());
 	  r.add_range (field.get_locus ());
-	  rust_error_at (r, "duplicate field name %qs",
-			 field.get_field_name ().c_str ());
+	  rust_error_at (r, ErrorCode ("E0124"),
+			 "field %qs is already declared",
+			 field.get_field_name ().as_string ().c_str ());
 	  return true;
 	}
     }
@@ -922,7 +913,7 @@ ASTLoweringBase::lower_literal (const AST::Literal &literal)
       type = HIR::Literal::LitType::BOOL;
       break;
     case AST::Literal::LitType::ERROR:
-      gcc_unreachable ();
+      rust_unreachable ();
       break;
     }
 
@@ -968,6 +959,22 @@ ASTLoweringBase::lower_extern_block (AST::ExternBlock &extern_block)
   mappings->insert_hir_extern_block (hir_extern_block);
 
   return hir_extern_block;
+}
+
+void
+ASTLoweringBase::lower_macro_definition (AST::MacroRulesDefinition &def)
+{
+  auto is_export = false;
+  for (const auto &attr : def.get_outer_attrs ())
+    if (attr.get_path ().as_string () == "macro_export")
+      is_export = true;
+
+  if (is_export)
+    {
+      mappings->insert_exported_macro (def);
+      mappings->insert_ast_item (&def);
+      mappings->insert_location (def.get_node_id (), def.get_locus ());
+    }
 }
 
 } // namespace HIR

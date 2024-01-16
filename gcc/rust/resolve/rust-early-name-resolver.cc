@@ -19,9 +19,57 @@
 #include "rust-early-name-resolver.h"
 #include "rust-ast-full.h"
 #include "rust-name-resolver.h"
+#include "rust-macro-builtins.h"
 
 namespace Rust {
 namespace Resolver {
+
+// Check if a module contains the `#[macro_use]` attribute
+static bool
+is_macro_use_module (const AST::Module &mod)
+{
+  for (const auto &attr : mod.get_outer_attrs ())
+    if (attr.get_path ().as_string () == "macro_use")
+      return true;
+
+  return false;
+}
+
+std::vector<std::unique_ptr<AST::Item>>
+EarlyNameResolver::accumulate_escaped_macros (AST::Module &module)
+{
+  if (!is_macro_use_module (module))
+    return {};
+
+  // Parse the module's items if they haven't been expanded and the file
+  // should be parsed (i.e isn't hidden behind an untrue or impossible cfg
+  // directive)
+  if (module.get_kind () == AST::Module::UNLOADED)
+    module.load_items ();
+
+  std::vector<std::unique_ptr<AST::Item>> escaped_macros;
+
+  scoped (module.get_node_id (), [&module, &escaped_macros, this] {
+    for (auto &item : module.get_items ())
+      {
+	if (item->get_ast_kind () == AST::Kind::MODULE)
+	  {
+	    auto &module = *static_cast<AST::Module *> (item.get ());
+	    auto new_macros = accumulate_escaped_macros (module);
+
+	    std::move (new_macros.begin (), new_macros.end (),
+		       std::back_inserter (escaped_macros));
+
+	    continue;
+	  }
+
+	if (item->get_ast_kind () == AST::Kind::MACRO_RULES_DEFINITION)
+	  escaped_macros.emplace_back (item->clone_item ());
+      }
+  });
+
+  return escaped_macros;
+}
 
 EarlyNameResolver::EarlyNameResolver ()
   : current_scope (UNKNOWN_NODEID), resolver (*Resolver::get ()),
@@ -31,6 +79,26 @@ EarlyNameResolver::EarlyNameResolver ()
 void
 EarlyNameResolver::go (AST::Crate &crate)
 {
+  std::vector<std::unique_ptr<AST::Item>> new_items;
+  auto items = crate.take_items ();
+
+  scoped (crate.get_node_id (), [&items, &new_items, this] {
+    for (auto &&item : items)
+      {
+	auto new_macros = std::vector<std::unique_ptr<AST::Item>> ();
+
+	if (item->get_ast_kind () == AST::Kind::MODULE)
+	  new_macros = accumulate_escaped_macros (
+	    *static_cast<AST::Module *> (item.get ()));
+
+	new_items.emplace_back (std::move (item));
+	std::move (new_macros.begin (), new_macros.end (),
+		   std::back_inserter (new_items));
+      }
+  });
+
+  crate.set_items (std::move (new_items));
+
   scoped (crate.get_node_id (), [&crate, this] () {
     for (auto &item : crate.items)
       item->accept_vis (*this);
@@ -146,6 +214,10 @@ EarlyNameResolver::visit (AST::LiteralExpr &)
 
 void
 EarlyNameResolver::visit (AST::AttrInputLiteral &)
+{}
+
+void
+EarlyNameResolver::visit (AST::AttrInputMacro &)
 {}
 
 void
@@ -457,22 +529,6 @@ EarlyNameResolver::visit (AST::IfExprConseqElse &expr)
 }
 
 void
-EarlyNameResolver::visit (AST::IfExprConseqIf &expr)
-{
-  expr.get_condition_expr ()->accept_vis (*this);
-  expr.get_if_block ()->accept_vis (*this);
-  expr.get_conseq_if_expr ()->accept_vis (*this);
-}
-
-void
-EarlyNameResolver::visit (AST::IfExprConseqIfLet &expr)
-{
-  expr.get_condition_expr ()->accept_vis (*this);
-  expr.get_if_block ()->accept_vis (*this);
-  expr.get_conseq_if_let_expr ()->accept_vis (*this);
-}
-
-void
 EarlyNameResolver::visit (AST::IfLetExpr &expr)
 {
   expr.get_value_expr ()->accept_vis (*this);
@@ -487,22 +543,6 @@ EarlyNameResolver::visit (AST::IfLetExprConseqElse &expr)
   expr.get_value_expr ()->accept_vis (*this);
   expr.get_if_block ()->accept_vis (*this);
   expr.get_else_block ()->accept_vis (*this);
-}
-
-void
-EarlyNameResolver::visit (AST::IfLetExprConseqIf &expr)
-{
-  expr.get_value_expr ()->accept_vis (*this);
-  expr.get_if_block ()->accept_vis (*this);
-  expr.get_conseq_if_expr ()->accept_vis (*this);
-}
-
-void
-EarlyNameResolver::visit (AST::IfLetExprConseqIfLet &expr)
-{
-  expr.get_value_expr ()->accept_vis (*this);
-  expr.get_if_block ()->accept_vis (*this);
-  expr.get_conseq_if_let_expr ()->accept_vis (*this);
 }
 
 void
@@ -581,11 +621,31 @@ EarlyNameResolver::visit (AST::Method &method)
 void
 EarlyNameResolver::visit (AST::Module &module)
 {
-  // Parse the module's items if they haven't been expanded and the file
-  // should be parsed (i.e isn't hidden behind an untrue or impossible cfg
-  // directive)
   if (module.get_kind () == AST::Module::UNLOADED)
     module.load_items ();
+
+  // so we need to only go "one scope down" for fetching macros. Macros within
+  // functions are still scoped only within that function. But we have to be
+  // careful because nested modules with #[macro_use] actually works!
+  std::vector<std::unique_ptr<AST::Item>> new_items;
+  auto items = module.take_items ();
+
+  scoped (module.get_node_id (), [&items, &new_items, this] {
+    for (auto &&item : items)
+      {
+	auto new_macros = std::vector<std::unique_ptr<AST::Item>> ();
+
+	if (item->get_ast_kind () == AST::Kind::MODULE)
+	  new_macros = accumulate_escaped_macros (
+	    *static_cast<AST::Module *> (item.get ()));
+
+	new_items.emplace_back (std::move (item));
+	std::move (new_macros.begin (), new_macros.end (),
+		   std::back_inserter (new_items));
+      }
+  });
+
+  module.set_items (std::move (new_items));
 
   scoped (module.get_node_id (), [&module, this] () {
     for (auto &item : module.get_items ())
@@ -654,20 +714,34 @@ EarlyNameResolver::visit (AST::EnumItem &)
 {}
 
 void
-EarlyNameResolver::visit (AST::EnumItemTuple &)
-{}
+EarlyNameResolver::visit (AST::EnumItemTuple &item)
+{
+  for (auto &field : item.get_tuple_fields ())
+    field.get_field_type ()->accept_vis (*this);
+}
 
 void
-EarlyNameResolver::visit (AST::EnumItemStruct &)
-{}
+EarlyNameResolver::visit (AST::EnumItemStruct &item)
+{
+  for (auto &field : item.get_struct_fields ())
+    field.get_field_type ()->accept_vis (*this);
+}
 
 void
-EarlyNameResolver::visit (AST::EnumItemDiscriminant &)
-{}
+EarlyNameResolver::visit (AST::EnumItemDiscriminant &item)
+{
+  item.get_expr ()->accept_vis (*this);
+}
 
 void
-EarlyNameResolver::visit (AST::Enum &)
-{}
+EarlyNameResolver::visit (AST::Enum &enum_item)
+{
+  for (auto &generic : enum_item.get_generic_params ())
+    generic->accept_vis (*this);
+
+  for (auto &variant : enum_item.get_variants ())
+    variant->accept_vis (*this);
+}
 
 void
 EarlyNameResolver::visit (AST::Union &)
@@ -827,7 +901,7 @@ void
 EarlyNameResolver::visit (AST::MacroRulesDefinition &rules_def)
 {
   auto path = CanonicalPath::new_seg (rules_def.get_node_id (),
-				      rules_def.get_rule_name ());
+				      rules_def.get_rule_name ().as_string ());
   resolver.get_macro_scope ().insert (path, rules_def.get_node_id (),
 				      rules_def.get_locus ());
 
@@ -905,7 +979,7 @@ EarlyNameResolver::visit (AST::MacroInvocation &invoc)
   if (is_builtin)
     {
       auto builtin_kind
-	= AST::builtin_macro_from_string (rules_def->get_rule_name ());
+	= builtin_macro_from_string (rules_def->get_rule_name ().as_string ());
       invoc.map_to_builtin (builtin_kind);
     }
 
@@ -1093,13 +1167,7 @@ EarlyNameResolver::visit (AST::LetStmt &stmt)
 }
 
 void
-EarlyNameResolver::visit (AST::ExprStmtWithoutBlock &stmt)
-{
-  stmt.get_expr ()->accept_vis (*this);
-}
-
-void
-EarlyNameResolver::visit (AST::ExprStmtWithBlock &stmt)
+EarlyNameResolver::visit (AST::ExprStmt &stmt)
 {
   stmt.get_expr ()->accept_vis (*this);
 }

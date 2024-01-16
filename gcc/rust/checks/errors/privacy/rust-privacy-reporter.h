@@ -151,15 +151,14 @@ types
   virtual void visit (HIR::ExternBlock &block);
   virtual void visit (HIR::EmptyStmt &stmt);
   virtual void visit (HIR::LetStmt &stmt);
-  virtual void visit (HIR::ExprStmtWithoutBlock &stmt);
-  virtual void visit (HIR::ExprStmtWithBlock &stmt);
+  virtual void visit (HIR::ExprStmt &stmt);
 
   Analysis::Mappings &mappings;
   Rust::Resolver::Resolver &resolver;
   const Rust::Resolver::TypeCheckContext &ty_ctx;
 
   // `None` means we're in the root module - the crate
-  Optional<NodeId> current_module;
+  tl::optional<NodeId> current_module;
 };
 
 } // namespace Privacy

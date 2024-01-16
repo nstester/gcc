@@ -62,9 +62,7 @@ ResolvePath::resolve_path (AST::PathInExpression *expr)
       bool in_middle_of_path = i > 0;
       if (in_middle_of_path && segment.is_lower_self_seg ())
 	{
-	  // error[E0433]: failed to resolve: `self` in paths can only be used
-	  // in start position
-	  rust_error_at (segment.get_locus (),
+	  rust_error_at (segment.get_locus (), ErrorCode ("E0433"),
 			 "failed to resolve: %<%s%> in paths can only be used "
 			 "in start position",
 			 segment.as_string ().c_str ());
@@ -166,10 +164,10 @@ ResolvePath::resolve_path (AST::PathInExpression *expr)
       if (resolved_node_id == UNKNOWN_NODEID
 	  && previous_resolved_node_id == module_scope_id)
 	{
-	  Optional<CanonicalPath &> resolved_child
+	  tl::optional<CanonicalPath &> resolved_child
 	    = mappings->lookup_module_child (module_scope_id,
 					     ident_seg.as_string ());
-	  if (resolved_child.is_some ())
+	  if (resolved_child.has_value ())
 	    {
 	      NodeId resolved_node = resolved_child->get_node_id ();
 	      if (resolver->get_name_scope ().decl_was_declared_here (
@@ -208,7 +206,7 @@ ResolvePath::resolve_path (AST::PathInExpression *expr)
 	}
       else if (is_first_segment)
 	{
-	  rust_error_at (segment.get_locus (),
+	  rust_error_at (segment.get_locus (), ErrorCode ("E0433"),
 			 "Cannot find path %<%s%> in this scope",
 			 segment.as_string ().c_str ());
 	  return UNKNOWN_NODEID;
@@ -233,7 +231,7 @@ ResolvePath::resolve_path (AST::PathInExpression *expr)
 	}
       else
 	{
-	  gcc_unreachable ();
+	  rust_unreachable ();
 	}
     }
   return resolved_node_id;
@@ -283,6 +281,8 @@ ResolvePath::resolve_path (AST::SimplePath *expr)
 	  previous_resolved_node_id = module_scope_id;
 	  resolver->insert_resolved_name (segment.get_node_id (),
 					  module_scope_id);
+	  resolved_node_id = module_scope_id;
+
 	  continue;
 	}
       else if (segment.is_super_path_seg ())
@@ -298,13 +298,15 @@ ResolvePath::resolve_path (AST::SimplePath *expr)
 	  previous_resolved_node_id = module_scope_id;
 	  resolver->insert_resolved_name (segment.get_node_id (),
 					  module_scope_id);
+	  resolved_node_id = module_scope_id;
+
 	  continue;
 	}
 
-      Optional<CanonicalPath &> resolved_child
+      tl::optional<CanonicalPath &> resolved_child
 	= mappings->lookup_module_child (module_scope_id,
 					 segment.get_segment_name ());
-      if (resolved_child.is_some ())
+      if (resolved_child.has_value ())
 	{
 	  NodeId resolved_node = resolved_child->get_node_id ();
 	  if (resolver->get_name_scope ().decl_was_declared_here (
@@ -405,7 +407,7 @@ ResolvePath::resolve_path (AST::SimplePath *expr)
 	}
       else
 	{
-	  gcc_unreachable ();
+	  rust_unreachable ();
 	}
     }
   return resolved_node_id;

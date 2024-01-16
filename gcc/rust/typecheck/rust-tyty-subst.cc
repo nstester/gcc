@@ -21,7 +21,7 @@
 #include "rust-hir-type-check.h"
 #include "rust-substitution-mapper.h"
 #include "rust-hir-type-check-type.h"
-#include "rust-hir-type-bounds.h"
+#include "rust-type-util.h"
 
 namespace Rust {
 namespace TyTy {
@@ -168,10 +168,14 @@ SubstitutionParamMapping::override_context ()
 SubstitutionArg::SubstitutionArg (const SubstitutionParamMapping *param,
 				  BaseType *argument)
   : param (param), argument (argument)
-{}
+{
+  if (param != nullptr)
+    original_param = param->get_param_ty ();
+}
 
 SubstitutionArg::SubstitutionArg (const SubstitutionArg &other)
-  : param (other.param), argument (other.argument)
+  : param (other.param), original_param (other.original_param),
+    argument (other.argument)
 {}
 
 SubstitutionArg &
@@ -179,6 +183,8 @@ SubstitutionArg::operator= (const SubstitutionArg &other)
 {
   param = other.param;
   argument = other.argument;
+  original_param = other.original_param;
+
   return *this;
 }
 
@@ -198,6 +204,12 @@ const SubstitutionParamMapping *
 SubstitutionArg::get_param_mapping () const
 {
   return param;
+}
+
+const ParamType *
+SubstitutionArg::get_param_ty () const
+{
+  return original_param;
 }
 
 SubstitutionArg
@@ -227,7 +239,7 @@ SubstitutionArg::is_conrete () const
 std::string
 SubstitutionArg::as_string () const
 {
-  return param->as_string ()
+  return original_param->as_string ()
 	 + (argument != nullptr ? ":" + argument->as_string () : "");
 }
 
@@ -236,16 +248,17 @@ SubstitutionArg::as_string () const
 SubstitutionArgumentMappings::SubstitutionArgumentMappings (
   std::vector<SubstitutionArg> mappings,
   std::map<std::string, BaseType *> binding_args, Location locus,
-  ParamSubstCb param_subst_cb, bool trait_item_flag)
+  ParamSubstCb param_subst_cb, bool trait_item_flag, bool error_flag)
   : mappings (mappings), binding_args (binding_args), locus (locus),
-    param_subst_cb (param_subst_cb), trait_item_flag (trait_item_flag)
+    param_subst_cb (param_subst_cb), trait_item_flag (trait_item_flag),
+    error_flag (error_flag)
 {}
 
 SubstitutionArgumentMappings::SubstitutionArgumentMappings (
   const SubstitutionArgumentMappings &other)
   : mappings (other.mappings), binding_args (other.binding_args),
     locus (other.locus), param_subst_cb (nullptr),
-    trait_item_flag (other.trait_item_flag)
+    trait_item_flag (other.trait_item_flag), error_flag (other.error_flag)
 {}
 
 SubstitutionArgumentMappings &
@@ -257,6 +270,7 @@ SubstitutionArgumentMappings::operator= (
   locus = other.locus;
   param_subst_cb = nullptr;
   trait_item_flag = other.trait_item_flag;
+  error_flag = other.error_flag;
 
   return *this;
 }
@@ -264,13 +278,21 @@ SubstitutionArgumentMappings::operator= (
 SubstitutionArgumentMappings
 SubstitutionArgumentMappings::error ()
 {
-  return SubstitutionArgumentMappings ({}, {}, Location (), nullptr, false);
+  return SubstitutionArgumentMappings ({}, {}, UNDEF_LOCATION, nullptr, false,
+				       true);
+}
+
+SubstitutionArgumentMappings
+SubstitutionArgumentMappings::empty ()
+{
+  return SubstitutionArgumentMappings ({}, {}, UNDEF_LOCATION, nullptr, false,
+				       false);
 }
 
 bool
 SubstitutionArgumentMappings::is_error () const
 {
-  return mappings.size () == 0;
+  return error_flag;
 }
 
 bool
@@ -279,9 +301,7 @@ SubstitutionArgumentMappings::get_argument_for_symbol (
 {
   for (auto &mapping : mappings)
     {
-      const SubstitutionParamMapping *param = mapping.get_param_mapping ();
-      const ParamType *p = param->get_param_ty ();
-
+      const ParamType *p = mapping.get_param_ty ();
       if (p->get_symbol ().compare (param_to_find->get_symbol ()) == 0)
 	{
 	  *argument = mapping;
@@ -543,7 +563,7 @@ SubstitutionRef::get_mappings_from_generic_args (HIR::GenericArgs &args)
 	{
 	  if (args.get_binding_args ().size () > get_num_associated_bindings ())
 	    {
-	      RichLocation r (args.get_locus ());
+	      rich_location r (line_table, args.get_locus ());
 
 	      rust_error_at (r,
 			     "generic item takes at most %lu type binding "
@@ -566,26 +586,28 @@ SubstitutionRef::get_mappings_from_generic_args (HIR::GenericArgs &args)
 		}
 
 	      // resolve to relevant binding
-	      auto binding_item
-		= lookup_associated_type (binding.get_identifier ());
+	      auto binding_item = lookup_associated_type (
+		binding.get_identifier ().as_string ());
 	      if (binding_item.is_error ())
 		{
-		  rust_error_at (binding.get_locus (),
-				 "unknown associated type binding: %s",
-				 binding.get_identifier ().c_str ());
+		  rust_error_at (
+		    binding.get_locus (), "unknown associated type binding: %s",
+		    binding.get_identifier ().as_string ().c_str ());
 		  return SubstitutionArgumentMappings::error ();
 		}
 
-	      binding_arguments[binding.get_identifier ()] = resolved;
+	      binding_arguments[binding.get_identifier ().as_string ()]
+		= resolved;
 	    }
 	}
       else
 	{
-	  RichLocation r (args.get_locus ());
+	  rich_location r (line_table, args.get_locus ());
 	  for (auto &binding : args.get_binding_args ())
 	    r.add_range (binding.get_locus ());
 
-	  rust_error_at (r, "associated type bindings are not allowed here");
+	  rust_error_at (r, ErrorCode ("E0229"),
+			 "associated type bindings are not allowed here");
 	  return SubstitutionArgumentMappings::error ();
 	}
     }
@@ -594,7 +616,7 @@ SubstitutionRef::get_mappings_from_generic_args (HIR::GenericArgs &args)
   size_t offs = used_arguments.size ();
   if (args.get_type_args ().size () + offs > substitutions.size ())
     {
-      RichLocation r (args.get_locus ());
+      rich_location r (line_table, args.get_locus ());
       r.add_range (substitutions.front ().get_param_locus ());
 
       rust_error_at (
@@ -607,7 +629,7 @@ SubstitutionRef::get_mappings_from_generic_args (HIR::GenericArgs &args)
 
   if (args.get_type_args ().size () + offs < min_required_substitutions ())
     {
-      RichLocation r (args.get_locus ());
+      rich_location r (line_table, args.get_locus ());
       r.add_range (substitutions.front ().get_param_locus ());
 
       rust_error_at (
@@ -821,132 +843,6 @@ SubstitutionRef::solve_mappings_from_receiver_for_self (
 				       mappings.get_locus ());
 }
 
-Resolver::AssociatedImplTrait *
-SubstitutionRef::lookup_associated_impl (const SubstitutionParamMapping &subst,
-					 const TypeBoundPredicate &bound,
-					 const TyTy::BaseType *binding,
-					 bool *error_flag) const
-{
-  auto context = Resolver::TypeCheckContext::get ();
-  const Resolver::TraitReference *specified_bound_ref = bound.get ();
-
-  // setup any associated type mappings for the specified bonds and this
-  // type
-  auto candidates = Resolver::TypeBoundsProbe::Probe (binding);
-  std::vector<Resolver::AssociatedImplTrait *> associated_impl_traits;
-  for (auto &probed_bound : candidates)
-    {
-      const Resolver::TraitReference *bound_trait_ref = probed_bound.first;
-      const HIR::ImplBlock *associated_impl = probed_bound.second;
-
-      HirId impl_block_id = associated_impl->get_mappings ().get_hirid ();
-      Resolver::AssociatedImplTrait *associated = nullptr;
-      bool found_impl_trait
-	= context->lookup_associated_trait_impl (impl_block_id, &associated);
-      if (found_impl_trait)
-	{
-	  bool found_trait = specified_bound_ref->is_equal (*bound_trait_ref);
-	  bool found_self = associated->get_self ()->can_eq (binding, false);
-	  if (found_trait && found_self)
-	    {
-	      associated_impl_traits.push_back (associated);
-	    }
-	}
-    }
-
-  if (associated_impl_traits.empty ())
-    return nullptr;
-
-  // This code is important when you look at slices for example when
-  // you have a slice such as:
-  //
-  // let slice = &array[1..3]
-  //
-  // the higher ranked bounds will end up having an Index trait
-  // implementation for Range<usize> so we need this code to resolve
-  // that we have an integer inference variable that needs to become
-  // a usize
-  //
-  // The other complicated issue is that we might have an intrinsic
-  // which requires the :Clone or Copy bound but the libcore adds
-  // implementations for all the integral types so when there are
-  // multiple candidates we need to resolve to the default
-  // implementation for that type otherwise its an error for
-  // ambiguous type bounds
-
-  // if we have a non-general inference variable we need to be
-  // careful about the selection here
-  bool is_infer_var = binding->get_kind () == TyTy::TypeKind::INFER;
-  bool is_integer_infervar
-    = is_infer_var
-      && static_cast<const TyTy::InferType *> (binding)->get_infer_kind ()
-	   == TyTy::InferType::InferTypeKind::INTEGRAL;
-  bool is_float_infervar
-    = is_infer_var
-      && static_cast<const TyTy::InferType *> (binding)->get_infer_kind ()
-	   == TyTy::InferType::InferTypeKind::FLOAT;
-
-  Resolver::AssociatedImplTrait *associate_impl_trait = nullptr;
-  if (associated_impl_traits.size () == 1)
-    {
-      // just go for it
-      associate_impl_trait = associated_impl_traits.at (0);
-    }
-  else if (is_integer_infervar)
-    {
-      TyTy::BaseType *type = nullptr;
-      bool ok = context->lookup_builtin ("i32", &type);
-      rust_assert (ok);
-
-      for (auto &impl : associated_impl_traits)
-	{
-	  bool found = impl->get_self ()->is_equal (*type);
-	  if (found)
-	    {
-	      associate_impl_trait = impl;
-	      break;
-	    }
-	}
-    }
-  else if (is_float_infervar)
-    {
-      TyTy::BaseType *type = nullptr;
-      bool ok = context->lookup_builtin ("f64", &type);
-      rust_assert (ok);
-
-      for (auto &impl : associated_impl_traits)
-	{
-	  bool found = impl->get_self ()->is_equal (*type);
-	  if (found)
-	    {
-	      associate_impl_trait = impl;
-	      break;
-	    }
-	}
-    }
-
-  if (associate_impl_trait == nullptr)
-    {
-      // go for the first one? or error out?
-      auto &mappings = *Analysis::Mappings::get ();
-      const auto &type_param = subst.get_generic_param ();
-      const auto *trait_ref = bound.get ();
-
-      RichLocation r (type_param.get_locus ());
-      r.add_range (bound.get_locus ());
-      r.add_range (mappings.lookup_location (binding->get_ref ()));
-
-      rust_error_at (r, "ambiguous type bound for trait %s and type %s",
-		     trait_ref->get_name ().c_str (),
-		     binding->get_name ().c_str ());
-
-      *error_flag = true;
-      return nullptr;
-    }
-
-  return associate_impl_trait;
-}
-
 void
 SubstitutionRef::prepare_higher_ranked_bounds ()
 {
@@ -977,16 +873,31 @@ SubstitutionRef::monomorphize ()
 
       for (const auto &bound : pty->get_specified_bounds ())
 	{
-	  bool error_flag = false;
+	  bool ambigious = false;
 	  auto associated
-	    = lookup_associated_impl (subst, bound, binding, &error_flag);
+	    = Resolver::lookup_associated_impl_block (bound, binding,
+						      &ambigious);
+	  if (associated == nullptr && ambigious)
+	    {
+	      // go for the first one? or error out?
+	      auto &mappings = *Analysis::Mappings::get ();
+	      const auto &type_param = subst.get_generic_param ();
+	      const auto *trait_ref = bound.get ();
+
+	      rich_location r (line_table, type_param.get_locus ());
+	      r.add_range (bound.get_locus ());
+	      r.add_range (mappings.lookup_location (binding->get_ref ()));
+
+	      rust_error_at (r, "ambiguous type bound for trait %s and type %s",
+			     trait_ref->get_name ().c_str (),
+			     binding->get_name ().c_str ());
+	      return false;
+	    }
+
 	  if (associated != nullptr)
 	    {
 	      associated->setup_associated_types (binding, bound);
 	    }
-
-	  if (error_flag)
-	    return false;
 	}
     }
 

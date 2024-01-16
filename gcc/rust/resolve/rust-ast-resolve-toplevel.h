@@ -47,8 +47,8 @@ public:
 
   void visit (AST::Module &module) override
   {
-    auto mod
-      = CanonicalPath::new_seg (module.get_node_id (), module.get_name ());
+    auto mod = CanonicalPath::new_seg (module.get_node_id (),
+				       module.get_name ().as_string ());
     auto path = prefix.append (mod);
     auto cpath = canonical_prefix.append (mod);
 
@@ -56,7 +56,7 @@ public:
       path, module.get_node_id (), module.get_locus (), false,
       Rib::ItemType::Module,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (module.get_locus ());
+	rich_location r (line_table, module.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -76,8 +76,9 @@ public:
 
   void visit (AST::TypeAlias &alias) override
   {
-    auto talias = CanonicalPath::new_seg (alias.get_node_id (),
-					  alias.get_new_type_name ());
+    auto talias
+      = CanonicalPath::new_seg (alias.get_node_id (),
+				alias.get_new_type_name ().as_string ());
     auto path = prefix.append (talias);
     auto cpath = canonical_prefix.append (talias);
 
@@ -85,7 +86,7 @@ public:
       path, alias.get_node_id (), alias.get_locus (), false,
       Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (alias.get_locus ());
+	rich_location r (line_table, alias.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -97,8 +98,9 @@ public:
 
   void visit (AST::TupleStruct &struct_decl) override
   {
-    auto decl = CanonicalPath::new_seg (struct_decl.get_node_id (),
-					struct_decl.get_identifier ());
+    auto decl
+      = CanonicalPath::new_seg (struct_decl.get_node_id (),
+				struct_decl.get_identifier ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
@@ -106,7 +108,7 @@ public:
       path, struct_decl.get_node_id (), struct_decl.get_locus (), false,
       Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (struct_decl.get_locus ());
+	rich_location r (line_table, struct_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -118,8 +120,9 @@ public:
 
   void visit (AST::Enum &enum_decl) override
   {
-    auto decl = CanonicalPath::new_seg (enum_decl.get_node_id (),
-					enum_decl.get_identifier ());
+    auto decl
+      = CanonicalPath::new_seg (enum_decl.get_node_id (),
+				enum_decl.get_identifier ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
@@ -127,7 +130,7 @@ public:
       path, enum_decl.get_node_id (), enum_decl.get_locus (), false,
       Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (enum_decl.get_locus ());
+	rich_location r (line_table, enum_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -145,15 +148,15 @@ public:
 
   void visit (AST::EnumItem &item) override
   {
-    auto decl
-      = CanonicalPath::new_seg (item.get_node_id (), item.get_identifier ());
+    auto decl = CanonicalPath::new_seg (item.get_node_id (),
+					item.get_identifier ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (item.get_locus ());
+	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -167,15 +170,15 @@ public:
 
   void visit (AST::EnumItemTuple &item) override
   {
-    auto decl
-      = CanonicalPath::new_seg (item.get_node_id (), item.get_identifier ());
+    auto decl = CanonicalPath::new_seg (item.get_node_id (),
+					item.get_identifier ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (item.get_locus ());
+	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -189,15 +192,15 @@ public:
 
   void visit (AST::EnumItemStruct &item) override
   {
-    auto decl
-      = CanonicalPath::new_seg (item.get_node_id (), item.get_identifier ());
+    auto decl = CanonicalPath::new_seg (item.get_node_id (),
+					item.get_identifier ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (item.get_locus ());
+	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -211,15 +214,15 @@ public:
 
   void visit (AST::EnumItemDiscriminant &item) override
   {
-    auto decl
-      = CanonicalPath::new_seg (item.get_node_id (), item.get_identifier ());
+    auto decl = CanonicalPath::new_seg (item.get_node_id (),
+					item.get_identifier ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (item.get_locus ());
+	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -233,8 +236,9 @@ public:
 
   void visit (AST::StructStruct &struct_decl) override
   {
-    auto decl = CanonicalPath::new_seg (struct_decl.get_node_id (),
-					struct_decl.get_identifier ());
+    auto decl
+      = CanonicalPath::new_seg (struct_decl.get_node_id (),
+				struct_decl.get_identifier ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
@@ -242,7 +246,7 @@ public:
       path, struct_decl.get_node_id (), struct_decl.get_locus (), false,
       Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (struct_decl.get_locus ());
+	rich_location r (line_table, struct_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -254,8 +258,9 @@ public:
 
   void visit (AST::Union &union_decl) override
   {
-    auto decl = CanonicalPath::new_seg (union_decl.get_node_id (),
-					union_decl.get_identifier ());
+    auto decl
+      = CanonicalPath::new_seg (union_decl.get_node_id (),
+				union_decl.get_identifier ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
@@ -263,7 +268,7 @@ public:
       path, union_decl.get_node_id (), union_decl.get_locus (), false,
       Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (union_decl.get_locus ());
+	rich_location r (line_table, union_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -275,15 +280,15 @@ public:
 
   void visit (AST::StaticItem &var) override
   {
-    auto decl
-      = CanonicalPath::new_seg (var.get_node_id (), var.get_identifier ());
+    auto decl = CanonicalPath::new_seg (var.get_node_id (),
+					var.get_identifier ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
     resolver->get_name_scope ().insert (
       path, var.get_node_id (), var.get_locus (), false, Rib::ItemType::Static,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (var.get_locus ());
+	rich_location r (line_table, var.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -304,7 +309,7 @@ public:
       path, constant.get_node_id (), constant.get_locus (), false,
       Rib::ItemType::Const,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (constant.get_locus ());
+	rich_location r (line_table, constant.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -316,8 +321,9 @@ public:
 
   void visit (AST::Function &function) override
   {
-    auto decl = CanonicalPath::new_seg (function.get_node_id (),
-					function.get_function_name ());
+    auto decl
+      = CanonicalPath::new_seg (function.get_node_id (),
+				function.get_function_name ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
@@ -325,7 +331,7 @@ public:
       path, function.get_node_id (), function.get_locus (), false,
       Rib::ItemType::Function,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (function.get_locus ());
+	rich_location r (line_table, function.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -369,7 +375,7 @@ public:
       impl_prefix, impl_block.get_node_id (), impl_block.get_locus (), false,
       Rib::ItemType::TraitImpl,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (impl_block.get_locus ());
+	rich_location r (line_table, impl_block.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -380,8 +386,8 @@ public:
 
   void visit (AST::Trait &trait) override
   {
-    auto decl
-      = CanonicalPath::new_seg (trait.get_node_id (), trait.get_identifier ());
+    auto decl = CanonicalPath::new_seg (trait.get_node_id (),
+					trait.get_identifier ().as_string ());
     auto path = prefix.append (decl);
     auto cpath = canonical_prefix.append (decl);
 
@@ -389,7 +395,7 @@ public:
       path, trait.get_node_id (), trait.get_locus (), false,
       Rib::ItemType::Trait,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (trait.get_locus ());
+	rich_location r (line_table, trait.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -465,7 +471,7 @@ public:
       decl, resolved_crate, extern_crate.get_locus (), false,
       Rib::ItemType::ExternCrate,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (extern_crate.get_locus ());
+	rich_location r (line_table, extern_crate.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });

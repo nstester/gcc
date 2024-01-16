@@ -28,13 +28,13 @@ PrivacyReporter::PrivacyReporter (
   Analysis::Mappings &mappings, Resolver::Resolver &resolver,
   const Rust::Resolver::TypeCheckContext &ty_ctx)
   : mappings (mappings), resolver (resolver), ty_ctx (ty_ctx),
-    current_module (Optional<NodeId>::none ())
+    current_module (tl::nullopt)
 {}
 
 void
 PrivacyReporter::go (HIR::Crate &crate)
 {
-  for (auto &item : crate.items)
+  for (auto &item : crate.get_items ())
     item->accept_vis (*this);
 }
 
@@ -92,7 +92,7 @@ PrivacyReporter::check_for_privacy_violation (const NodeId &use_id,
       case ModuleVisibility::Restricted: {
 	// If we are in the crate, everything is restricted correctly, but we
 	// can't get a module for it
-	if (current_module.is_none ())
+	if (!current_module.has_value ())
 	  return;
 
 	auto module = mappings.lookup_defid (vis.get_module_id ());
@@ -102,12 +102,12 @@ PrivacyReporter::check_for_privacy_violation (const NodeId &use_id,
 
 	// We are in the module referenced by the pub(restricted) visibility.
 	// This is valid
-	if (mod_node_id == current_module.get ())
+	if (mod_node_id == current_module.value ())
 	  break;
 
 	// FIXME: This needs a LOT of TLC: hinting about the definition, a
 	// string to say if it's a module, function, type, etc...
-	if (!is_child_module (mappings, mod_node_id, current_module.get ()))
+	if (!is_child_module (mappings, mod_node_id, current_module.value ()))
 	  valid = false;
       }
       break;
@@ -201,7 +201,7 @@ PrivacyReporter::check_base_type_privacy (Analysis::NodeMapping &node_mappings,
     case TyTy::INFER:
       return;
     case TyTy::ERROR:
-      rust_unreachable ();
+      return;
     }
 }
 
@@ -493,9 +493,8 @@ PrivacyReporter::visit (HIR::RangeToInclExpr &)
 void
 PrivacyReporter::visit (HIR::ReturnExpr &expr)
 {
-  auto return_expr = expr.get_expr ();
-  if (return_expr)
-    return_expr->accept_vis (*this);
+  if (expr.get_expr ())
+    expr.get_expr ()->accept_vis (*this);
 }
 
 void
@@ -585,8 +584,7 @@ PrivacyReporter::visit (HIR::Module &module)
   // FIXME: We also need to think about module privacy
 
   auto old_module = current_module;
-  current_module
-    = Optional<NodeId>::some (module.get_mappings ().get_nodeid ());
+  current_module = module.get_mappings ().get_nodeid ();
 
   for (auto &item : module.get_items ())
     item->accept_vis (*this);
@@ -608,7 +606,7 @@ void
 PrivacyReporter::visit (HIR::Function &function)
 {
   for (auto &param : function.get_function_params ())
-    check_type_privacy (param.get_type ());
+    check_type_privacy (param.get_type ().get ());
 
   function.get_definition ()->accept_vis (*this);
 }
@@ -707,23 +705,15 @@ PrivacyReporter::visit (HIR::EmptyStmt &)
 void
 PrivacyReporter::visit (HIR::LetStmt &stmt)
 {
-  auto type = stmt.get_type ();
-  if (type)
-    check_type_privacy (type);
+  if (stmt.get_type ())
+    check_type_privacy (stmt.get_type ().get ());
 
-  auto init_expr = stmt.get_init_expr ();
-  if (init_expr)
-    init_expr->accept_vis (*this);
+  if (stmt.get_init_expr ())
+    stmt.get_init_expr ()->accept_vis (*this);
 }
 
 void
-PrivacyReporter::visit (HIR::ExprStmtWithoutBlock &stmt)
-{
-  stmt.get_expr ()->accept_vis (*this);
-}
-
-void
-PrivacyReporter::visit (HIR::ExprStmtWithBlock &stmt)
+PrivacyReporter::visit (HIR::ExprStmt &stmt)
 {
   stmt.get_expr ()->accept_vis (*this);
 }

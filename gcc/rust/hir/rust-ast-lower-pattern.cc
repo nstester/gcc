@@ -25,9 +25,10 @@ namespace HIR {
 ASTLoweringPattern::ASTLoweringPattern () : translated (nullptr) {}
 
 HIR::Pattern *
-ASTLoweringPattern::translate (AST::Pattern *pattern)
+ASTLoweringPattern::translate (AST::Pattern *pattern, bool is_let_top_level)
 {
   ASTLoweringPattern resolver;
+  resolver.is_let_top_level = is_let_top_level;
   pattern->accept_vis (resolver);
 
   rust_assert (resolver.translated != nullptr);
@@ -75,7 +76,7 @@ ASTLoweringPattern::visit (AST::TupleStructPattern &pattern)
     {
       case AST::TupleStructItems::RANGE: {
 	// TODO
-	gcc_unreachable ();
+	rust_unreachable ();
       }
       break;
 
@@ -122,13 +123,28 @@ ASTLoweringPattern::visit (AST::StructPattern &pattern)
 	{
 	  case AST::StructPatternField::ItemType::TUPLE_PAT: {
 	    // TODO
-	    gcc_unreachable ();
+	    rust_unreachable ();
 	  }
 	  break;
 
 	  case AST::StructPatternField::ItemType::IDENT_PAT: {
-	    // TODO
-	    gcc_unreachable ();
+	    AST::StructPatternFieldIdentPat &ident
+	      = static_cast<AST::StructPatternFieldIdentPat &> (*field);
+
+	    auto crate_num = mappings->get_current_crate ();
+	    Analysis::NodeMapping mapping (crate_num, ident.get_node_id (),
+					   mappings->get_next_hir_id (
+					     crate_num),
+					   UNKNOWN_LOCAL_DEFID);
+
+	    std::unique_ptr<HIR::Pattern> pat (ASTLoweringPattern::translate (
+	      ident.get_ident_pattern ().get ()));
+
+	    f = new HIR::StructPatternFieldIdentPat (mapping,
+						     ident.get_identifier (),
+						     std::move (pat),
+						     ident.get_outer_attrs (),
+						     ident.get_locus ());
 	  }
 	  break;
 
@@ -315,6 +331,11 @@ ASTLoweringPattern::visit (AST::AltPattern &pattern)
 
   translated
     = new HIR::AltPattern (mapping, std::move (alts), pattern.get_locus ());
+
+  if (is_let_top_level)
+    rust_error_at (pattern.get_locus (),
+		   "top level alternate patterns are not allowed for %<let%> "
+		   "bindings - use an outer grouped pattern");
 }
 
 } // namespace HIR

@@ -199,7 +199,7 @@ CompilePatternBindings::visit (HIR::TupleStructPattern &pattern)
     {
       case HIR::TupleStructItems::RANGE: {
 	// TODO
-	gcc_unreachable ();
+	rust_unreachable ();
       }
       break;
 
@@ -284,13 +284,13 @@ CompilePatternBindings::visit (HIR::StructPattern &pattern)
 	{
 	  case HIR::StructPatternField::ItemType::TUPLE_PAT: {
 	    // TODO
-	    gcc_unreachable ();
+	    rust_unreachable ();
 	  }
 	  break;
 
 	  case HIR::StructPatternField::ItemType::IDENT_PAT: {
 	    // TODO
-	    gcc_unreachable ();
+	    rust_unreachable ();
 	  }
 	  break;
 
@@ -299,8 +299,8 @@ CompilePatternBindings::visit (HIR::StructPattern &pattern)
 	      = static_cast<HIR::StructPatternFieldIdent &> (*field.get ());
 
 	    size_t offs = 0;
-	    ok
-	      = variant->lookup_field (ident.get_identifier (), nullptr, &offs);
+	    ok = variant->lookup_field (ident.get_identifier ().as_string (),
+					nullptr, &offs);
 	    rust_assert (ok);
 
 	    tree binding = error_mark_node;
@@ -359,11 +359,7 @@ CompilePatternLet::visit (HIR::IdentifierPattern &pattern)
     {
       ctx->add_statement (init_expr);
 
-      tree stmt_type = TyTyResolveCompile::compile (ctx, ty);
-
-      auto unit_type_init_expr
-	= ctx->get_backend ()->constructor_expression (stmt_type, false, {}, -1,
-						       rval_locus);
+      auto unit_type_init_expr = unit_expression (ctx, rval_locus);
       auto s = ctx->get_backend ()->init_statement (fnctx.fndecl, var,
 						    unit_type_init_expr);
       ctx->add_statement (s);
@@ -471,7 +467,7 @@ CompilePatternLet::visit (HIR::TuplePattern &pattern)
 	return;
       }
       default: {
-	gcc_unreachable ();
+	rust_unreachable ();
       }
     }
 }

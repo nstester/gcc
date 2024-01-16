@@ -24,7 +24,7 @@ namespace Rust {
 namespace Resolver {
 
 TypeCheckPattern::TypeCheckPattern (TyTy::BaseType *parent)
-  : TypeCheckBase (), parent (parent), infered (nullptr)
+  : TypeCheckBase (), parent (parent), infered (new TyTy::ErrorType (0))
 {}
 
 TyTy::BaseType *
@@ -50,11 +50,16 @@ TypeCheckPattern::visit (HIR::PathInExpression &pattern)
 void
 TypeCheckPattern::visit (HIR::TupleStructPattern &pattern)
 {
-  infered = TypeCheckExpr::Resolve (&pattern.get_path ());
-  if (infered->get_kind () == TyTy::TypeKind::ERROR)
-    return;
+  TyTy::BaseType *pattern_ty = TypeCheckExpr::Resolve (&pattern.get_path ());
+  if (pattern_ty->get_kind () != TyTy::TypeKind::ADT)
+    {
+      rust_error_at (pattern.get_locus (),
+		     "expected tuple struct/variant, found: %s",
+		     pattern_ty->get_name ().c_str ());
+      return;
+    }
 
-  rust_assert (infered->get_kind () == TyTy::TypeKind::ADT);
+  infered = pattern_ty;
   TyTy::ADTType *adt = static_cast<TyTy::ADTType *> (infered);
   rust_assert (adt->number_of_variants () > 0);
 
@@ -96,7 +101,7 @@ TypeCheckPattern::visit (HIR::TupleStructPattern &pattern)
     {
       case HIR::TupleStructItems::RANGE: {
 	// TODO
-	gcc_unreachable ();
+	rust_unreachable ();
       }
       break;
 
@@ -107,7 +112,7 @@ TypeCheckPattern::visit (HIR::TupleStructPattern &pattern)
 	if (items_no_range.get_patterns ().size () != variant->num_fields ())
 	  {
 	    rust_error_at (
-	      pattern.get_locus (),
+	      pattern.get_locus (), ErrorCode ("E0023"),
 	      "this pattern has %lu fields but the corresponding "
 	      "tuple variant has %lu field",
 	      (unsigned long) items_no_range.get_patterns ().size (),
@@ -135,13 +140,27 @@ TypeCheckPattern::visit (HIR::TupleStructPattern &pattern)
 }
 
 void
+emit_invalid_field_error (Location loc, Rust::TyTy::VariantDef *variant,
+			  const std::string &name)
+{
+  rust_error_at (loc, ErrorCode ("E0026"),
+		 "variant %s does not have a field named %s",
+		 variant->get_identifier ().c_str (), name.c_str ());
+}
+
+void
 TypeCheckPattern::visit (HIR::StructPattern &pattern)
 {
-  infered = TypeCheckExpr::Resolve (&pattern.get_path ());
-  if (infered->get_kind () == TyTy::TypeKind::ERROR)
-    return;
+  TyTy::BaseType *pattern_ty = TypeCheckExpr::Resolve (&pattern.get_path ());
+  if (pattern_ty->get_kind () != TyTy::TypeKind::ADT)
+    {
+      rust_error_at (pattern.get_locus (),
+		     "expected tuple struct/variant, found: %s",
+		     pattern_ty->get_name ().c_str ());
+      return;
+    }
 
-  rust_assert (infered->get_kind () == TyTy::TypeKind::ADT);
+  infered = pattern_ty;
   TyTy::ADTType *adt = static_cast<TyTy::ADTType *> (infered);
   rust_assert (adt->number_of_variants () > 0);
 
@@ -182,13 +201,26 @@ TypeCheckPattern::visit (HIR::StructPattern &pattern)
 	{
 	  case HIR::StructPatternField::ItemType::TUPLE_PAT: {
 	    // TODO
-	    gcc_unreachable ();
+	    rust_unreachable ();
 	  }
 	  break;
 
 	  case HIR::StructPatternField::ItemType::IDENT_PAT: {
-	    // TODO
-	    gcc_unreachable ();
+	    HIR::StructPatternFieldIdentPat &ident
+	      = static_cast<HIR::StructPatternFieldIdentPat &> (*field.get ());
+
+	    TyTy::StructFieldType *field = nullptr;
+	    if (!variant->lookup_field (ident.get_identifier ().as_string (),
+					&field, nullptr))
+	      {
+		emit_invalid_field_error (ident.get_locus (), variant,
+					  ident.get_identifier ().as_string ());
+		break;
+	      }
+	    named_fields.push_back (ident.get_identifier ().as_string ());
+
+	    TyTy::BaseType *fty = field->get_field_type ();
+	    TypeCheckPattern::Resolve (ident.get_pattern ().get (), fty);
 	  }
 	  break;
 
@@ -197,16 +229,14 @@ TypeCheckPattern::visit (HIR::StructPattern &pattern)
 	      = static_cast<HIR::StructPatternFieldIdent &> (*field.get ());
 
 	    TyTy::StructFieldType *field = nullptr;
-	    if (!variant->lookup_field (ident.get_identifier (), &field,
-					nullptr))
+	    if (!variant->lookup_field (ident.get_identifier ().as_string (),
+					&field, nullptr))
 	      {
-		rust_error_at (ident.get_locus (),
-			       "variant %s does not have a field named %s",
-			       variant->get_identifier ().c_str (),
-			       ident.get_identifier ().c_str ());
+		emit_invalid_field_error (ident.get_locus (), variant,
+					  ident.get_identifier ().as_string ());
 		break;
 	      }
-	    named_fields.push_back (ident.get_identifier ());
+	    named_fields.push_back (ident.get_identifier ().as_string ());
 
 	    // setup the type on this pattern
 	    TyTy::BaseType *fty = field->get_field_type ();
@@ -238,7 +268,8 @@ TypeCheckPattern::visit (HIR::StructPattern &pattern)
 	  i++;
 	}
 
-      rust_error_at (pattern.get_locus (), "pattern does not mention fields %s",
+      rust_error_at (pattern.get_locus (), ErrorCode ("E0027"),
+		     "pattern does not mention fields %s",
 		     missing_fields_str.c_str ());
     }
 }
@@ -303,7 +334,7 @@ TypeCheckPattern::visit (HIR::TuplePattern &pattern)
 	//   = *static_cast<HIR::TuplePatternItemsRanged *> (
 	//     pattern.get_items ().get ());
 	// TODO
-	gcc_unreachable ();
+	rust_unreachable ();
       }
       break;
     }
@@ -352,8 +383,11 @@ void
 TypeCheckPattern::visit (HIR::ReferencePattern &pattern)
 {
   if (parent->get_kind () != TyTy::TypeKind::REF)
-    rust_error_at (pattern.get_locus (), "expected %s, found reference",
-		   parent->as_string ().c_str ());
+    {
+      rust_error_at (pattern.get_locus (), "expected %s, found reference",
+		     parent->as_string ().c_str ());
+      return;
+    }
 
   TyTy::ReferenceType *ref_ty_ty = static_cast<TyTy::ReferenceType *> (parent);
   TyTy::BaseType *infered_base
@@ -378,7 +412,7 @@ TypeCheckPattern::emit_pattern_size_error (const HIR::Pattern &pattern,
 					   size_t expected_field_count,
 					   size_t got_field_count)
 {
-  RichLocation r (pattern.get_locus ());
+  rich_location r (line_table, pattern.get_locus ());
   r.add_range (mappings->lookup_location (parent->get_ref ()));
   rust_error_at (r,
 		 "expected a tuple with %lu %s, found one "
@@ -432,6 +466,117 @@ TypeCheckPattern::visit (HIR::AltPattern &pattern)
 {
   rust_sorry_at (pattern.get_locus (),
 		 "type checking alternate patterns not supported");
+}
+
+TyTy::BaseType *
+ClosureParamInfer::Resolve (HIR::Pattern *pattern)
+{
+  ClosureParamInfer resolver;
+  pattern->accept_vis (resolver);
+
+  if (resolver.infered->get_kind () != TyTy::TypeKind::ERROR)
+    {
+      resolver.context->insert_implicit_type (resolver.infered);
+      resolver.mappings->insert_location (resolver.infered->get_ref (),
+					  pattern->get_locus ());
+    }
+  return resolver.infered;
+}
+
+ClosureParamInfer::ClosureParamInfer ()
+  : TypeCheckBase (), infered (new TyTy::ErrorType (0))
+{}
+
+void
+ClosureParamInfer::visit (HIR::WildcardPattern &pattern)
+{
+  HirId id = pattern.get_pattern_mappings ().get_hirid ();
+  infered = new TyTy::InferType (id, TyTy::InferType::InferTypeKind::GENERAL,
+				 TyTy::InferType::TypeHint::Default (),
+				 pattern.get_locus ());
+}
+
+void
+ClosureParamInfer::visit (HIR::IdentifierPattern &pattern)
+{
+  HirId id = pattern.get_pattern_mappings ().get_hirid ();
+  infered = new TyTy::InferType (id, TyTy::InferType::InferTypeKind::GENERAL,
+				 TyTy::InferType::TypeHint::Default (),
+				 pattern.get_locus ());
+}
+
+void
+ClosureParamInfer::visit (HIR::ReferencePattern &pattern)
+{
+  TyTy::BaseType *element
+    = ClosureParamInfer::Resolve (pattern.get_referenced_pattern ().get ());
+
+  HirId id = pattern.get_pattern_mappings ().get_hirid ();
+  infered = new TyTy::ReferenceType (id, TyTy::TyVar (element->get_ref ()),
+				     pattern.get_mutability ());
+}
+
+void
+ClosureParamInfer::visit (HIR::PathInExpression &pattern)
+{
+  rust_sorry_at (pattern.get_locus (),
+		 "unable to infer this kind of parameter pattern");
+}
+
+void
+ClosureParamInfer::visit (HIR::StructPattern &pattern)
+{
+  rust_sorry_at (pattern.get_locus (),
+		 "unable to infer this kind of parameter pattern");
+}
+
+void
+ClosureParamInfer::visit (HIR::TupleStructPattern &pattern)
+{
+  rust_sorry_at (pattern.get_locus (),
+		 "unable to infer this kind of parameter pattern");
+}
+
+void
+ClosureParamInfer::visit (HIR::TuplePattern &pattern)
+{
+  rust_sorry_at (pattern.get_locus (),
+		 "unable to infer this kind of parameter pattern");
+}
+
+void
+ClosureParamInfer::visit (HIR::LiteralPattern &pattern)
+{
+  rust_sorry_at (pattern.get_locus (),
+		 "unable to infer this kind of parameter pattern");
+}
+
+void
+ClosureParamInfer::visit (HIR::RangePattern &pattern)
+{
+  rust_sorry_at (pattern.get_locus (),
+		 "unable to infer this kind of parameter pattern");
+}
+
+void
+ClosureParamInfer::visit (HIR::QualifiedPathInExpression &pattern)
+{
+  rust_sorry_at (pattern.get_locus (),
+		 "unable to infer this kind of parameter pattern");
+}
+
+void
+ClosureParamInfer::visit (HIR::SlicePattern &pattern)
+{
+  rust_sorry_at (pattern.get_locus (),
+		 "unable to infer this kind of parameter pattern");
+}
+
+void
+ClosureParamInfer::visit (HIR::AltPattern &pattern)
+{
+  rust_sorry_at (pattern.get_locus (),
+		 "unable to infer this kind of parameter pattern");
 }
 
 } // namespace Resolver

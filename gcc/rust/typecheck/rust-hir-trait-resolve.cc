@@ -40,7 +40,7 @@ ResolveTraitItemToRef::visit (HIR::TraitItemType &type)
   // create trait-item-ref
   Location locus = type.get_locus ();
   bool is_optional = false;
-  std::string identifier = type.get_name ();
+  std::string identifier = type.get_name ().as_string ();
 
   resolved = TraitItemReference (identifier, is_optional,
 				 TraitItemReference::TraitItemType::TYPE, &type,
@@ -53,7 +53,7 @@ ResolveTraitItemToRef::visit (HIR::TraitItemConst &cst)
   // create trait-item-ref
   Location locus = cst.get_locus ();
   bool is_optional = cst.has_expr ();
-  std::string identifier = cst.get_name ();
+  std::string identifier = cst.get_name ().as_string ();
 
   resolved = TraitItemReference (identifier, is_optional,
 				 TraitItemReference::TraitItemType::CONST, &cst,
@@ -66,7 +66,7 @@ ResolveTraitItemToRef::visit (HIR::TraitItemFunc &fn)
   // create trait-item-ref
   Location locus = fn.get_locus ();
   bool is_optional = fn.has_block_defined ();
-  std::string identifier = fn.get_decl ().get_function_name ();
+  std::string identifier = fn.get_decl ().get_function_name ().as_string ();
 
   resolved = TraitItemReference (identifier, is_optional,
 				 TraitItemReference::TraitItemType::FN, &fn,
@@ -185,7 +185,8 @@ TraitResolver::resolve_trait (HIR::Trait *trait_reference)
 	    substitutions.push_back (
 	      TyTy::SubstitutionParamMapping (typaram, param_type));
 
-	    if (typaram.get_type_representation ().compare ("Self") == 0)
+	    if (typaram.get_type_representation ().as_string ().compare ("Self")
+		== 0)
 	      {
 		rust_assert (param_type->get_kind () == TyTy::TypeKind::PARAM);
 		TyTy::ParamType *p
@@ -228,7 +229,9 @@ TraitResolver::resolve_trait (HIR::Trait *trait_reference)
 	      HIR::TraitBound *b
 		= static_cast<HIR::TraitBound *> (bound.get ());
 
-	      auto predicate = get_predicate_from_bound (b->get_path ());
+	      auto predicate = get_predicate_from_bound (
+		b->get_path (),
+		nullptr /*this will setup a PLACEHOLDER for self*/);
 	      if (predicate.is_error ())
 		return &TraitReference::error_node ();
 
@@ -315,7 +318,7 @@ void
 TraitItemReference::resolve_item (HIR::TraitItemType &type)
 {
   TyTy::BaseType *ty
-    = new TyTy::PlaceholderType (type.get_name (),
+    = new TyTy::PlaceholderType (type.get_name ().as_string (),
 				 type.get_mappings ().get_hirid ());
   context->insert_type (type.get_mappings (), ty);
 }
@@ -398,9 +401,41 @@ TraitItemReference::associated_type_reset (bool only_projections) const
     }
 }
 
+void
+AssociatedImplTrait::setup_raw_associated_types ()
+{
+  auto &impl_items = impl->get_impl_items ();
+  for (auto &impl_item : impl_items)
+    {
+      bool is_type_alias = impl_item->get_impl_item_type ()
+			   == HIR::ImplItem::ImplItemType::TYPE_ALIAS;
+      if (!is_type_alias)
+	continue;
+
+      HIR::TypeAlias &type = *static_cast<HIR::TypeAlias *> (impl_item.get ());
+
+      TraitItemReference *resolved_trait_item = nullptr;
+      bool ok
+	= trait->lookup_trait_item (type.get_new_type_name ().as_string (),
+				    &resolved_trait_item);
+      if (!ok)
+	continue;
+      if (resolved_trait_item->get_trait_item_type ()
+	  != TraitItemReference::TraitItemType::TYPE)
+	continue;
+
+      TyTy::BaseType *lookup;
+      ok = context->lookup_type (type.get_mappings ().get_hirid (), &lookup);
+      rust_assert (ok);
+
+      resolved_trait_item->associated_type_set (lookup);
+    }
+}
+
 TyTy::BaseType *
 AssociatedImplTrait::setup_associated_types (
-  const TyTy::BaseType *self, const TyTy::TypeBoundPredicate &bound)
+  const TyTy::BaseType *self, const TyTy::TypeBoundPredicate &bound,
+  TyTy::SubstitutionArgumentMappings *args)
 {
   // compute the constrained impl block generic arguments based on self and the
   // higher ranked trait bound
@@ -413,7 +448,10 @@ AssociatedImplTrait::setup_associated_types (
   // we need to figure out what Y is
 
   TyTy::BaseType *associated_self = get_self ();
-  rust_assert (associated_self->can_eq (self, false));
+
+  rust_debug ("setup_associated_types for: %s->%s bound %s",
+	      associated_self->debug_str ().c_str (),
+	      self->debug_str ().c_str (), bound.as_string ().c_str ());
 
   // grab the parameters
   HIR::ImplBlock &impl_block = *get_impl_block ();
@@ -443,24 +481,6 @@ AssociatedImplTrait::setup_associated_types (
 	}
     }
 
-  // generate inference variables for these bound arguments so we can compute
-  // their values
-  Location locus;
-  std::vector<TyTy::SubstitutionArg> args;
-  for (auto &p : substitutions)
-    {
-      if (p.needs_substitution ())
-	{
-	  TyTy::TyVar infer_var = TyTy::TyVar::get_implicit_infer_var (locus);
-	  args.push_back (TyTy::SubstitutionArg (&p, infer_var.get_tyty ()));
-	}
-      else
-	{
-	  args.push_back (
-	    TyTy::SubstitutionArg (&p, p.get_param_ty ()->resolve ()));
-	}
-    }
-
   // this callback gives us the parameters that get substituted so we can
   // compute the constrained type parameters for this impl block
   std::map<std::string, HirId> param_mappings;
@@ -469,41 +489,71 @@ AssociatedImplTrait::setup_associated_types (
 	param_mappings[p.get_symbol ()] = a.get_tyty ()->get_ref ();
       };
 
-  TyTy::SubstitutionArgumentMappings infer_arguments (std::move (args), {},
-						      locus, param_subst_cb);
+  // generate inference variables for these bound arguments so we can compute
+  // their values
+  Location locus = UNKNOWN_LOCATION;
+  std::vector<TyTy::SubstitutionArg> subst_args;
+  for (auto &p : substitutions)
+    {
+      if (p.needs_substitution ())
+	{
+	  TyTy::TyVar infer_var = TyTy::TyVar::get_implicit_infer_var (locus);
+	  subst_args.push_back (
+	    TyTy::SubstitutionArg (&p, infer_var.get_tyty ()));
+	}
+      else
+	{
+	  TyTy::ParamType *param = p.get_param_ty ();
+	  TyTy::BaseType *resolved = param->destructure ();
+	  subst_args.push_back (TyTy::SubstitutionArg (&p, resolved));
+	  param_mappings[param->get_symbol ()] = resolved->get_ref ();
+	}
+    }
+
+  TyTy::SubstitutionArgumentMappings infer_arguments (std::move (subst_args),
+						      {}, locus,
+						      param_subst_cb);
   TyTy::BaseType *impl_self_infer
     = (!associated_self->is_concrete ())
 	? SubstMapperInternal::Resolve (associated_self, infer_arguments)
 	: associated_self;
 
-  // FIXME this needs to do a lookup for the trait-reference DefId instead of
-  // assuming its the first one in the list
-  rust_assert (associated_self->num_specified_bounds () > 0);
-  TyTy::TypeBoundPredicate &impl_predicate
-    = associated_self->get_specified_bounds ().at (0);
+  const TyTy::TypeBoundPredicate &impl_predicate
+    = associated_self->lookup_predicate (bound.get_id ());
+  rust_assert (!impl_predicate.is_error ());
 
   // infer the arguments on the predicate
   std::vector<TyTy::BaseType *> impl_trait_predicate_args;
-  for (const auto &arg : impl_predicate.get_substs ())
+
+  for (size_t i = 0; i < impl_predicate.get_substs ().size (); i++)
     {
-      const TyTy::ParamType *p = arg.get_param_ty ();
-      if (p->get_symbol ().compare ("Self") == 0)
+      const auto &arg = impl_predicate.get_substs ().at (i);
+      if (i == 0)
 	continue;
 
+      const TyTy::ParamType *p = arg.get_param_ty ();
       TyTy::BaseType *r = p->resolve ();
-      r = SubstMapperInternal::Resolve (r, infer_arguments);
+      if (!r->is_concrete ())
+	{
+	  r = SubstMapperInternal::Resolve (r, infer_arguments);
+	}
       impl_trait_predicate_args.push_back (r);
     }
 
   // unify the bounds arguments
   std::vector<TyTy::BaseType *> hrtb_bound_arguments;
-  for (const auto &arg : bound.get_substs ())
+  for (size_t i = 0; i < bound.get_substs ().size (); i++)
     {
-      const TyTy::ParamType *p = arg.get_param_ty ();
-      if (p->get_symbol ().compare ("Self") == 0)
+      const auto &arg = bound.get_substs ().at (i);
+      if (i == 0)
 	continue;
 
+      const TyTy::ParamType *p = arg.get_param_ty ();
       TyTy::BaseType *r = p->resolve ();
+      if (!r->is_concrete ())
+	{
+	  r = SubstMapperInternal::Resolve (r, infer_arguments);
+	}
       hrtb_bound_arguments.push_back (r);
     }
 
@@ -555,26 +605,40 @@ AssociatedImplTrait::setup_associated_types (
   TyTy::SubstitutionArgumentMappings associated_type_args (
     std::move (associated_arguments), {}, locus);
 
-  ImplTypeIterator iter (*impl, [&] (HIR::TypeAlias &type) {
-    TraitItemReference *resolved_trait_item = nullptr;
-    bool ok = trait->lookup_trait_item (type.get_new_type_name (),
-					&resolved_trait_item);
-    if (!ok)
-      return;
-    if (resolved_trait_item->get_trait_item_type ()
-	!= TraitItemReference::TraitItemType::TYPE)
-      return;
+  auto &impl_items = impl->get_impl_items ();
+  for (auto &impl_item : impl_items)
+    {
+      bool is_type_alias = impl_item->get_impl_item_type ()
+			   == HIR::ImplItem::ImplItemType::TYPE_ALIAS;
+      if (!is_type_alias)
+	continue;
 
-    TyTy::BaseType *lookup;
-    if (!context->lookup_type (type.get_mappings ().get_hirid (), &lookup))
-      return;
+      HIR::TypeAlias &type = *static_cast<HIR::TypeAlias *> (impl_item.get ());
 
-    // this might be generic
-    TyTy::BaseType *substituted
-      = SubstMapperInternal::Resolve (lookup, associated_type_args);
-    resolved_trait_item->associated_type_set (substituted);
-  });
-  iter.go ();
+      TraitItemReference *resolved_trait_item = nullptr;
+      bool ok
+	= trait->lookup_trait_item (type.get_new_type_name ().as_string (),
+				    &resolved_trait_item);
+      if (!ok)
+	continue;
+      if (resolved_trait_item->get_trait_item_type ()
+	  != TraitItemReference::TraitItemType::TYPE)
+	continue;
+
+      TyTy::BaseType *lookup;
+      if (!context->lookup_type (type.get_mappings ().get_hirid (), &lookup))
+	continue;
+
+      // this might be generic
+      TyTy::BaseType *substituted
+	= SubstMapperInternal::Resolve (lookup, associated_type_args);
+      resolved_trait_item->associated_type_set (substituted);
+    }
+
+  if (args != nullptr)
+    {
+      *args = associated_type_args;
+    }
 
   return self_result;
 }

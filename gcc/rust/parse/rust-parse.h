@@ -87,6 +87,9 @@ struct ParseRestrictions
   bool expr_can_be_null = false;
   bool expr_can_be_stmt = false;
   bool consume_semi = true;
+  /* Macro invocations that are statements can expand without a semicolon after
+   * the final statement, if it's an expression statement. */
+  bool allow_close_after_expr_stmt = false;
 };
 
 // Parser implementation for gccrs.
@@ -95,6 +98,11 @@ template <typename ManagedTokenSource> class Parser
 {
 public:
   /**
+   * Consume a token
+   */
+  void skip_token ();
+
+  /**
    * Consume a token, reporting an error if it isn't the next token
    *
    * @param t ID of the token to consume
@@ -102,6 +110,15 @@ public:
    * @return true if the token was next, false if it wasn't found
    */
   bool skip_token (TokenId t);
+
+  /**
+   * Consume a token, reporting an error if it isn't the next token
+   *
+   * @param token pointer to similar token to consume
+   *
+   * @return true if the token was next, false if it wasn't found
+   */
+  bool skip_token (const_TokenPtr token);
 
   /**
    * Same as `skip_token` but allows for failure without necessarily reporting
@@ -122,7 +139,7 @@ public:
 
   std::unique_ptr<AST::BlockExpr>
   parse_block_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
-		    Location pratt_parsed_loc = Linemap::unknown_location ());
+		    Location pratt_parsed_loc = UNKNOWN_LOCATION);
 
   std::unique_ptr<AST::Item> parse_item (bool called_from_statement);
   std::unique_ptr<AST::Pattern> parse_pattern ();
@@ -148,8 +165,10 @@ public:
   std::vector<std::unique_ptr<AST::LifetimeParam> > parse_lifetime_params ();
   AST::Visibility parse_visibility ();
   std::unique_ptr<AST::IdentifierPattern> parse_identifier_pattern ();
+  std::unique_ptr<AST::Token> parse_identifier_or_keyword_token ();
   std::unique_ptr<AST::TokenTree> parse_token_tree ();
-  AST::Attribute parse_attribute_body ();
+  std::tuple<AST::SimplePath, std::unique_ptr<AST::AttrInput>, Location>
+  parse_attribute_body ();
   AST::AttrVec parse_inner_attributes ();
   std::unique_ptr<AST::MacroInvocation>
   parse_macro_invocation (AST::AttrVec outer_attrs);
@@ -162,6 +181,7 @@ private:
   void skip_after_end_attribute ();
 
   const_TokenPtr expect_token (TokenId t);
+  const_TokenPtr expect_token (const_TokenPtr token_expect);
   void unexpected_token (const_TokenPtr t);
   bool skip_generics_right_angle ();
 
@@ -172,7 +192,8 @@ private:
   AST::AttrVec parse_outer_attributes ();
   AST::Attribute parse_outer_attribute ();
   std::unique_ptr<AST::AttrInput> parse_attr_input ();
-  AST::Attribute parse_doc_comment ();
+  std::tuple<AST::SimplePath, std::unique_ptr<AST::AttrInput>, Location>
+  parse_doc_comment ();
 
   // Path-related
   AST::SimplePath parse_simple_path ();
@@ -190,10 +211,9 @@ private:
   // first token parsed in the expression (the parsing of that first
   // token should be skipped).
   parse_qualified_path_in_expression (Location pratt_parsed_loc
-				      = Linemap::unknown_location ());
-  AST::QualifiedPathType
-  parse_qualified_path_type (Location pratt_parsed_loc
-			     = Linemap::unknown_location ());
+				      = UNKNOWN_LOCATION);
+  AST::QualifiedPathType parse_qualified_path_type (Location pratt_parsed_loc
+						    = UNKNOWN_LOCATION);
   AST::QualifiedPathInType parse_qualified_path_in_type ();
 
   // Token tree or macro related
@@ -273,6 +293,7 @@ private:
   template <typename EndTokenPred>
   std::vector<AST::Lifetime> parse_lifetime_bounds (EndTokenPred is_end_token);
   AST::Lifetime parse_lifetime ();
+  AST::Lifetime lifetime_from_token (const_TokenPtr tok);
   std::unique_ptr<AST::ExternalTypeItem>
   parse_external_type_item (AST::Visibility vis, AST::AttrVec outer_attrs);
   std::unique_ptr<AST::TypeAlias> parse_type_alias (AST::Visibility vis,
@@ -327,6 +348,17 @@ private:
   std::unique_ptr<AST::Expr>
   null_denotation (const_TokenPtr t, AST::AttrVec outer_attrs = AST::AttrVec (),
 		   ParseRestrictions restrictions = ParseRestrictions ());
+  std::unique_ptr<AST::Expr>
+  null_denotation_path (AST::PathInExpression path, AST::AttrVec outer_attrs,
+			ParseRestrictions restrictions = ParseRestrictions ());
+  std::unique_ptr<AST::Expr>
+  null_denotation_not_path (const_TokenPtr t, AST::AttrVec outer_attrs,
+			    ParseRestrictions restrictions
+			    = ParseRestrictions ());
+  std::unique_ptr<AST::Expr>
+  left_denotations (std::unique_ptr<AST::Expr> null_denotation,
+		    int right_binding_power, AST::AttrVec outer_attrs,
+		    ParseRestrictions restrictions = ParseRestrictions ());
   std::unique_ptr<AST::Expr>
   left_denotation (const_TokenPtr t, std::unique_ptr<AST::Expr> left,
 		   AST::AttrVec outer_attrs = AST::AttrVec (),
@@ -528,31 +560,23 @@ private:
     AST::AttrVec outer_attrs,
     ParseRestrictions restrictions = ParseRestrictions ());
 
-  // Expression-related (non-Pratt parsed)
-  std::unique_ptr<AST::ExprWithBlock>
-  parse_expr_with_block (AST::AttrVec outer_attrs);
-  std::unique_ptr<AST::ExprWithoutBlock>
-  parse_expr_without_block (AST::AttrVec outer_attrs = AST::AttrVec (),
-			    ParseRestrictions restrictions
-			    = ParseRestrictions ());
   // When given a pratt_parsed_loc, use it as the location of the
   // first token parsed in the expression (the parsing of that first
   // token should be skipped).
   std::unique_ptr<AST::IfExpr>
   parse_if_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
-		 Location pratt_parsed_loc = Linemap::unknown_location ());
+		 Location pratt_parsed_loc = UNKNOWN_LOCATION);
   std::unique_ptr<AST::IfLetExpr>
   parse_if_let_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
-		     Location pratt_parsed_loc = Linemap::unknown_location ());
+		     Location pratt_parsed_loc = UNKNOWN_LOCATION);
   std::unique_ptr<AST::LoopExpr>
   parse_loop_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
 		   AST::LoopLabel label = AST::LoopLabel::error (),
-		   Location pratt_parsed_loc = Linemap::unknown_location ());
+		   Location pratt_parsed_loc = UNKNOWN_LOCATION);
   std::unique_ptr<AST::WhileLoopExpr>
   parse_while_loop_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
 			 AST::LoopLabel label = AST::LoopLabel::error (),
-			 Location pratt_parsed_loc
-			 = Linemap::unknown_location ());
+			 Location pratt_parsed_loc = UNKNOWN_LOCATION);
   std::unique_ptr<AST::WhileLetLoopExpr>
   parse_while_let_loop_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
 			     AST::LoopLabel label = AST::LoopLabel::error ());
@@ -561,13 +585,14 @@ private:
 		       AST::LoopLabel label = AST::LoopLabel::error ());
   std::unique_ptr<AST::MatchExpr>
   parse_match_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
-		    Location pratt_parsed_loc = Linemap::unknown_location ());
+		    Location pratt_parsed_loc = UNKNOWN_LOCATION);
   AST::MatchArm parse_match_arm ();
   std::vector<std::unique_ptr<AST::Pattern> >
   parse_match_arm_patterns (TokenId end_token_id);
   std::unique_ptr<AST::BaseLoopExpr>
-  parse_labelled_loop_expr (AST::AttrVec outer_attrs = AST::AttrVec ());
-  AST::LoopLabel parse_loop_label ();
+  parse_labelled_loop_expr (const_TokenPtr tok,
+			    AST::AttrVec outer_attrs = AST::AttrVec ());
+  AST::LoopLabel parse_loop_label (const_TokenPtr tok);
   std::unique_ptr<AST::AsyncBlockExpr>
   parse_async_block_expr (AST::AttrVec outer_attrs = AST::AttrVec ());
   std::unique_ptr<AST::GroupedExpr> parse_grouped_expr (AST::AttrVec outer_attrs
@@ -581,25 +606,22 @@ private:
   // token should be skipped).
   std::unique_ptr<AST::ReturnExpr>
   parse_return_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
-		     Location pratt_parsed_loc = Linemap::unknown_location ());
+		     Location pratt_parsed_loc = UNKNOWN_LOCATION);
   std::unique_ptr<AST::BreakExpr>
   parse_break_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
-		    Location pratt_parsed_loc = Linemap::unknown_location ());
+		    Location pratt_parsed_loc = UNKNOWN_LOCATION);
   std::unique_ptr<AST::ContinueExpr>
   parse_continue_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
-		       Location pratt_parsed_loc
-		       = Linemap::unknown_location ());
+		       Location pratt_parsed_loc = UNKNOWN_LOCATION);
   std::unique_ptr<AST::UnsafeBlockExpr>
   parse_unsafe_block_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
-			   Location pratt_parsed_loc
-			   = Linemap::unknown_location ());
+			   Location pratt_parsed_loc = UNKNOWN_LOCATION);
   std::unique_ptr<AST::ArrayExpr>
   parse_array_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
-		    Location pratt_parsed_loc = Linemap::unknown_location ());
+		    Location pratt_parsed_loc = UNKNOWN_LOCATION);
   std::unique_ptr<AST::ExprWithoutBlock>
   parse_grouped_or_tuple_expr (AST::AttrVec outer_attrs = AST::AttrVec (),
-			       Location pratt_parsed_loc
-			       = Linemap::unknown_location ());
+			       Location pratt_parsed_loc = UNKNOWN_LOCATION);
   std::unique_ptr<AST::StructExprField> parse_struct_expr_field ();
   bool will_be_expr_with_block ();
 
@@ -631,19 +653,10 @@ private:
   std::unique_ptr<AST::LetStmt> parse_let_stmt (AST::AttrVec outer_attrs,
 						ParseRestrictions restrictions
 						= ParseRestrictions ());
-  std::unique_ptr<AST::ExprStmt> parse_expr_stmt (AST::AttrVec outer_attrs,
-						  ParseRestrictions restrictions
-						  = ParseRestrictions ());
-  std::unique_ptr<AST::ExprStmtWithBlock>
-  parse_expr_stmt_with_block (AST::AttrVec outer_attrs);
-  std::unique_ptr<AST::ExprStmtWithoutBlock>
-  parse_expr_stmt_without_block (AST::AttrVec outer_attrs,
-				 ParseRestrictions restrictions
-				 = ParseRestrictions ());
-  ExprOrStmt parse_stmt_or_expr_without_block ();
-  ExprOrStmt parse_stmt_or_expr_with_block (AST::AttrVec outer_attrs);
-  ExprOrStmt parse_macro_invocation_maybe_semi (AST::AttrVec outer_attrs);
-  ExprOrStmt parse_path_based_stmt_or_expr (AST::AttrVec outer_attrs);
+  std::unique_ptr<AST::Stmt> parse_expr_stmt (AST::AttrVec outer_attrs,
+					      ParseRestrictions restrictions
+					      = ParseRestrictions ());
+  ExprOrStmt parse_stmt_or_expr ();
 
   // Pattern-related
   std::unique_ptr<AST::Pattern> parse_literal_or_range_pattern ();

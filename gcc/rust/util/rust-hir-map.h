@@ -19,7 +19,7 @@
 #ifndef RUST_HIR_MAP_H
 #define RUST_HIR_MAP_H
 
-#include "rust-optional.h"
+#include "optional.h"
 #include "rust-system.h"
 #include "rust-location.h"
 #include "rust-mapping-common.h"
@@ -28,6 +28,7 @@
 #include "rust-hir-full-decls.h"
 #include "rust-lang-item.h"
 #include "rust-privacy-common.h"
+#include "libproc_macro/proc_macro.h"
 
 namespace Rust {
 namespace Analysis {
@@ -279,27 +280,49 @@ public:
   bool lookup_macro_invocation (AST::MacroInvocation &invoc,
 				AST::MacroRulesDefinition **def);
 
+  void insert_exported_macro (AST::MacroRulesDefinition &def);
+  std::vector<NodeId> &get_exported_macros ();
+
+  void insert_derive_proc_macro (std::pair<std::string, std::string> hierachy,
+				 ProcMacro::CustomDerive macro);
+  void insert_bang_proc_macro (std::pair<std::string, std::string> hierachy,
+			       ProcMacro::Bang macro);
+  void
+  insert_attribute_proc_macro (std::pair<std::string, std::string> hierachy,
+			       ProcMacro::Attribute macro);
+
+  bool lookup_derive_proc_macro (std::pair<std::string, std::string> hierachy,
+				 ProcMacro::CustomDerive &macro);
+  bool lookup_bang_proc_macro (std::pair<std::string, std::string> hierachy,
+			       ProcMacro::Bang &macro);
+  bool
+  lookup_attribute_proc_macro (std::pair<std::string, std::string> hierachy,
+			       ProcMacro::Attribute &macro);
+
   void insert_visibility (NodeId id, Privacy::ModuleVisibility visibility);
   bool lookup_visibility (NodeId id, Privacy::ModuleVisibility &def);
 
   void insert_module_child (NodeId module, NodeId child);
-  Optional<std::vector<NodeId> &> lookup_module_children (NodeId module);
+  tl::optional<std::vector<NodeId> &> lookup_module_children (NodeId module);
 
   void insert_module_child_item (NodeId module, Resolver::CanonicalPath item);
-  Optional<std::vector<Resolver::CanonicalPath> &>
+  tl::optional<std::vector<Resolver::CanonicalPath> &>
   lookup_module_chidren_items (NodeId module);
-  Optional<Resolver::CanonicalPath &>
+  tl::optional<Resolver::CanonicalPath &>
   lookup_module_child (NodeId module, const std::string &item_name);
 
   void insert_child_item_to_parent_module_mapping (NodeId child_item,
 						   NodeId parent_module);
-  Optional<NodeId> lookup_parent_module (NodeId child_item);
+  tl::optional<NodeId> lookup_parent_module (NodeId child_item);
   bool node_is_module (NodeId query);
 
   void insert_ast_item (AST::Item *item);
   bool lookup_ast_item (NodeId id, AST::Item **result);
 
   HIR::ImplBlock *lookup_builtin_marker ();
+
+  HIR::TraitItem *
+  lookup_trait_item_lang_item (Analysis::RustLangItem::ItemType item);
 
 private:
   Mappings ();
@@ -347,9 +370,20 @@ private:
   // all hirid nodes
   std::map<CrateNum, std::set<HirId>> hirNodesWithinCrate;
 
-  // macros
+  // MBE macros
   std::map<NodeId, AST::MacroRulesDefinition *> macroMappings;
   std::map<NodeId, AST::MacroRulesDefinition *> macroInvocations;
+  std::vector<NodeId> exportedMacros;
+
+  // Procedural macros
+  std::map<std::pair<std::string, std::string>, ProcMacro::CustomDerive>
+    procmacroDeriveMappings;
+
+  std::map<std::pair<std::string, std::string>, ProcMacro::Bang>
+    procmacroBangMappings;
+
+  std::map<std::pair<std::string, std::string>, ProcMacro::Attribute>
+    procmacroAttributeMappings;
 
   // crate names
   std::map<CrateNum, std::string> crate_names;

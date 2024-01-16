@@ -27,11 +27,15 @@
 #include "rust-diagnostics.h"
 #include "rust-expr.h"	// for AST::AttrInputLiteral
 #include "rust-macro.h" // for AST::MetaNameValueStr
+#include "rust-hir-path-probe.h"
+#include "rust-type-util.h"
+#include "rust-compile-implitem.h"
 
 #include "fold-const.h"
 #include "stringpool.h"
 #include "attribs.h"
 #include "tree.h"
+#include "print-tree.h"
 
 namespace Rust {
 namespace Compile {
@@ -193,13 +197,13 @@ HIRCompileBase::handle_deprecated_attribute_on_fndecl (
 	  if (!converted_item)
 	    continue;
 	  auto key_value = converted_item->get_name_value_pair ();
-	  if (key_value.first.compare ("since") == 0)
+	  if (key_value.first.as_string ().compare ("since") == 0)
 	    {
 	      // valid, but this is handled by Cargo and some third-party audit
 	      // tools
 	      continue;
 	    }
-	  else if (key_value.first.compare ("note") == 0)
+	  else if (key_value.first.as_string ().compare ("note") == 0)
 	    {
 	      const auto &msg_str = key_value.second;
 	      if (value)
@@ -209,7 +213,7 @@ HIRCompileBase::handle_deprecated_attribute_on_fndecl (
 	  else
 	    {
 	      rust_error_at (attr.get_locus (), "unknown meta item %qs",
-			     key_value.first.c_str ());
+			     key_value.first.as_string ().c_str ());
 	    }
 	}
     }
@@ -421,7 +425,7 @@ HIRCompileBase::address_expression (tree expr, Location location)
   if (!mark_addressable (expr, location))
     return error_mark_node;
 
-  return build_fold_addr_expr_loc (location.gcc_location (), expr);
+  return build_fold_addr_expr_loc (location, expr);
 }
 
 tree
@@ -430,7 +434,7 @@ HIRCompileBase::indirect_expression (tree expr, Location locus)
   if (expr == error_mark_node)
     return error_mark_node;
 
-  return build_fold_indirect_ref_loc (locus.gcc_location (), expr);
+  return build_fold_indirect_ref_loc (locus, expr);
 }
 
 std::vector<Bvariable *>
@@ -463,9 +467,9 @@ HIRCompileBase::compile_locals_for_block (Context *ctx, Resolver::Rib &rib,
 }
 
 void
-HIRCompileBase::compile_function_body (Context *ctx, tree fndecl,
+HIRCompileBase::compile_function_body (tree fndecl,
 				       HIR::BlockExpr &function_body,
-				       bool has_return_type)
+				       TyTy::BaseType *fn_return_ty)
 {
   for (auto &s : function_body.get_statements ())
     {
@@ -479,40 +483,61 @@ HIRCompileBase::compile_function_body (Context *ctx, tree fndecl,
 
   if (function_body.has_expr ())
     {
-      // the previous passes will ensure this is a valid return
-      // or a valid trailing expression
-      tree compiled_expr
-	= CompileExpr::Compile (function_body.expr.get (), ctx);
+      Location locus = function_body.get_final_expr ()->get_locus ();
+      tree return_value = CompileExpr::Compile (function_body.expr.get (), ctx);
 
-      if (compiled_expr != nullptr)
+      // we can only return this if non unit value return type
+      if (!fn_return_ty->is_unit ())
 	{
-	  if (has_return_type)
-	    {
-	      std::vector<tree> retstmts;
-	      retstmts.push_back (compiled_expr);
+	  HirId id = function_body.get_mappings ().get_hirid ();
+	  Location lvalue_locus = function_body.get_locus ();
+	  Location rvalue_locus = locus;
 
-	      auto ret = ctx->get_backend ()->return_statement (
-		fndecl, retstmts,
-		function_body.get_final_expr ()->get_locus ());
-	      ctx->add_statement (ret);
-	    }
-	  else
-	    {
-	      // FIXME can this actually happen?
-	      ctx->add_statement (compiled_expr);
-	    }
+	  TyTy::BaseType *expected = fn_return_ty;
+	  TyTy::BaseType *actual = nullptr;
+	  bool ok = ctx->get_tyctx ()->lookup_type (
+	    function_body.expr->get_mappings ().get_hirid (), &actual);
+	  rust_assert (ok);
+
+	  return_value = coercion_site (id, return_value, actual, expected,
+					lvalue_locus, rvalue_locus);
+
+	  tree return_stmt
+	    = ctx->get_backend ()->return_statement (fndecl, return_value,
+						     locus);
+	  ctx->add_statement (return_stmt);
 	}
+      else
+	{
+	  // just add the stmt expression
+	  ctx->add_statement (return_value);
+
+	  // now just return unit expression
+	  tree unit_expr = unit_expression (ctx, locus);
+	  tree return_stmt
+	    = ctx->get_backend ()->return_statement (fndecl, unit_expr, locus);
+	  ctx->add_statement (return_stmt);
+	}
+    }
+  else if (fn_return_ty->is_unit ())
+    {
+      // we can only do this if the function is of unit type otherwise other
+      // errors should have occurred
+      Location locus = function_body.get_locus ();
+      tree return_value = unit_expression (ctx, locus);
+      tree return_stmt
+	= ctx->get_backend ()->return_statement (fndecl, return_value, locus);
+      ctx->add_statement (return_stmt);
     }
 }
 
 tree
 HIRCompileBase::compile_function (
-  Context *ctx, const std::string &fn_name, HIR::SelfParam &self_param,
+  const std::string &fn_name, HIR::SelfParam &self_param,
   std::vector<HIR::FunctionParam> &function_params,
   const HIR::FunctionQualifiers &qualifiers, HIR::Visibility &visibility,
   AST::AttrVec &outer_attrs, Location locus, HIR::BlockExpr *function_body,
-  const Resolver::CanonicalPath *canonical_path, TyTy::FnType *fntype,
-  bool function_has_return)
+  const Resolver::CanonicalPath *canonical_path, TyTy::FnType *fntype)
 {
   tree compiled_fn_type = TyTyResolveCompile::compile (ctx, fntype);
   std::string ir_symbol_name
@@ -603,24 +628,19 @@ HIRCompileBase::compile_function (
   ctx->push_block (code_block);
 
   Bvariable *return_address = nullptr;
-  if (function_has_return)
-    {
-      tree return_type = TyTyResolveCompile::compile (ctx, tyret);
+  tree return_type = TyTyResolveCompile::compile (ctx, tyret);
 
-      bool address_is_taken = false;
-      tree ret_var_stmt = NULL_TREE;
+  bool address_is_taken = false;
+  tree ret_var_stmt = NULL_TREE;
+  return_address
+    = ctx->get_backend ()->temporary_variable (fndecl, code_block, return_type,
+					       NULL, address_is_taken, locus,
+					       &ret_var_stmt);
 
-      return_address
-	= ctx->get_backend ()->temporary_variable (fndecl, code_block,
-						   return_type, NULL,
-						   address_is_taken, locus,
-						   &ret_var_stmt);
+  ctx->add_statement (ret_var_stmt);
 
-      ctx->add_statement (ret_var_stmt);
-    }
-
-  ctx->push_fn (fndecl, return_address);
-  compile_function_body (ctx, fndecl, *function_body, function_has_return);
+  ctx->push_fn (fndecl, return_address, tyret);
+  compile_function_body (fndecl, *function_body, tyret);
   tree bind_tree = ctx->pop_block ();
 
   gcc_assert (TREE_CODE (bind_tree) == BIND_EXPR);
@@ -639,14 +659,13 @@ HIRCompileBase::compile_function (
 
 tree
 HIRCompileBase::compile_constant_item (
-  Context *ctx, TyTy::BaseType *resolved_type,
-  const Resolver::CanonicalPath *canonical_path, HIR::Expr *const_value_expr,
-  Location locus)
+  TyTy::BaseType *resolved_type, const Resolver::CanonicalPath *canonical_path,
+  HIR::Expr *const_value_expr, Location locus)
 {
   const std::string &ident = canonical_path->get ();
+
   tree type = TyTyResolveCompile::compile (ctx, resolved_type);
   tree const_type = build_qualified_type (type, TYPE_QUAL_CONST);
-
   bool is_block_expr
     = const_value_expr->get_expression_type () == HIR::Expr::ExprType::Block;
 
@@ -658,13 +677,12 @@ HIRCompileBase::compile_constant_item (
   tree compiled_fn_type = ctx->get_backend ()->function_type (
     receiver, {}, {Backend::typed_identifier ("_", const_type, locus)}, NULL,
     locus);
-
   tree fndecl
     = ctx->get_backend ()->function (compiled_fn_type, ident, "", 0, locus);
   TREE_READONLY (fndecl) = 1;
 
+  std::vector<Bvariable *> locals;
   tree enclosing_scope = NULL_TREE;
-
   Location start_location = const_value_expr->get_locus ();
   Location end_location = const_value_expr->get_locus ();
   if (is_block_expr)
@@ -673,9 +691,16 @@ HIRCompileBase::compile_constant_item (
 	= static_cast<HIR::BlockExpr *> (const_value_expr);
       start_location = function_body->get_locus ();
       end_location = function_body->get_end_locus ();
+
+      Resolver::Rib *rib = nullptr;
+      bool ok = ctx->get_resolver ()->find_name_rib (
+	function_body->get_mappings ().get_nodeid (), &rib);
+      rust_assert (ok);
+
+      locals = compile_locals_for_block (ctx, *rib, fndecl);
     }
 
-  tree code_block = ctx->get_backend ()->block (fndecl, enclosing_scope, {},
+  tree code_block = ctx->get_backend ()->block (fndecl, enclosing_scope, locals,
 						start_location, end_location);
   ctx->push_block (code_block);
 
@@ -687,19 +712,20 @@ HIRCompileBase::compile_constant_item (
 					       &ret_var_stmt);
 
   ctx->add_statement (ret_var_stmt);
-  ctx->push_fn (fndecl, return_address);
+  ctx->push_fn (fndecl, return_address, resolved_type);
 
   if (is_block_expr)
     {
       HIR::BlockExpr *function_body
 	= static_cast<HIR::BlockExpr *> (const_value_expr);
-      compile_function_body (ctx, fndecl, *function_body, true);
+      compile_function_body (fndecl, *function_body, resolved_type);
     }
   else
     {
       tree value = CompileExpr::Compile (const_value_expr, ctx);
+
       tree return_expr = ctx->get_backend ()->return_statement (
-	fndecl, {value}, const_value_expr->get_locus ());
+	fndecl, value, const_value_expr->get_locus ());
       ctx->add_statement (return_expr);
     }
 
@@ -713,8 +739,7 @@ HIRCompileBase::compile_constant_item (
   ctx->pop_fn ();
 
   // lets fold it into a call expr
-  tree call
-    = build_call_array_loc (locus.gcc_location (), const_type, fndecl, 0, NULL);
+  tree call = build_call_array_loc (locus, const_type, fndecl, 0, NULL);
   tree folded_expr = fold_expr (call);
 
   return named_constant_expression (const_type, ident, folded_expr, locus);
@@ -729,14 +754,142 @@ HIRCompileBase::named_constant_expression (tree type_tree,
     return error_mark_node;
 
   tree name_tree = get_identifier_with_length (name.data (), name.length ());
-  tree decl
-    = build_decl (location.gcc_location (), CONST_DECL, name_tree, type_tree);
+  tree decl = build_decl (location, CONST_DECL, name_tree, type_tree);
   DECL_INITIAL (decl) = const_val;
   TREE_CONSTANT (decl) = 1;
   TREE_READONLY (decl) = 1;
 
   rust_preserve_from_gc (decl);
   return decl;
+}
+
+tree
+HIRCompileBase::resolve_method_address (TyTy::FnType *fntype,
+					TyTy::BaseType *receiver,
+					Location expr_locus)
+{
+  rust_debug_loc (expr_locus, "resolve_method_address for %s and receiver %s",
+		  fntype->debug_str ().c_str (),
+		  receiver->debug_str ().c_str ());
+
+  DefId id = fntype->get_id ();
+  rust_assert (id != UNKNOWN_DEFID);
+
+  // Now we can try and resolve the address since this might be a forward
+  // declared function, generic function which has not be compiled yet or
+  // its an not yet trait bound function
+  HIR::Item *resolved_item = ctx->get_mappings ()->lookup_defid (id);
+  if (resolved_item != nullptr)
+    {
+      if (!fntype->has_subsititions_defined ())
+	return CompileItem::compile (resolved_item, ctx);
+
+      return CompileItem::compile (resolved_item, ctx, fntype);
+    }
+
+  // it might be resolved to a trait item
+  HIR::TraitItem *trait_item
+    = ctx->get_mappings ()->lookup_trait_item_defid (id);
+  HIR::Trait *trait = ctx->get_mappings ()->lookup_trait_item_mapping (
+    trait_item->get_mappings ().get_hirid ());
+
+  Resolver::TraitReference *trait_ref
+    = &Resolver::TraitReference::error_node ();
+  bool ok = ctx->get_tyctx ()->lookup_trait_reference (
+    trait->get_mappings ().get_defid (), &trait_ref);
+  rust_assert (ok);
+
+  // the type resolver can only resolve type bounds to their trait
+  // item so its up to us to figure out if this path should resolve
+  // to an trait-impl-block-item or if it can be defaulted to the
+  // trait-impl-item's definition
+  const HIR::PathIdentSegment segment (trait_item->trait_identifier ());
+  auto root = receiver->get_root ();
+  auto candidates
+    = Resolver::PathProbeImplTrait::Probe (root, segment, trait_ref);
+  if (candidates.size () == 0)
+    {
+      // this means we are defaulting back to the trait_item if
+      // possible
+      Resolver::TraitItemReference *trait_item_ref = nullptr;
+      bool ok = trait_ref->lookup_hir_trait_item (*trait_item, &trait_item_ref);
+      rust_assert (ok);				    // found
+      rust_assert (trait_item_ref->is_optional ()); // has definition
+
+      // FIXME tl::optional means it has a definition and an associated
+      // block which can be a default implementation, if it does not
+      // contain an implementation we should actually return
+      // error_mark_node
+
+      return CompileTraitItem::Compile (trait_item_ref->get_hir_trait_item (),
+					ctx, fntype, true, expr_locus);
+    }
+
+  const Resolver::PathProbeCandidate *selectedCandidate = nullptr;
+  rust_debug_loc (expr_locus, "resolved to %lu candidates", candidates.size ());
+
+  // filter for the possible case of non fn type items
+  std::set<Resolver::PathProbeCandidate> filteredFunctionCandidates;
+  for (auto &candidate : candidates)
+    {
+      bool is_fntype = candidate.ty->get_kind () == TyTy::TypeKind::FNDEF;
+      if (!is_fntype)
+	continue;
+
+      filteredFunctionCandidates.insert (candidate);
+    }
+
+  // look for the exact fntype
+  for (auto &candidate : filteredFunctionCandidates)
+    {
+      bool compatable
+	= Resolver::types_compatable (TyTy::TyWithLocation (candidate.ty),
+				      TyTy::TyWithLocation (fntype), expr_locus,
+				      false);
+
+      rust_debug_loc (candidate.locus, "candidate: %s vs %s compatable=%s",
+		      candidate.ty->debug_str ().c_str (),
+		      fntype->debug_str ().c_str (),
+		      compatable ? "true" : "false");
+
+      if (compatable)
+	{
+	  selectedCandidate = &candidate;
+	  break;
+	}
+    }
+
+  // FIXME eventually this should just return error mark node when we support
+  // going through all the passes
+  rust_assert (selectedCandidate != nullptr);
+
+  // lets compile it
+  const Resolver::PathProbeCandidate &candidate = *selectedCandidate;
+  rust_assert (candidate.is_impl_candidate ());
+  rust_assert (candidate.ty->get_kind () == TyTy::TypeKind::FNDEF);
+  TyTy::FnType *candidate_call = static_cast<TyTy::FnType *> (candidate.ty);
+  HIR::ImplItem *impl_item = candidate.item.impl.impl_item;
+
+  TyTy::BaseType *monomorphized = candidate_call;
+  if (candidate_call->needs_generic_substitutions ())
+    {
+      TyTy::BaseType *infer_impl_call
+	= candidate_call->infer_substitions (expr_locus);
+      monomorphized
+	= Resolver::unify_site (fntype->get_ref (),
+				TyTy::TyWithLocation (infer_impl_call),
+				TyTy::TyWithLocation (fntype), expr_locus);
+    }
+
+  return CompileInherentImplItem::Compile (impl_item, ctx, monomorphized);
+}
+
+tree
+HIRCompileBase::unit_expression (Context *ctx, Location locus)
+{
+  tree unit_type = TyTyResolveCompile::get_unit_type (ctx);
+  return ctx->get_backend ()->constructor_expression (unit_type, false, {}, -1,
+						      locus);
 }
 
 } // namespace Compile

@@ -20,6 +20,7 @@
 #define RUST_COMPILE_ITEM
 
 #include "rust-compile-base.h"
+#include "rust-hir-visitor.h"
 
 namespace Rust {
 namespace Compile {
@@ -31,7 +32,7 @@ public:
   static tree compile (HIR::Item *item, Context *ctx,
 		       TyTy::BaseType *concrete = nullptr,
 		       bool is_query_mode = false,
-		       Location ref_locus = Location ())
+		       Location ref_locus = UNDEF_LOCATION)
   {
     CompileItem compiler (ctx, concrete, ref_locus);
     item->accept_vis (compiler);
@@ -68,8 +69,7 @@ public:
   void visit (HIR::Trait &) override {}
   void visit (HIR::EmptyStmt &) override {}
   void visit (HIR::LetStmt &) override {}
-  void visit (HIR::ExprStmtWithoutBlock &) override {}
-  void visit (HIR::ExprStmtWithBlock &) override {}
+  void visit (HIR::ExprStmt &) override {}
 
 protected:
   CompileItem (Context *ctx, TyTy::BaseType *concrete, Location ref_locus)

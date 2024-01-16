@@ -22,6 +22,61 @@
 #include "rust-ast.h"
 #include "rust-ast-fragment.h"
 #include "rust-location.h"
+#include "bi-map.h"
+
+namespace Rust {
+
+// FIXME: Add a BuiltinMacro class which contains a name (or should it?), a
+// transcriber and extra info if necessary
+// then make a global map<string, BuiltinMacro>
+
+/**
+ * All builtin macros possible
+ */
+enum class BuiltinMacro
+{
+  Assert,
+  File,
+  Line,
+  Column,
+  IncludeBytes,
+  IncludeStr,
+  Stringify,
+  CompileError,
+  Concat,
+  Env,
+  OptionEnv,
+  Cfg,
+  Include,
+  FormatArgs,
+  FormatArgsNl,
+  ConcatIdents,
+  ModulePath,
+  Asm,
+  LlvmAsm,
+  GlobalAsm,
+  LogSyntax,
+  TraceMacros,
+  Test,
+  Bench,
+  TestCase,
+  GlobalAllocator,
+  CfgAccessible,
+  RustcDecodable,
+  RustcEncodable,
+  Clone,
+  Copy,
+  Debug,
+  Default,
+  Eq,
+  PartialEq,
+  Ord,
+  PartialOrd,
+  Hash,
+};
+
+BuiltinMacro
+builtin_macro_from_string (const std::string &identifier);
 
 /**
  * This class provides a list of builtin macros implemented by the compiler.
@@ -59,11 +114,14 @@
  * This map is built as a static variable in the `insert_macro_def()` method
  * of the `Mappings` class.
  */
-
-namespace Rust {
 class MacroBuiltin
 {
 public:
+  static const BiMap<std::string, BuiltinMacro> builtins;
+  static std::unordered_map<
+    std::string, std::function<AST::Fragment (Location, AST::MacroInvocData &)>>
+    builtin_transcribers;
+
   static AST::Fragment assert_handler (Location invoc_locus,
 				       AST::MacroInvocData &invoc);
 
@@ -99,7 +157,24 @@ public:
 
   static AST::Fragment line_handler (Location invoc_locus,
 				     AST::MacroInvocData &invoc);
+
+  static AST::Fragment sorry (Location invoc_locus, AST::MacroInvocData &invoc);
+
+  /* Builtin procedural macros do not work directly on tokens, but still need a
+   * builtin transcriber to be considered proper builtin macros */
+  static AST::Fragment proc_macro_builtin (Location, AST::MacroInvocData &);
 };
 } // namespace Rust
+
+namespace std {
+template <> struct hash<Rust::BuiltinMacro>
+{
+  size_t operator() (const Rust::BuiltinMacro &macro) const noexcept
+  {
+    return hash<std::underlying_type<Rust::BuiltinMacro>::type> () (
+      static_cast<std::underlying_type<Rust::BuiltinMacro>::type> (macro));
+  }
+};
+} // namespace std
 
 #endif // RUST_MACRO_BUILTINS_H

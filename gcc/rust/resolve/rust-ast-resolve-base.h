@@ -48,6 +48,7 @@ public:
   void visit (AST::QualifiedPathInType &);
   void visit (AST::LiteralExpr &);
   void visit (AST::AttrInputLiteral &);
+  void visit (AST::AttrInputMacro &);
   void visit (AST::MetaItemLitExpr &);
   void visit (AST::MetaItemPathLit &);
   void visit (AST::BorrowExpr &);
@@ -95,12 +96,8 @@ public:
   void visit (AST::ForLoopExpr &);
   void visit (AST::IfExpr &);
   void visit (AST::IfExprConseqElse &);
-  void visit (AST::IfExprConseqIf &);
-  void visit (AST::IfExprConseqIfLet &);
   void visit (AST::IfLetExpr &);
   void visit (AST::IfLetExprConseqElse &);
-  void visit (AST::IfLetExprConseqIf &);
-  void visit (AST::IfLetExprConseqIfLet &);
 
   void visit (AST::MatchExpr &);
   void visit (AST::AwaitExpr &);
@@ -184,8 +181,7 @@ public:
 
   void visit (AST::EmptyStmt &);
   void visit (AST::LetStmt &);
-  void visit (AST::ExprStmtWithoutBlock &);
-  void visit (AST::ExprStmtWithBlock &);
+  void visit (AST::ExprStmt &);
 
   void visit (AST::TraitBound &);
   void visit (AST::ImplTraitType &);

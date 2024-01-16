@@ -73,22 +73,34 @@ GRS_OBJS = \
     rust/rust-cfg-parser.o \
     rust/rust-parse.o \
     rust/rust-ast.o \
+    rust/rust-ast-formatting.o \
+    rust/rust-path.o \
+    rust/rust-pattern.o \
     rust/rust-ast-fragment.o \
     rust/rust-ast-dump.o \
+    rust/rust-ast-collector.o \
     rust/rust-hir-dump.o \
     rust/rust-session-manager.o \
     rust/rust-compile.o \
     rust/rust-mangle.o \
     rust/rust-compile-resolve-path.o \
     rust/rust-macro-expand.o \
-    rust/rust-attribute-visitor.o \
+    rust/rust-cfg-strip.o \
+	rust/rust-expand-visitor.o \
+	rust/rust-ast-builder.o \
+	rust/rust-derive.o \
+	rust/rust-derive-clone.o \
+	rust/rust-derive-copy.o \
+	rust/rust-proc-macro.o \
     rust/rust-macro-invoc-lexer.o \
+    rust/rust-proc-macro-invoc-lexer.o \
     rust/rust-macro-substitute-ctx.o \
     rust/rust-macro-builtins.o \
     rust/rust-hir.o \
     rust/rust-hir-map.o \
     rust/rust-attributes.o \
     rust/rust-abi.o \
+    rust/rust-token-converter.o \
 	rust/rust-macro.o \
     rust/rust-ast-lower.o \
     rust/rust-ast-lower-base.o \
@@ -121,7 +133,6 @@ GRS_OBJS = \
     rust/rust-tyty-subst.o \
     rust/rust-typecheck-context.o \
     rust/rust-tyty-bounds.o \
-    rust/rust-hir-type-check-util.o \
     rust/rust-hir-trait-resolve.o \
     rust/rust-hir-trait-reference.o \
     rust/rust-hir-type-check-item.o \
@@ -150,7 +161,6 @@ GRS_OBJS = \
     rust/rust-compile-pattern.o \
     rust/rust-compile-fnparam.o \
     rust/rust-base62.o \
-    rust/rust-optional-test.o \
     rust/rust-compile-item.o \
     rust/rust-compile-implitem.o \
     rust/rust-compile-stmt.o \
@@ -169,6 +179,7 @@ GRS_OBJS = \
     rust/rust-builtins.o \
     rust/rust-feature.o \
     rust/rust-feature-gate.o \
+    rust/rust-dir-owner.o \
     $(END)
 # removed object files from here
 
@@ -177,11 +188,14 @@ RUST_ALL_OBJS = $(GRS_OBJS) $(RUST_TARGET_OBJS)
 
 rust_OBJS = $(RUST_ALL_OBJS) rust/rustspec.o
 
+RUST_LDFLAGS = $(LDFLAGS) -L./../libgrust/libproc_macro
+RUST_LIBDEPS = $(LIBDEPS) ../libgrust/libproc_macro/libproc_macro.a
+
 # The compiler itself is called crab1
-crab1$(exeext): $(RUST_ALL_OBJS) attribs.o $(BACKEND) $(LIBDEPS) $(rust.prev)
+crab1$(exeext): $(RUST_ALL_OBJS) attribs.o $(BACKEND) $(RUST_LIBDEPS) $(rust.prev)
 	@$(call LINK_PROGRESS,$(INDEX.rust),start)
-	+$(LLINKER) $(ALL_LINKERFLAGS) $(LDFLAGS) -o $@ \
-	      $(RUST_ALL_OBJS) attribs.o $(BACKEND) $(LIBS) $(BACKENDLIBS)
+	+$(LLINKER) $(ALL_LINKERFLAGS) $(RUST_LDFLAGS) -o $@ \
+	      $(RUST_ALL_OBJS) attribs.o $(BACKEND) $(LIBS) ../libgrust/libproc_macro/libproc_macro.a $(BACKENDLIBS)
 	@$(call LINK_PROGRESS,$(INDEX.rust),end)
 
 # Build hooks.
@@ -350,7 +364,8 @@ RUST_INCLUDES = -I $(srcdir)/rust \
 	-I $(srcdir)/rust/checks/errors \
 	-I $(srcdir)/rust/checks/errors/privacy \
 	-I $(srcdir)/rust/util \
-        -I $(srcdir)/rust/metadata
+        -I $(srcdir)/rust/metadata \
+		-I $(srcdir)/../libgrust
 
 # add files that require cross-folder includes - currently rust-lang.o, rust-lex.o
 CFLAGS-rust/rust-lang.o += $(RUST_INCLUDES)

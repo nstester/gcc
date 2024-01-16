@@ -25,6 +25,7 @@
 #include "rust-location.h"
 #include "rust-item.h"
 #include "rust-make-unique.h"
+#include "rust-macro-builtins.h"
 
 namespace Rust {
 namespace AST {
@@ -431,7 +432,7 @@ public:
   {
     return MacroRule (MacroMatcher::create_error (locus),
 		      MacroTranscriber (DelimTokenTree::create_empty (),
-					Location ()),
+					UNDEF_LOCATION),
 		      locus);
   }
 
@@ -472,14 +473,14 @@ private:
 
   /**
    * Default function to use as an associated transcriber. This function should
-   * never be called, hence the gcc_unreachable().
+   * never be called, hence the rust_unreachable().
    * If this function is used, then the macro is not builtin and the compiler
    * should make use of the actual rules. If the macro is builtin, then another
    * associated transcriber should be used
    */
   static Fragment dummy_builtin (Location, MacroInvocData &)
   {
-    gcc_unreachable ();
+    rust_unreachable ();
     return Fragment::create_error ();
   }
 
@@ -506,7 +507,7 @@ private:
     : VisItem (std::move (vis), std::vector<Attribute> ()),
       outer_attrs (std::vector<Attribute> ()), rule_name (builtin_name),
       delim_type (delim_type), rules (std::vector<MacroRule> ()),
-      locus (Location ()), associated_transcriber (associated_transcriber),
+      locus (UNDEF_LOCATION), associated_transcriber (associated_transcriber),
       is_builtin_rule (true), kind (kind)
   {}
 
@@ -536,12 +537,15 @@ public:
   void accept_vis (ASTVisitor &vis) override;
 
   // Invalid if rule name is empty, so base stripping on that.
-  void mark_for_strip () override { rule_name = ""; }
+  void mark_for_strip () override { rule_name = {""}; }
   bool is_marked_for_strip () const override { return rule_name.empty (); }
 
   // TODO: this mutable getter seems really dodgy. Think up better way.
-  std::vector<Attribute> &get_outer_attrs () { return outer_attrs; }
-  const std::vector<Attribute> &get_outer_attrs () const { return outer_attrs; }
+  std::vector<Attribute> &get_outer_attrs () override { return outer_attrs; }
+  const std::vector<Attribute> &get_outer_attrs () const override
+  {
+    return outer_attrs;
+  }
 
   std::vector<MacroRule> &get_macro_rules () { return rules; }
   const std::vector<MacroRule> &get_macro_rules () const { return rules; }
@@ -567,7 +571,10 @@ public:
     is_builtin_rule = true;
   }
 
-  Kind get_ast_kind () const override { return Kind::MACRO_RULES_DEFINITION; }
+  AST::Kind get_ast_kind () const override
+  {
+    return AST::Kind::MACRO_RULES_DEFINITION;
+  }
 
 protected:
   /* Use covariance to implement clone function as returning this object rather
@@ -577,28 +584,6 @@ protected:
     return new MacroRulesDefinition (*this);
   }
 };
-
-/**
- * All builtin macros possible
- */
-enum class BuiltinMacro
-{
-  Assert,
-  File,
-  Line,
-  Column,
-  IncludeBytes,
-  IncludeStr,
-  Stringify,
-  CompileError,
-  Concat,
-  Env,
-  Cfg,
-  Include
-};
-
-BuiltinMacro
-builtin_macro_from_string (const std::string &identifier);
 
 /* AST node of a macro invocation, which is replaced by the macro result at
  * compile time. This is technically a sum-type/tagged-union, which represents
@@ -637,9 +622,8 @@ public:
 	   Location locus, bool is_semi_coloned = false)
   {
     return std::unique_ptr<MacroInvocation> (
-      new MacroInvocation (InvocKind::Regular, Optional<BuiltinMacro>::none (),
-			   invoc_data, outer_attrs, locus, is_semi_coloned,
-			   {}));
+      new MacroInvocation (InvocKind::Regular, tl::nullopt, invoc_data,
+			   outer_attrs, locus, is_semi_coloned, {}));
   }
 
   /**
@@ -655,9 +639,8 @@ public:
     bool is_semi_coloned = false)
   {
     return std::unique_ptr<MacroInvocation> (
-      new MacroInvocation (InvocKind::Builtin,
-			   Optional<BuiltinMacro>::some (kind), invoc_data,
-			   outer_attrs, locus, is_semi_coloned,
+      new MacroInvocation (InvocKind::Builtin, kind, invoc_data, outer_attrs,
+			   locus, is_semi_coloned,
 			   std::move (pending_eager_invocations)));
   }
 
@@ -672,8 +655,11 @@ public:
     return invoc_data.is_marked_for_strip ();
   }
 
-  const std::vector<Attribute> &get_outer_attrs () const { return outer_attrs; }
-  std::vector<Attribute> &get_outer_attrs () { return outer_attrs; }
+  const std::vector<Attribute> &get_outer_attrs () const override
+  {
+    return outer_attrs;
+  }
+  std::vector<Attribute> &get_outer_attrs () override { return outer_attrs; }
 
   void set_outer_attrs (std::vector<Attribute> new_attrs) override
   {
@@ -685,7 +671,10 @@ public:
     return ExprWithoutBlock::get_node_id ();
   }
 
-  Kind get_ast_kind () const override { return Kind::MACRO_INVOCATION; }
+  AST::Kind get_ast_kind () const override
+  {
+    return AST::Kind::MACRO_INVOCATION;
+  }
 
   NodeId get_macro_node_id () const { return node_id; }
 
@@ -694,7 +683,7 @@ public:
   bool has_semicolon () const { return is_semi_coloned; }
 
   InvocKind get_kind () const { return kind; }
-  Optional<BuiltinMacro> get_builtin_kind () const { return builtin_kind; }
+  tl::optional<BuiltinMacro> get_builtin_kind () const { return builtin_kind; }
 
   /**
    * Turn the current MacroInvocation into a builtin macro invocation
@@ -702,7 +691,7 @@ public:
   void map_to_builtin (BuiltinMacro macro)
   {
     kind = InvocKind::Builtin;
-    builtin_kind = Optional<BuiltinMacro>::some (macro);
+    builtin_kind = macro;
   }
 
   /**
@@ -720,7 +709,7 @@ public:
 private:
   /* Full constructor */
   MacroInvocation (
-    InvocKind kind, Optional<BuiltinMacro> builtin_kind,
+    InvocKind kind, tl::optional<BuiltinMacro> builtin_kind,
     MacroInvocData invoc_data, std::vector<Attribute> outer_attrs,
     Location locus, bool is_semi_coloned,
     std::vector<std::unique_ptr<MacroInvocation>> &&pending_eager_invocs)
@@ -757,7 +746,7 @@ private:
   InvocKind kind;
 
   /* If it is a builtin macro, which one */
-  Optional<BuiltinMacro> builtin_kind = Optional<BuiltinMacro>::none ();
+  tl::optional<BuiltinMacro> builtin_kind = tl::nullopt;
 
   /**
    * Pending invocations within a builtin macro invocation. This vector is empty
@@ -796,11 +785,15 @@ protected:
     return clone_macro_invocation_impl ();
   }
 
+public:
   /*virtual*/ MacroInvocation *clone_macro_invocation_impl () const
   {
     return new MacroInvocation (*this);
   }
 
+  void add_semicolon () override { is_semi_coloned = true; }
+
+protected:
   Item *clone_item_impl () const override
   {
     return clone_macro_invocation_impl ();
@@ -821,15 +814,6 @@ protected:
   InherentImplItem *clone_inherent_impl_item_impl () const override
   {
     return clone_macro_invocation_impl ();
-  }
-
-  ExprWithoutBlock *to_stmt () const override
-
-  {
-    auto new_impl = clone_macro_invocation_impl ();
-    new_impl->is_semi_coloned = true;
-
-    return new_impl;
   }
 };
 
@@ -904,6 +888,10 @@ public:
 
   std::string as_string () const override;
 
+  SimplePath &get_path () { return path; }
+
+  std::vector<std::unique_ptr<MetaItemInner>> &get_seq () { return seq; }
+
   void accept_vis (ASTVisitor &vis) override;
 
   Location get_locus () const override { return path.get_locus (); }
@@ -931,9 +919,11 @@ public:
     : ident (std::move (ident)), ident_locus (ident_locus)
   {}
 
-  std::string as_string () const override { return ident; }
+  std::string as_string () const override { return ident.as_string (); }
 
   void accept_vis (ASTVisitor &vis) override;
+
+  Identifier get_ident () const { return ident; }
 
   Location get_locus () const override { return ident_locus; }
 
@@ -968,7 +958,7 @@ public:
 
   std::string as_string () const override
   {
-    return ident + " = \"" + str + "\"";
+    return ident.as_string () + " = \"" + str + "\"";
   }
 
   void accept_vis (ASTVisitor &vis) override;
@@ -1019,6 +1009,10 @@ public:
 
   void accept_vis (ASTVisitor &vis) override;
 
+  Identifier get_ident () const { return ident; }
+
+  std::vector<SimplePath> &get_paths () { return paths; };
+
   Location get_locus () const override { return ident_locus; }
 
   bool check_cfg_predicate (const Session &session) const override;
@@ -1054,6 +1048,10 @@ public:
   std::string as_string () const override;
 
   void accept_vis (ASTVisitor &vis) override;
+
+  Identifier get_ident () { return ident; }
+
+  std::vector<MetaNameValueStr> &get_values () { return strs; }
 
   Location get_locus () const override { return ident_locus; }
 

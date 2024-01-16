@@ -23,8 +23,8 @@ mod ptr {
     }
 
     pub unsafe fn swap_nonoverlapping<T>(x: *mut T, y: *mut T, count: usize) {
-        let x = x as *mut T;
-        let y = y as *mut T;
+        let x = x as *mut u8;
+        let y = y as *mut u8;
         let len = mem::size_of::<T>() * count;
         swap_nonoverlapping_bytes(x, y, len)
     }

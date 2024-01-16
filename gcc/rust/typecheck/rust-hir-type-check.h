@@ -35,11 +35,19 @@ public:
     ITEM,
     IMPL_ITEM,
     TRAIT_ITEM,
+    ERROR
   };
 
   TypeCheckContextItem (HIR::Function *item);
   TypeCheckContextItem (HIR::ImplBlock *impl_block, HIR::Function *item);
   TypeCheckContextItem (HIR::TraitItemFunc *trait_item);
+  TypeCheckContextItem (const TypeCheckContextItem &other);
+
+  TypeCheckContextItem &operator= (const TypeCheckContextItem &other);
+
+  static TypeCheckContextItem get_error ();
+
+  bool is_error () const;
 
   ItemType get_type () const;
 
@@ -51,7 +59,11 @@ public:
 
   TyTy::FnType *get_context_type ();
 
+  DefId get_defid () const;
+
 private:
+  TypeCheckContextItem ();
+
   union Item
   {
     HIR::Function *item;
@@ -89,8 +101,9 @@ public:
   void insert_type_by_node_id (NodeId ref, HirId id);
   bool lookup_type_by_node_id (NodeId ref, HirId *id);
 
+  bool have_function_context () const;
   TyTy::BaseType *peek_return_type ();
-  TypeCheckContextItem &peek_context ();
+  TypeCheckContextItem peek_context ();
   void push_return_type (TypeCheckContextItem item,
 			 TyTy::BaseType *return_type);
   void pop_return_type ();

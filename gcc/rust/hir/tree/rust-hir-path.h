@@ -71,12 +71,12 @@ public:
   // Creates an error state generic args binding.
   static GenericArgsBinding create_error ()
   {
-    return GenericArgsBinding ("", nullptr);
+    return GenericArgsBinding ({""}, nullptr);
   }
 
   // Pointer type for type in constructor to enable polymorphism
   GenericArgsBinding (Identifier ident, std::unique_ptr<Type> type_ptr,
-		      Location locus = Location ())
+		      Location locus = UNDEF_LOCATION)
     : identifier (std::move (ident)), type (std::move (type_ptr)), locus (locus)
   {}
 
@@ -135,6 +135,8 @@ public:
 
     return *this;
   }
+
+  std::unique_ptr<Expr> &get_expression () { return expression; }
 
 private:
   std::unique_ptr<Expr> expression;
@@ -202,7 +204,7 @@ public:
   GenericArgs &operator= (GenericArgs &&other) = default;
 
   // Creates an empty GenericArgs (no arguments)
-  static GenericArgs create_empty (Location locus = Location ())
+  static GenericArgs create_empty (Location locus = UNDEF_LOCATION)
   {
     return GenericArgs ({}, {}, {}, {}, locus);
   }
@@ -340,7 +342,7 @@ public:
   // Constructor
   PathInExpression (Analysis::NodeMapping mappings,
 		    std::vector<PathExprSegment> path_segments,
-		    Location locus = Location (),
+		    Location locus = UNDEF_LOCATION,
 		    bool has_opening_scope_resolution = false,
 		    std::vector<AST::Attribute> outer_attrs
 		    = std::vector<AST::Attribute> ())
@@ -604,16 +606,8 @@ public:
   };
   std::vector<std::unique_ptr<Type> > &get_params () { return inputs; };
 
-  const std::unique_ptr<Type> &get_return_type () const
-  {
-    rust_assert (has_return_type ());
-    return return_type;
-  };
-  std::unique_ptr<Type> &get_return_type ()
-  {
-    rust_assert (has_return_type ());
-    return return_type;
-  };
+  const std::unique_ptr<Type> &get_return_type () const { return return_type; };
+  std::unique_ptr<Type> &get_return_type () { return return_type; };
 };
 
 // Segment used in type path with a function argument
@@ -694,7 +688,7 @@ public:
   {
     return TypePath (Analysis::NodeMapping::get_error (),
 		     std::vector<std::unique_ptr<TypePathSegment> > (),
-		     Location ());
+		     UNDEF_LOCATION);
   }
 
   // Constructor
@@ -815,11 +809,7 @@ public:
 
   std::unique_ptr<Type> &get_type () { return type; }
 
-  std::unique_ptr<TypePath> &get_trait ()
-  {
-    rust_assert (has_as_clause ());
-    return trait;
-  }
+  std::unique_ptr<TypePath> &get_trait () { return trait; }
 
   bool trait_has_generic_args () const
   {
@@ -856,7 +846,7 @@ public:
   QualifiedPathInExpression (Analysis::NodeMapping mappings,
 			     QualifiedPathType qual_path_type,
 			     std::vector<PathExprSegment> path_segments,
-			     Location locus = Location (),
+			     Location locus = UNDEF_LOCATION,
 			     std::vector<AST::Attribute> outer_attrs
 			     = std::vector<AST::Attribute> ())
     : PathPattern (std::move (path_segments)),
@@ -923,7 +913,7 @@ public:
     Analysis::NodeMapping mappings, QualifiedPathType qual_path_type,
     std::unique_ptr<TypePathSegment> associated_segment,
     std::vector<std::unique_ptr<TypePathSegment> > path_segments,
-    Location locus = Location ())
+    Location locus = UNDEF_LOCATION)
     : TypeNoBounds (mappings, locus), path_type (std::move (qual_path_type)),
       associated_segment (std::move (associated_segment)),
       segments (std::move (path_segments))
@@ -1005,7 +995,7 @@ public:
   static HIR::SimplePath create_empty ()
   {
     return HIR::SimplePath ({}, Analysis::NodeMapping::get_error (),
-			    Location ());
+			    UNDEF_LOCATION);
   }
 
   bool is_error () const { return segments.empty (); }

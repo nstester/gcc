@@ -33,20 +33,24 @@ static const BuiltinAttrDefinition __definitions[]
      {"cfg_attr", EXPANSION},
      {"deprecated", STATIC_ANALYSIS},
      {"allow", STATIC_ANALYSIS},
+     {"allow_internal_unstable", STATIC_ANALYSIS},
      {"doc", HIR_LOWERING},
      {"must_use", STATIC_ANALYSIS},
      {"lang", HIR_LOWERING},
      {"link_section", CODE_GENERATION},
      {"no_mangle", CODE_GENERATION},
      {"repr", CODE_GENERATION},
+     {"rustc_builtin_macro", EXPANSION},
      {"path", EXPANSION},
      {"macro_use", NAME_RESOLUTION},
+     {"macro_export", NAME_RESOLUTION},
      // FIXME: This is not implemented yet, see
      // https://github.com/Rust-GCC/gccrs/issues/1475
      {"target_feature", CODE_GENERATION},
      // From now on, these are reserved by the compiler and gated through
      // #![feature(rustc_attrs)]
-     {"rustc_inherit_overflow_checks", CODE_GENERATION}};
+     {"rustc_inherit_overflow_checks", CODE_GENERATION},
+     {"stable", STATIC_ANALYSIS}};
 
 BuiltinAttributeMappings *
 BuiltinAttributeMappings::get ()
@@ -161,6 +165,7 @@ check_doc_attribute (const AST::Attribute &attribute)
   switch (attribute.get_attr_input ().get_attr_input_type ())
     {
     case AST::AttrInput::LITERAL:
+    case AST::AttrInput::MACRO:
     case AST::AttrInput::META_ITEM:
       break;
       // FIXME: Handle them as well
@@ -180,7 +185,7 @@ check_doc_attribute (const AST::Attribute &attribute)
 		      ->get_name_value_pair ();
 
 		// FIXME: Check for other stuff than #[doc(alias = ...)]
-		if (name_value.first == "alias")
+		if (name_value.first.as_string () == "alias")
 		  check_doc_alias (name_value.second, attribute.get_locus ());
 	      }
 	  }
@@ -276,6 +281,10 @@ AttributeChecker::visit (AST::LiteralExpr &)
 
 void
 AttributeChecker::visit (AST::AttrInputLiteral &)
+{}
+
+void
+AttributeChecker::visit (AST::AttrInputMacro &)
 {}
 
 void
@@ -467,27 +476,11 @@ AttributeChecker::visit (AST::IfExprConseqElse &)
 {}
 
 void
-AttributeChecker::visit (AST::IfExprConseqIf &)
-{}
-
-void
-AttributeChecker::visit (AST::IfExprConseqIfLet &)
-{}
-
-void
 AttributeChecker::visit (AST::IfLetExpr &)
 {}
 
 void
 AttributeChecker::visit (AST::IfLetExprConseqElse &)
-{}
-
-void
-AttributeChecker::visit (AST::IfLetExprConseqIf &)
-{}
-
-void
-AttributeChecker::visit (AST::IfLetExprConseqIfLet &)
 {}
 
 void
@@ -789,11 +782,7 @@ AttributeChecker::visit (AST::LetStmt &)
 {}
 
 void
-AttributeChecker::visit (AST::ExprStmtWithoutBlock &)
-{}
-
-void
-AttributeChecker::visit (AST::ExprStmtWithBlock &)
+AttributeChecker::visit (AST::ExprStmt &)
 {}
 
 // rust-type.h

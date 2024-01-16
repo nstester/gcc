@@ -28,12 +28,12 @@ Dump::go (HIR::Crate &crate)
 {
   stream << "Crate {" << std::endl;
   // inner attributes
-  if (!crate.inner_attrs.empty ())
+  if (!crate.get_inner_attrs ().empty ())
     {
       indentation.increment ();
       stream << indentation;
       stream << "inner_attrs: [";
-      for (auto &attr : crate.inner_attrs)
+      for (auto &attr : crate.get_inner_attrs ())
 	stream << attr.as_string ();
       stream << "]," << std::endl;
       indentation.decrement ();
@@ -46,7 +46,7 @@ Dump::go (HIR::Crate &crate)
   stream << "items: [";
 
   stream << indentation;
-  for (const auto &item : crate.items)
+  for (const auto &item : crate.get_items ())
     {
       stream << std::endl;
       item->accept_vis (*this);
@@ -184,7 +184,7 @@ Dump::visit (ArithmeticOrLogicalExpr &aole)
       operator_str = ">>";
       break;
     default:
-      gcc_unreachable ();
+      rust_unreachable ();
       break;
     }
 
@@ -272,11 +272,11 @@ Dump::visit (BlockExpr &block_expr)
 
   indentation.increment ();
   // TODO: inner attributes
-  if (!block_expr.inner_attrs.empty ())
+  if (!block_expr.get_inner_attrs ().empty ())
     {
       stream << indentation << "inner_attrs: [";
       indentation.increment ();
-      for (auto &attr : block_expr.inner_attrs)
+      for (auto &attr : block_expr.get_inner_attrs ())
 	{
 	  stream << "\n";
 	  stream << indentation;
@@ -420,7 +420,7 @@ Dump::visit (Function &func)
   // function name
   stream << indentation << "func_name: ";
   auto func_name = func.get_function_name ();
-  stream << func_name;
+  stream << func_name.as_string ();
   stream << ",\n";
 
   // return type
@@ -549,7 +549,7 @@ void
 Dump::visit (IdentifierPattern &ident)
 {
   auto ident_name = ident.get_identifier ();
-  stream << ident_name;
+  stream << ident_name.as_string ();
 }
 void
 Dump::visit (WildcardPattern &)
@@ -622,13 +622,11 @@ Dump::visit (LetStmt &let_stmt)
   indentation.increment ();
   stream << indentation;
 
-  auto var_pattern = let_stmt.get_pattern ();
-  stream << var_pattern->as_string ();
+  stream << let_stmt.get_pattern ()->as_string ();
   // return type
   if (let_stmt.has_type ())
     {
-      auto ret_type = let_stmt.get_type ();
-      stream << ": " << ret_type->as_string ();
+      stream << ": " << let_stmt.get_type ()->as_string ();
     }
 
   // init expr
@@ -637,8 +635,7 @@ Dump::visit (LetStmt &let_stmt)
       stream << " = Expr: {\n ";
       indentation.increment ();
       stream << indentation;
-      auto expr = let_stmt.get_init_expr ();
-      expr->accept_vis (*this);
+      let_stmt.get_init_expr ()->accept_vis (*this);
       stream << "\n";
       stream << indentation << "}\n";
       indentation.decrement ();
@@ -649,14 +646,10 @@ Dump::visit (LetStmt &let_stmt)
   indentation.decrement ();
 }
 void
-Dump::visit (ExprStmtWithoutBlock &expr_stmt)
+Dump::visit (ExprStmt &expr_stmt)
 {
-  auto expr = expr_stmt.get_expr ();
-  expr->accept_vis (*this);
+  expr_stmt.get_expr ()->accept_vis (*this);
 }
-void
-Dump::visit (ExprStmtWithBlock &)
-{}
 
 void
 Dump::visit (TraitBound &)

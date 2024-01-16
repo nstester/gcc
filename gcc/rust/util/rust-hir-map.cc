@@ -102,7 +102,7 @@ Mappings::Mappings ()
     = new HIR::ImplBlock (node, {}, {}, nullptr, nullptr, HIR::WhereClause ({}),
 			  Positive,
 			  HIR::Visibility (HIR::Visibility::VisType::PUBLIC),
-			  {}, {}, Location ());
+			  {}, {}, UNDEF_LOCATION);
 }
 
 Mappings::~Mappings () { delete builtinMarker; }
@@ -802,7 +802,7 @@ Mappings::lookup_location (HirId id)
 {
   auto it = locations.find (id);
   if (it == locations.end ())
-    return Location ();
+    return UNDEF_LOCATION;
 
   return it->second;
 }
@@ -868,23 +868,6 @@ Mappings::iterate_trait_items (
 void
 Mappings::insert_macro_def (AST::MacroRulesDefinition *macro)
 {
-  static std::map<
-    std::string, std::function<AST::Fragment (Location, AST::MacroInvocData &)>>
-    builtin_macros = {
-      {"assert", MacroBuiltin::assert_handler},
-      {"file", MacroBuiltin::file_handler},
-      {"line", MacroBuiltin::line_handler},
-      {"column", MacroBuiltin::column_handler},
-      {"include_bytes", MacroBuiltin::include_bytes_handler},
-      {"include_str", MacroBuiltin::include_str_handler},
-      {"stringify", MacroBuiltin::stringify_handler},
-      {"compile_error", MacroBuiltin::compile_error_handler},
-      {"concat", MacroBuiltin::concat_handler},
-      {"env", MacroBuiltin::env_handler},
-      {"cfg", MacroBuiltin::cfg_handler},
-      {"include", MacroBuiltin::include_handler},
-    };
-
   auto outer_attrs = macro->get_outer_attrs ();
   bool should_be_builtin
     = std::any_of (outer_attrs.begin (), outer_attrs.end (),
@@ -893,13 +876,19 @@ Mappings::insert_macro_def (AST::MacroRulesDefinition *macro)
 		   });
   if (should_be_builtin)
     {
-      auto builtin = builtin_macros.find (macro->get_rule_name ());
-      if (builtin != builtin_macros.end ())
-	macro->set_builtin_transcriber (builtin->second);
-      else
-	rust_error_at (macro->get_locus (),
-		       "cannot find a built-in macro with name %qs",
-		       macro->get_rule_name ().c_str ());
+      auto builtin
+	= MacroBuiltin::builtins.lookup (macro->get_rule_name ().as_string ());
+      if (!MacroBuiltin::builtins.is_iter_ok (builtin))
+	{
+	  rust_error_at (macro->get_locus (),
+			 "cannot find a built-in macro with name %qs",
+			 macro->get_rule_name ().as_string ().c_str ());
+	  return;
+	}
+
+      auto transcriber = MacroBuiltin::builtin_transcribers.find (
+	macro->get_rule_name ().as_string ());
+      macro->set_builtin_transcriber (transcriber->second);
     }
 
   auto it = macroMappings.find (macro->get_node_id ());
@@ -942,6 +931,84 @@ Mappings::lookup_macro_invocation (AST::MacroInvocation &invoc,
 }
 
 void
+Mappings::insert_exported_macro (AST::MacroRulesDefinition &def)
+{
+  exportedMacros.emplace_back (def.get_node_id ());
+}
+
+std::vector<NodeId> &
+Mappings::get_exported_macros ()
+{
+  return exportedMacros;
+}
+
+void
+Mappings::insert_derive_proc_macro (
+  std::pair<std::string, std::string> hierarchy, ProcMacro::CustomDerive macro)
+{
+  auto it = procmacroDeriveMappings.find (hierarchy);
+  rust_assert (it == procmacroDeriveMappings.end ());
+
+  procmacroDeriveMappings[hierarchy] = macro;
+}
+
+void
+Mappings::insert_bang_proc_macro (std::pair<std::string, std::string> hierarchy,
+				  ProcMacro::Bang macro)
+{
+  auto it = procmacroBangMappings.find (hierarchy);
+  rust_assert (it == procmacroBangMappings.end ());
+
+  procmacroBangMappings[hierarchy] = macro;
+}
+
+void
+Mappings::insert_attribute_proc_macro (
+  std::pair<std::string, std::string> hierarchy, ProcMacro::Attribute macro)
+{
+  auto it = procmacroAttributeMappings.find (hierarchy);
+  rust_assert (it == procmacroAttributeMappings.end ());
+
+  procmacroAttributeMappings[hierarchy] = macro;
+}
+
+bool
+Mappings::lookup_derive_proc_macro (
+  std::pair<std::string, std::string> hierarchy, ProcMacro::CustomDerive &macro)
+{
+  auto it = procmacroDeriveMappings.find (hierarchy);
+  if (it == procmacroDeriveMappings.end ())
+    return false;
+
+  macro = it->second;
+  return true;
+}
+
+bool
+Mappings::lookup_bang_proc_macro (std::pair<std::string, std::string> hierarchy,
+				  ProcMacro::Bang &macro)
+{
+  auto it = procmacroBangMappings.find (hierarchy);
+  if (it == procmacroBangMappings.end ())
+    return false;
+
+  macro = it->second;
+  return true;
+}
+
+bool
+Mappings::lookup_attribute_proc_macro (
+  std::pair<std::string, std::string> hierarchy, ProcMacro::Attribute &macro)
+{
+  auto it = procmacroAttributeMappings.find (hierarchy);
+  if (it == procmacroAttributeMappings.end ())
+    return false;
+
+  macro = it->second;
+  return true;
+}
+
+void
 Mappings::insert_visibility (NodeId id, Privacy::ModuleVisibility visibility)
 {
   visibility_map.insert ({id, visibility});
@@ -968,14 +1035,14 @@ Mappings::insert_module_child (NodeId module, NodeId child)
     it->second.emplace_back (child);
 }
 
-Optional<std::vector<NodeId> &>
+tl::optional<std::vector<NodeId> &>
 Mappings::lookup_module_children (NodeId module)
 {
   auto it = module_child_map.find (module);
   if (it == module_child_map.end ())
-    return Optional<std::vector<NodeId> &>::none ();
+    return tl::nullopt;
 
-  return Optional<std::vector<NodeId> &>::some (it->second);
+  return it->second;
 }
 
 void
@@ -992,33 +1059,34 @@ Mappings::insert_module_child_item (NodeId module,
     it->second.emplace_back (child);
 }
 
-Optional<std::vector<Resolver::CanonicalPath> &>
+tl::optional<std::vector<Resolver::CanonicalPath> &>
 Mappings::lookup_module_chidren_items (NodeId module)
 {
   auto it = module_child_items.find (module);
   if (it == module_child_items.end ())
-    return Optional<std::vector<Resolver::CanonicalPath> &>::none ();
+    return tl::nullopt;
 
-  return Optional<std::vector<Resolver::CanonicalPath> &>::some (it->second);
+  return it->second;
 }
 
-Optional<Resolver::CanonicalPath &>
+tl::optional<Resolver::CanonicalPath &>
 Mappings::lookup_module_child (NodeId module, const std::string &item_name)
 {
-  Optional<std::vector<Resolver::CanonicalPath> &> children
+  tl::optional<std::vector<Resolver::CanonicalPath> &> children
     = lookup_module_chidren_items (module);
-  if (children.is_none ())
-    return Optional<Resolver::CanonicalPath &>::none ();
+  if (!children.has_value ())
+    return tl::nullopt;
 
   // lookup the children to match the name if we can
-  for (auto &child : children.get ())
+  for (auto &child : children.value ())
     {
       const std::string &raw_identifier = child.get ();
       bool found = raw_identifier.compare (item_name) == 0;
       if (found)
-	return Optional<Resolver::CanonicalPath &>::some (child);
+	return child;
     }
-  return Optional<Resolver::CanonicalPath &>::none ();
+
+  return tl::nullopt;
 }
 
 void
@@ -1028,14 +1096,14 @@ Mappings::insert_child_item_to_parent_module_mapping (NodeId child_item,
   child_to_parent_module_map.insert ({child_item, parent_module});
 }
 
-Optional<NodeId>
+tl::optional<NodeId>
 Mappings::lookup_parent_module (NodeId child_item)
 {
   auto it = child_to_parent_module_map.find (child_item);
   if (it == child_to_parent_module_map.end ())
-    return Optional<NodeId>::none ();
+    return tl::nullopt;
 
-  return Optional<NodeId>::some (it->second);
+  return it->second;
 }
 
 bool
@@ -1068,6 +1136,19 @@ HIR::ImplBlock *
 Mappings::lookup_builtin_marker ()
 {
   return builtinMarker;
+}
+
+HIR::TraitItem *
+Mappings::lookup_trait_item_lang_item (Analysis::RustLangItem::ItemType item)
+{
+  DefId trait_item_id = UNKNOWN_DEFID;
+  bool trait_item_lang_item_defined = lookup_lang_item (item, &trait_item_id);
+
+  // FIXME
+  // make this an error? what does rustc do when a lang item is not defined?
+  rust_assert (trait_item_lang_item_defined);
+
+  return lookup_trait_item_defid (trait_item_id);
 }
 
 } // namespace Analysis

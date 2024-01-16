@@ -20,6 +20,7 @@
 #define RUST_HIR_TYPE_CHECK_EXPR
 
 #include "rust-hir-type-check-base.h"
+#include "rust-hir-visitor.h"
 #include "rust-tyty.h"
 
 namespace Rust {
@@ -45,6 +46,7 @@ public:
   void visit (HIR::IfExpr &expr) override;
   void visit (HIR::IfExprConseqElse &expr) override;
   void visit (HIR::IfLetExpr &expr) override;
+  void visit (HIR::IfLetExprConseqElse &) override;
   void visit (HIR::BlockExpr &expr) override;
   void visit (HIR::UnsafeBlockExpr &expr) override;
   void visit (HIR::ArrayIndexExpr &expr) override;
@@ -75,16 +77,21 @@ public:
   void visit (HIR::RangeToInclExpr &) override {}
   void visit (HIR::WhileLetLoopExpr &) override {}
   void visit (HIR::ForLoopExpr &) override {}
-  void visit (HIR::IfLetExprConseqElse &) override {}
   void visit (HIR::AwaitExpr &) override {}
   void visit (HIR::AsyncBlockExpr &) override {}
 
   // don't need to implement these see rust-hir-type-check-struct-field.h
-  void visit (HIR::StructExprFieldIdentifier &) override { gcc_unreachable (); }
-  void visit (HIR::StructExprFieldIndexValue &) override { gcc_unreachable (); }
+  void visit (HIR::StructExprFieldIdentifier &) override
+  {
+    rust_unreachable ();
+  }
+  void visit (HIR::StructExprFieldIndexValue &) override
+  {
+    rust_unreachable ();
+  }
   void visit (HIR::StructExprFieldIdentifierValue &) override
   {
-    gcc_unreachable ();
+    rust_unreachable ();
   }
 
 protected:
@@ -97,8 +104,8 @@ protected:
 			      TyTy::BaseType *function_tyty,
 			      TyTy::BaseType **result);
 
-  HIR::PathIdentSegment
-  resolve_possible_fn_trait_call_method_name (const TyTy::BaseType &receiver);
+  HIR::PathIdentSegment resolve_possible_fn_trait_call_method_name (
+    TyTy::BaseType &receiver, TyTy::TypeBoundPredicate *associated_predicate);
 
 private:
   TypeCheckExpr ();

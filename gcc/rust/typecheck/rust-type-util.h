@@ -23,15 +23,14 @@
 #include "rust-tyty.h"
 
 namespace Rust {
-
-namespace TyTy {
-class BaseType;
-}
-
 namespace Resolver {
 
 bool
 query_type (HirId reference, TyTy::BaseType **result);
+
+bool
+types_compatable (TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
+		  Location unify_locus, bool emit_errors);
 
 TyTy::BaseType *
 unify_site (HirId id, TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
@@ -47,8 +46,17 @@ coercion_site (HirId id, TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
 	       Location coercion_locus);
 
 TyTy::BaseType *
+try_coercion (HirId id, TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
+	      Location coercion_locus);
+
+TyTy::BaseType *
 cast_site (HirId id, TyTy::TyWithLocation from, TyTy::TyWithLocation to,
 	   Location cast_locus);
+
+AssociatedImplTrait *
+lookup_associated_impl_block (const TyTy::TypeBoundPredicate &bound,
+			      const TyTy::BaseType *binding,
+			      bool *ambigious = nullptr);
 
 } // namespace Resolver
 } // namespace Rust

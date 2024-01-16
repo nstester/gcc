@@ -20,6 +20,7 @@
 #define RUST_COMPILE_EXPR
 
 #include "rust-compile-base.h"
+#include "rust-hir-visitor.h"
 
 namespace Rust {
 namespace Compile {
@@ -96,12 +97,6 @@ protected:
   tree get_receiver_from_dyn (const TyTy::DynamicObjectType *dyn,
 			      TyTy::BaseType *receiver, TyTy::FnType *fntype,
 			      tree receiver_ref, Location expr_locus);
-
-  tree resolve_method_address (TyTy::FnType *fntype, HirId ref,
-			       TyTy::BaseType *receiver,
-			       HIR::PathIdentSegment &segment,
-			       Analysis::NodeMapping expr_mappings,
-			       Location expr_locus);
 
   tree
   resolve_operator_overload (Analysis::RustLangItem::ItemType lang_item_type,

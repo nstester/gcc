@@ -43,12 +43,7 @@ public:
     stmt->accept_vis (resolver);
   }
 
-  void visit (AST::ExprStmtWithBlock &stmt) override
-  {
-    ResolveExpr::go (stmt.get_expr ().get (), prefix, canonical_prefix);
-  }
-
-  void visit (AST::ExprStmtWithoutBlock &stmt) override
+  void visit (AST::ExprStmt &stmt) override
   {
     ResolveExpr::go (stmt.get_expr ().get (), prefix, canonical_prefix);
   }
@@ -65,7 +60,7 @@ public:
       path, constant.get_node_id (), constant.get_locus (), false,
       Rib::ItemType::Const,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (constant.get_locus ());
+	rich_location r (line_table, constant.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -89,8 +84,9 @@ public:
 
   void visit (AST::TupleStruct &struct_decl) override
   {
-    auto decl = CanonicalPath::new_seg (struct_decl.get_node_id (),
-					struct_decl.get_identifier ());
+    auto decl
+      = CanonicalPath::new_seg (struct_decl.get_node_id (),
+				struct_decl.get_identifier ().as_string ());
     auto path = decl; // this ensures we have the correct relative resolution
     auto cpath = canonical_prefix.append (decl);
     mappings->insert_canonical_path (struct_decl.get_node_id (), cpath);
@@ -99,7 +95,7 @@ public:
       path, struct_decl.get_node_id (), struct_decl.get_locus (), false,
       Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (struct_decl.get_locus ());
+	rich_location r (line_table, struct_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -121,8 +117,9 @@ public:
 
   void visit (AST::Enum &enum_decl) override
   {
-    auto decl = CanonicalPath::new_seg (enum_decl.get_node_id (),
-					enum_decl.get_identifier ());
+    auto decl
+      = CanonicalPath::new_seg (enum_decl.get_node_id (),
+				enum_decl.get_identifier ().as_string ());
     auto path = decl; // this ensures we have the correct relative resolution
     auto cpath = canonical_prefix.append (decl);
     mappings->insert_canonical_path (enum_decl.get_node_id (), cpath);
@@ -131,7 +128,7 @@ public:
       path, enum_decl.get_node_id (), enum_decl.get_locus (), false,
       Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (enum_decl.get_locus ());
+	rich_location r (line_table, enum_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -154,7 +151,8 @@ public:
   void visit (AST::EnumItem &item) override
   {
     auto decl = enum_prefix.append (
-      CanonicalPath::new_seg (item.get_node_id (), item.get_identifier ()));
+      CanonicalPath::new_seg (item.get_node_id (),
+			      item.get_identifier ().as_string ()));
     auto path = decl; // this ensures we have the correct relative resolution
     auto cpath = canonical_prefix.append (decl);
     mappings->insert_canonical_path (item.get_node_id (), cpath);
@@ -162,7 +160,7 @@ public:
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (item.get_locus ());
+	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -173,7 +171,8 @@ public:
   void visit (AST::EnumItemTuple &item) override
   {
     auto decl = enum_prefix.append (
-      CanonicalPath::new_seg (item.get_node_id (), item.get_identifier ()));
+      CanonicalPath::new_seg (item.get_node_id (),
+			      item.get_identifier ().as_string ()));
     auto path = decl; // this ensures we have the correct relative resolution
     auto cpath = canonical_prefix.append (decl);
     mappings->insert_canonical_path (item.get_node_id (), cpath);
@@ -181,7 +180,7 @@ public:
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (item.get_locus ());
+	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -198,7 +197,8 @@ public:
   void visit (AST::EnumItemStruct &item) override
   {
     auto decl = enum_prefix.append (
-      CanonicalPath::new_seg (item.get_node_id (), item.get_identifier ()));
+      CanonicalPath::new_seg (item.get_node_id (),
+			      item.get_identifier ().as_string ()));
     auto path = decl; // this ensures we have the correct relative resolution
     auto cpath = canonical_prefix.append (decl);
     mappings->insert_canonical_path (item.get_node_id (), cpath);
@@ -206,7 +206,7 @@ public:
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (item.get_locus ());
+	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -223,7 +223,8 @@ public:
   void visit (AST::EnumItemDiscriminant &item) override
   {
     auto decl = enum_prefix.append (
-      CanonicalPath::new_seg (item.get_node_id (), item.get_identifier ()));
+      CanonicalPath::new_seg (item.get_node_id (),
+			      item.get_identifier ().as_string ()));
     auto path = decl; // this ensures we have the correct relative resolution
     auto cpath = canonical_prefix.append (decl);
     mappings->insert_canonical_path (item.get_node_id (), cpath);
@@ -231,7 +232,7 @@ public:
     resolver->get_type_scope ().insert (
       path, item.get_node_id (), item.get_locus (), false, Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (item.get_locus ());
+	rich_location r (line_table, item.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -241,8 +242,9 @@ public:
 
   void visit (AST::StructStruct &struct_decl) override
   {
-    auto decl = CanonicalPath::new_seg (struct_decl.get_node_id (),
-					struct_decl.get_identifier ());
+    auto decl
+      = CanonicalPath::new_seg (struct_decl.get_node_id (),
+				struct_decl.get_identifier ().as_string ());
     auto path = decl; // this ensures we have the correct relative resolution
     auto cpath = canonical_prefix.append (decl);
     mappings->insert_canonical_path (struct_decl.get_node_id (), cpath);
@@ -251,7 +253,7 @@ public:
       path, struct_decl.get_node_id (), struct_decl.get_locus (), false,
       Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (struct_decl.get_locus ());
+	rich_location r (line_table, struct_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -278,8 +280,9 @@ public:
 
   void visit (AST::Union &union_decl) override
   {
-    auto decl = CanonicalPath::new_seg (union_decl.get_node_id (),
-					union_decl.get_identifier ());
+    auto decl
+      = CanonicalPath::new_seg (union_decl.get_node_id (),
+				union_decl.get_identifier ().as_string ());
     auto path = decl; // this ensures we have the correct relative resolution
     auto cpath = canonical_prefix.append (decl);
     mappings->insert_canonical_path (union_decl.get_node_id (), cpath);
@@ -288,7 +291,7 @@ public:
       path, union_decl.get_node_id (), union_decl.get_locus (), false,
       Rib::ItemType::Type,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (union_decl.get_locus ());
+	rich_location r (line_table, union_decl.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -313,8 +316,9 @@ public:
 
   void visit (AST::Function &function) override
   {
-    auto decl = CanonicalPath::new_seg (function.get_node_id (),
-					function.get_function_name ());
+    auto decl
+      = CanonicalPath::new_seg (function.get_node_id (),
+				function.get_function_name ().as_string ());
     auto path = decl; // this ensures we have the correct relative resolution
     auto cpath = canonical_prefix.append (decl);
     mappings->insert_canonical_path (function.get_node_id (), cpath);
@@ -323,7 +327,7 @@ public:
       path, function.get_node_id (), function.get_locus (), false,
       Rib::ItemType::Function,
       [&] (const CanonicalPath &, NodeId, Location locus) -> void {
-	RichLocation r (function.get_locus ());
+	rich_location r (line_table, function.get_locus ());
 	r.add_range (locus);
 	rust_error_at (r, "redefined multiple times");
       });
@@ -364,6 +368,9 @@ public:
   }
 
   void visit (AST::ExternBlock &extern_block) override;
+  void visit (AST::Trait &trait) override;
+  void visit (AST::InherentImpl &impl_block) override;
+  void visit (AST::TraitImpl &impl_block) override;
 
 private:
   ResolveStmt (const CanonicalPath &prefix,

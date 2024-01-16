@@ -28,10 +28,49 @@
 
 namespace Rust {
 // TODO: remove typedefs and make actual types for these
-typedef std::string Identifier;
 typedef int TupleIndex;
 struct Session;
 struct MacroExpander;
+
+class Identifier
+{
+public:
+  // Create dummy identifier
+  Identifier ()
+    : ident (""), node_id (Analysis::Mappings::get ()->get_next_node_id ()),
+      loc (UNDEF_LOCATION)
+  {}
+  // Create identifier with dummy location
+  Identifier (std::string ident, Location loc = UNDEF_LOCATION)
+    : ident (ident), node_id (Analysis::Mappings::get ()->get_next_node_id ()),
+      loc (loc)
+  {}
+  // Create identifier from token
+  Identifier (const_TokenPtr token)
+    : ident (token->get_str ()),
+      node_id (Analysis::Mappings::get ()->get_next_node_id ()),
+      loc (token->get_locus ())
+  {}
+
+  Identifier (const Identifier &) = default;
+  Identifier (Identifier &&) = default;
+  Identifier &operator= (const Identifier &) = default;
+  Identifier &operator= (Identifier &&) = default;
+
+  NodeId get_node_id () const { return node_id; }
+  Location get_locus () const { return loc; }
+  const std::string &as_string () const { return ident; }
+
+  bool empty () const { return ident.empty (); }
+
+private:
+  std::string ident;
+  NodeId node_id;
+  Location loc;
+};
+
+std::ostream &
+operator<< (std::ostream &os, Identifier const &i);
 
 namespace AST {
 // foward decl: ast visitor
@@ -39,24 +78,33 @@ class ASTVisitor;
 using AttrVec = std::vector<Attribute>;
 
 // The available kinds of AST Nodes
-enum Kind
+enum class Kind
 {
   UNKNOWN,
+  MODULE,
   MACRO_RULES_DEFINITION,
   MACRO_INVOCATION,
+  IDENTIFIER,
+};
+
+class Visitable
+{
+public:
+  virtual ~Visitable () = default;
+  virtual void accept_vis (ASTVisitor &vis) = 0;
 };
 
 // Abstract base class for all AST elements
-class Node
+class Node : public Visitable
 {
 public:
   /**
    * Get the kind of Node this is. This is used to differentiate various AST
-   * elements with very little overhead when extracting the derived type through
-   * static casting is not necessary.
+   * elements with very little overhead when extracting the derived type
+   * through static casting is not necessary.
    */
-  // FIXME: Mark this as `= 0` in the future to make sure every node implements
-  // it
+  // FIXME: Mark this as `= 0` in the future to make sure every node
+  // implements it
   virtual Kind get_ast_kind () const { return Kind::UNKNOWN; }
 };
 
@@ -72,7 +120,7 @@ enum DelimType
 class Token;
 
 // A tree of tokens (or a single token) - abstract base class
-class TokenTree
+class TokenTree : public Visitable
 {
 public:
   virtual ~TokenTree () {}
@@ -85,11 +133,9 @@ public:
 
   virtual std::string as_string () const = 0;
 
-  virtual void accept_vis (ASTVisitor &vis) = 0;
-
-  /* Converts token tree to a flat token stream. Tokens must be pointer to avoid
-   * mutual dependency with Token. */
-  virtual std::vector<std::unique_ptr<Token> > to_token_stream () const = 0;
+  /* Converts token tree to a flat token stream. Tokens must be pointer to
+   * avoid mutual dependency with Token. */
+  virtual std::vector<std::unique_ptr<Token>> to_token_stream () const = 0;
 
 protected:
   // pure virtual clone implementation
@@ -97,7 +143,7 @@ protected:
 };
 
 // Abstract base class for a macro match
-class MacroMatch
+class MacroMatch : public Visitable
 {
 public:
   enum MacroMatchType
@@ -118,8 +164,6 @@ public:
   {
     return std::unique_ptr<MacroMatch> (clone_macro_match_impl ());
   }
-
-  virtual void accept_vis (ASTVisitor &vis) = 0;
 
   virtual MacroMatchType get_macro_match_type () const = 0;
 
@@ -147,9 +191,9 @@ class Token : public TokenTree, public MacroMatch
 
   const_TokenPtr tok_ref;
 
-  /* new idea: wrapper around const_TokenPtr used for heterogeneuous storage in
-   * token trees. rather than convert back and forth when parsing macros, just
-   * wrap it. */
+  /* new idea: wrapper around const_TokenPtr used for heterogeneuous storage
+   * in token trees. rather than convert back and forth when parsing macros,
+   * just wrap it. */
 
 public:
   // Unique pointer custom clone function
@@ -225,7 +269,7 @@ public:
   void accept_vis (ASTVisitor &vis) override;
 
   // Return copy of itself but in token stream form.
-  std::vector<std::unique_ptr<Token> > to_token_stream () const override;
+  std::vector<std::unique_ptr<Token>> to_token_stream () const override;
 
   TokenId get_id () const { return tok_ref->get_id (); }
   const std::string &get_str () const { return tok_ref->get_str (); }
@@ -246,15 +290,15 @@ protected:
   // No virtual for now as not polymorphic but can be in future
   /*virtual*/ Token *clone_token_impl () const { return new Token (*this); }
 
-  /* Use covariance to implement clone function as returning this object rather
-   * than base */
+  /* Use covariance to implement clone function as returning this object
+   * rather than base */
   Token *clone_token_tree_impl () const final override
   {
     return clone_token_impl ();
   }
 
-  /* Use covariance to implement clone function as returning this object rather
-   * than base */
+  /* Use covariance to implement clone function as returning this object
+   * rather than base */
   Token *clone_macro_match_impl () const final override
   {
     return clone_token_impl ();
@@ -278,8 +322,8 @@ public:
   };
 
 private:
-  /* TODO: maybe make subclasses of each type of literal with their typed values
-   * (or generics) */
+  /* TODO: maybe make subclasses of each type of literal with their typed
+   * values (or generics) */
   std::string value_as_string;
   LitType type;
   PrimitiveCoreType type_hint;
@@ -306,8 +350,8 @@ public:
   bool is_error () const { return type == ERROR; }
 };
 
-/* Forward decl - definition moved to rust-expr.h as it requires LiteralExpr to
- * be defined */
+/* Forward decl - definition moved to rust-expr.h as it requires LiteralExpr
+ * to be defined */
 class AttrInputLiteral;
 
 /* TODO: move applicable stuff into here or just don't include it because
@@ -344,7 +388,7 @@ public:
   // Creates an error SimplePathSegment
   static SimplePathSegment create_error ()
   {
-    return SimplePathSegment (std::string (""), Location ());
+    return SimplePathSegment (std::string (""), UNDEF_LOCATION);
   }
 
   std::string as_string () const override;
@@ -367,7 +411,7 @@ public:
 // A simple path without generic or type arguments
 class SimplePath
 {
-  bool has_opening_scope_resolution;
+  bool opening_scope_resolution;
   std::vector<SimplePathSegment> segments;
   Location locus;
   NodeId node_id;
@@ -376,8 +420,8 @@ public:
   // Constructor
   SimplePath (std::vector<SimplePathSegment> path_segments,
 	      bool has_opening_scope_resolution = false,
-	      Location locus = Location ())
-    : has_opening_scope_resolution (has_opening_scope_resolution),
+	      Location locus = UNDEF_LOCATION)
+    : opening_scope_resolution (has_opening_scope_resolution),
       segments (std::move (path_segments)), locus (locus),
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
@@ -393,6 +437,11 @@ public:
 
   std::string as_string () const;
 
+  bool has_opening_scope_resolution () const
+  {
+    return opening_scope_resolution;
+  }
+
   Location get_locus () const { return locus; }
   NodeId get_node_id () const { return node_id; }
 
@@ -401,7 +450,7 @@ public:
   // path-to-string comparison operator
   bool operator== (const std::string &rhs) const
   {
-    return !has_opening_scope_resolution && segments.size () == 1
+    return !opening_scope_resolution && segments.size () == 1
 	   && segments[0].as_string () == rhs;
   }
 
@@ -413,7 +462,7 @@ public:
   {
     std::vector<AST::SimplePathSegment> single_segments
       = {AST::SimplePathSegment (std::move (str), locus)};
-    return SimplePath (std::move (single_segments));
+    return SimplePath (std::move (single_segments), false, locus);
   }
 
   const std::vector<SimplePathSegment> &get_segments () const
@@ -451,6 +500,8 @@ private:
 
   Location locus;
 
+  bool inner_attribute;
+
   // TODO: maybe a variable storing whether attr input is parsed or not
 
 public:
@@ -459,8 +510,9 @@ public:
 
   // Constructor has pointer AttrInput for polymorphism reasons
   Attribute (SimplePath path, std::unique_ptr<AttrInput> input,
-	     Location locus = Location ())
-    : path (std::move (path)), attr_input (std::move (input)), locus (locus)
+	     Location locus = UNDEF_LOCATION, bool inner_attribute = false)
+    : path (std::move (path)), attr_input (std::move (input)), locus (locus),
+      inner_attribute (inner_attribute)
   {}
 
   // default destructor
@@ -549,6 +601,8 @@ public:
 
   std::string as_string () const;
 
+  bool is_inner_attribute () const { return inner_attribute; }
+
   // no visitor pattern as not currently polymorphic
 
   const SimplePath &get_path () const { return path; }
@@ -557,8 +611,8 @@ public:
   // Call to parse attribute body to meta item syntax.
   void parse_attr_to_meta_item ();
 
-  /* Determines whether cfg predicate is true and item with attribute should not
-   * be stripped. Attribute body must already be parsed to meta item. */
+  /* Determines whether cfg predicate is true and item with attribute should
+   * not be stripped. Attribute body must already be parsed to meta item. */
   bool check_cfg_predicate (const Session &session) const;
 
   // Returns whether body has been parsed to meta item form or not.
@@ -569,7 +623,8 @@ public:
   std::vector<Attribute> separate_cfg_attrs () const;
 
 protected:
-  // not virtual as currently no subclasses of Attribute, but could be in future
+  // not virtual as currently no subclasses of Attribute, but could be in
+  // future
   /*virtual*/ Attribute *clone_attribute_impl () const
   {
     return new Attribute (*this);
@@ -577,12 +632,13 @@ protected:
 };
 
 // Attribute body - abstract base class
-class AttrInput
+class AttrInput : public Visitable
 {
 public:
   enum AttrInputType
   {
     LITERAL,
+    MACRO,
     META_ITEM,
     TOKEN_TREE,
   };
@@ -596,8 +652,6 @@ public:
   }
 
   virtual std::string as_string () const = 0;
-
-  virtual void accept_vis (ASTVisitor &vis) = 0;
 
   virtual bool check_cfg_predicate (const Session &session) const = 0;
 
@@ -620,7 +674,7 @@ protected:
 class MetaNameValueStr;
 
 // abstract base meta item inner class
-class MetaItemInner
+class MetaItemInner : public Visitable
 {
 protected:
   // pure virtual as MetaItemInner
@@ -638,8 +692,6 @@ public:
   virtual Location get_locus () const = 0;
 
   virtual std::string as_string () const = 0;
-
-  virtual void accept_vis (ASTVisitor &vis) = 0;
 
   /* HACK: used to simplify parsing - creates a copy of that type, or returns
    * null */
@@ -661,11 +713,10 @@ public:
 // Container used to store MetaItems as AttrInput (bridge-ish kinda thing)
 class AttrInputMetaItemContainer : public AttrInput
 {
-  std::vector<std::unique_ptr<MetaItemInner> > items;
+  std::vector<std::unique_ptr<MetaItemInner>> items;
 
 public:
-  AttrInputMetaItemContainer (
-    std::vector<std::unique_ptr<MetaItemInner> > items)
+  AttrInputMetaItemContainer (std::vector<std::unique_ptr<MetaItemInner>> items)
     : items (std::move (items))
   {}
 
@@ -719,8 +770,8 @@ public:
   bool is_meta_item () const override { return true; }
 
   // TODO: this mutable getter seems dodgy
-  std::vector<std::unique_ptr<MetaItemInner> > &get_items () { return items; }
-  const std::vector<std::unique_ptr<MetaItemInner> > &get_items () const
+  std::vector<std::unique_ptr<MetaItemInner>> &get_items () { return items; }
+  const std::vector<std::unique_ptr<MetaItemInner>> &get_items () const
   {
     return items;
   }
@@ -742,7 +793,7 @@ protected:
 class DelimTokenTree : public TokenTree, public AttrInput
 {
   DelimType delim_type;
-  std::vector<std::unique_ptr<TokenTree> > token_trees;
+  std::vector<std::unique_ptr<TokenTree>> token_trees;
   Location locus;
 
 protected:
@@ -767,9 +818,9 @@ protected:
 
 public:
   DelimTokenTree (DelimType delim_type,
-		  std::vector<std::unique_ptr<TokenTree> > token_trees
-		  = std::vector<std::unique_ptr<TokenTree> > (),
-		  Location locus = Location ())
+		  std::vector<std::unique_ptr<TokenTree>> token_trees
+		  = std::vector<std::unique_ptr<TokenTree>> (),
+		  Location locus = UNDEF_LOCATION)
     : delim_type (delim_type), token_trees (std::move (token_trees)),
       locus (locus)
   {}
@@ -817,7 +868,7 @@ public:
 
   AttrInputMetaItemContainer *parse_to_meta_item () const override;
 
-  std::vector<std::unique_ptr<Token> > to_token_stream () const override;
+  std::vector<std::unique_ptr<Token>> to_token_stream () const override;
 
   std::unique_ptr<DelimTokenTree> clone_delim_token_tree () const
   {
@@ -831,7 +882,7 @@ public:
     return AttrInput::AttrInputType::TOKEN_TREE;
   }
 
-  std::vector<std::unique_ptr<TokenTree> > &get_token_trees ()
+  std::vector<std::unique_ptr<TokenTree>> &get_token_trees ()
   {
     return token_trees;
   }
@@ -839,8 +890,8 @@ public:
   DelimType get_delim_type () const { return delim_type; }
 };
 
-/* Forward decl - definition moved to rust-expr.h as it requires LiteralExpr to
- * be defined */
+/* Forward decl - definition moved to rust-expr.h as it requires LiteralExpr
+ * to be defined */
 class AttrInputLiteral;
 
 // abstract base meta item class
@@ -869,11 +920,21 @@ class MetaListPaths;
 // Forward decl - defined in rust-macro.h
 class MetaListNameValueStr;
 
-/* Base statement abstract class. Note that most "statements" are not allowed in
- * top-level module scope - only a subclass of statements called "items" are. */
+/* Base statement abstract class. Note that most "statements" are not allowed
+ * in top-level module scope - only a subclass of statements called "items"
+ * are. */
 class Stmt : public Node
 {
 public:
+  enum class Kind
+  {
+    Empty,
+    Item,
+    Let,
+    Expr,
+    MacroInvocation,
+  };
+
   // Unique pointer custom clone function
   std::unique_ptr<Stmt> clone_stmt () const
   {
@@ -884,15 +945,19 @@ public:
 
   virtual std::string as_string () const = 0;
 
-  virtual void accept_vis (ASTVisitor &vis) = 0;
-
   virtual Location get_locus () const = 0;
 
   virtual void mark_for_strip () = 0;
   virtual bool is_marked_for_strip () const = 0;
   NodeId get_node_id () const { return node_id; }
 
+  virtual Kind get_stmt_kind () = 0;
+
+  // TODO: Can we remove these two?
   virtual bool is_item () const = 0;
+  virtual bool is_expr () const { return false; }
+
+  virtual void add_semicolon () {}
 
 protected:
   Stmt () : node_id (Analysis::Mappings::get ()->get_next_node_id ()) {}
@@ -919,9 +984,16 @@ public:
   add_crate_name (std::vector<std::string> &names ATTRIBUTE_UNUSED) const
   {}
 
+  Stmt::Kind get_stmt_kind () final { return Stmt::Kind::Item; }
+
   // FIXME: ARTHUR: Is it okay to have removed that final? Is it *required*
   // behavior that we have items that can also be expressions?
   bool is_item () const override { return true; }
+
+  virtual std::vector<Attribute> &get_outer_attrs () = 0;
+  virtual const std::vector<Attribute> &get_outer_attrs () const = 0;
+
+  virtual bool has_outer_attrs () const { return !get_outer_attrs ().empty (); }
 
 protected:
   // Clone function implementation as pure virtual method
@@ -951,10 +1023,6 @@ public:
    * for some?
    *  - evaluate() - evaluates expression if constant? can_evaluate()? */
 
-  /* HACK: downcasting without dynamic_cast (if possible) via polymorphism -
-   * overrided in subclasses of ExprWithoutBlock */
-  virtual ExprWithoutBlock *as_expr_without_block () const { return nullptr; }
-
   virtual std::string as_string () const = 0;
 
   virtual ~Expr () {}
@@ -966,8 +1034,6 @@ public:
   // HACK: strictly not needed, but faster than full downcast clone
   virtual bool is_expr_without_block () const = 0;
 
-  virtual void accept_vis (ASTVisitor &vis) = 0;
-
   virtual void mark_for_strip () = 0;
   virtual bool is_marked_for_strip () const = 0;
 
@@ -975,16 +1041,18 @@ public:
 
   virtual void set_node_id (NodeId id) { node_id = id; }
 
+  virtual std::vector<Attribute> &get_outer_attrs () = 0;
+
+  // TODO: think of less hacky way to implement this kind of thing
+  // Sets outer attributes.
+  virtual void set_outer_attrs (std::vector<Attribute>) = 0;
+
 protected:
   // Constructor
   Expr () : node_id (Analysis::Mappings::get ()->get_next_node_id ()) {}
 
   // Clone function implementation as pure virtual method
   virtual Expr *clone_expr_impl () const = 0;
-
-  // TODO: think of less hacky way to implement this kind of thing
-  // Sets outer attributes.
-  virtual void set_outer_attrs (std::vector<Attribute>) = 0;
 
   NodeId node_id;
 };
@@ -996,9 +1064,9 @@ protected:
   // pure virtual clone implementation
   virtual ExprWithoutBlock *clone_expr_without_block_impl () const = 0;
 
-  /* Save having to specify two clone methods in derived classes by making expr
-   * clone return exprwithoutblock clone. Hopefully won't affect performance too
-   * much. */
+  /* Save having to specify two clone methods in derived classes by making
+   * expr clone return exprwithoutblock clone. Hopefully won't affect
+   * performance too much. */
   ExprWithoutBlock *clone_expr_impl () const final override
   {
     return clone_expr_without_block_impl ();
@@ -1012,20 +1080,12 @@ public:
   {
     return std::unique_ptr<ExprWithoutBlock> (clone_expr_without_block_impl ());
   }
-
-  /* downcasting hack from expr to use pratt parsing with
-   * parse_expr_without_block */
-  ExprWithoutBlock *as_expr_without_block () const final override
-  {
-    return clone_expr_without_block_impl ();
-  }
-
-  virtual ExprWithoutBlock *to_stmt () const { return clone_expr_impl (); }
 };
 
 /* HACK: IdentifierExpr, delete when figure out identifier vs expr problem in
  * Pratt parser */
-/* Alternatively, identifiers could just be represented as single-segment paths
+/* Alternatively, identifiers could just be represented as single-segment
+ * paths
  */
 class IdentifierExpr : public ExprWithoutBlock
 {
@@ -1040,7 +1100,7 @@ public:
       locus (locus)
   {}
 
-  std::string as_string () const override { return ident; }
+  std::string as_string () const override { return ident.as_string (); }
 
   Location get_locus () const override final { return locus; }
 
@@ -1055,16 +1115,18 @@ public:
   }
 
   // "Error state" if ident is empty, so base stripping on this.
-  void mark_for_strip () override { ident = {}; }
+  void mark_for_strip () override { ident = {""}; }
   bool is_marked_for_strip () const override { return ident.empty (); }
 
   const std::vector<Attribute> &get_outer_attrs () const { return outer_attrs; }
-  std::vector<Attribute> &get_outer_attrs () { return outer_attrs; }
+  std::vector<Attribute> &get_outer_attrs () override { return outer_attrs; }
 
   void set_outer_attrs (std::vector<Attribute> new_attrs) override
   {
     outer_attrs = std::move (new_attrs);
   }
+
+  Kind get_ast_kind () const override { return Kind::IDENTIFIER; }
 
 protected:
   // Clone method implementation
@@ -1080,7 +1142,7 @@ protected:
 };
 
 // Pattern base AST node
-class Pattern
+class Pattern : public Visitable
 {
 public:
   // Unique pointer custom clone function
@@ -1094,7 +1156,6 @@ public:
   virtual ~Pattern () {}
 
   virtual std::string as_string () const = 0;
-  virtual void accept_vis (ASTVisitor &vis) = 0;
 
   // as only one kind of pattern can be stripped, have default of nothing
   virtual void mark_for_strip () {}
@@ -1132,8 +1193,6 @@ public:
   /* as pointer, shouldn't require definition beforehand, only forward
    * declaration. */
 
-  virtual void accept_vis (ASTVisitor &vis) = 0;
-
   // as only two kinds of types can be stripped, have default of nothing
   virtual void mark_for_strip () {}
   virtual bool is_marked_for_strip () const { return false; }
@@ -1165,9 +1224,9 @@ protected:
   // Clone function implementation as pure virtual method
   virtual TypeNoBounds *clone_type_no_bounds_impl () const = 0;
 
-  /* Save having to specify two clone methods in derived classes by making type
-   * clone return typenobounds clone. Hopefully won't affect performance too
-   * much. */
+  /* Save having to specify two clone methods in derived classes by making
+   * type clone return typenobounds clone. Hopefully won't affect performance
+   * too much. */
   TypeNoBounds *clone_type_impl () const final override
   {
     return clone_type_no_bounds_impl ();
@@ -1176,9 +1235,9 @@ protected:
   TypeNoBounds () : Type () {}
 };
 
-/* Abstract base class representing a type param bound - Lifetime and TraitBound
- * extends it */
-class TypeParamBound
+/* Abstract base class representing a type param bound - Lifetime and
+ * TraitBound extends it */
+class TypeParamBound : public Visitable
 {
 public:
   virtual ~TypeParamBound () {}
@@ -1190,8 +1249,6 @@ public:
   }
 
   virtual std::string as_string () const = 0;
-
-  virtual void accept_vis (ASTVisitor &vis) = 0;
 
   NodeId get_node_id () const { return node_id; }
 
@@ -1226,13 +1283,13 @@ private:
 public:
   // Constructor
   Lifetime (LifetimeType type, std::string name = std::string (),
-	    Location locus = Location ())
+	    Location locus = UNDEF_LOCATION)
     : TypeParamBound (Analysis::Mappings::get ()->get_next_node_id ()),
       lifetime_type (type), lifetime_name (std::move (name)), locus (locus)
   {}
 
   Lifetime (NodeId id, LifetimeType type, std::string name = std::string (),
-	    Location locus = Location ())
+	    Location locus = UNDEF_LOCATION)
     : TypeParamBound (id), lifetime_type (type),
       lifetime_name (std::move (name)), locus (locus)
   {}
@@ -1257,17 +1314,17 @@ public:
   std::string get_lifetime_name () const { return lifetime_name; }
 
 protected:
-  /* Use covariance to implement clone function as returning this object rather
-   * than base */
+  /* Use covariance to implement clone function as returning this object
+   * rather than base */
   Lifetime *clone_type_param_bound_impl () const override
   {
     return new Lifetime (node_id, lifetime_type, lifetime_name, locus);
   }
 };
 
-/* Base generic parameter in AST. Abstract - can be represented by a Lifetime or
- * Type param */
-class GenericParam
+/* Base generic parameter in AST. Abstract - can be represented by a Lifetime
+ * or Type param */
+class GenericParam : public Visitable
 {
 public:
   enum class Kind
@@ -1286,8 +1343,6 @@ public:
   }
 
   virtual std::string as_string () const = 0;
-
-  virtual void accept_vis (ASTVisitor &vis) = 0;
 
   virtual Location get_locus () const = 0;
 
@@ -1328,7 +1383,7 @@ public:
   static LifetimeParam create_error ()
   {
     return LifetimeParam (Lifetime::error (), {}, Attribute::create_empty (),
-			  Location ());
+			  UNDEF_LOCATION);
   }
 
   // Returns whether the lifetime param is in an error state.
@@ -1351,8 +1406,8 @@ public:
   Kind get_kind () const override final { return Kind::Lifetime; }
 
 protected:
-  /* Use covariance to implement clone function as returning this object rather
-   * than base */
+  /* Use covariance to implement clone function as returning this object
+   * rather than base */
   LifetimeParam *clone_generic_param_impl () const override
   {
     return new LifetimeParam (*this);
@@ -1360,7 +1415,7 @@ protected:
 };
 
 // Item used in trait declarations - abstract base class
-class TraitItem
+class TraitItem : public Visitable
 {
 protected:
   TraitItem (Location locus)
@@ -1384,8 +1439,6 @@ public:
 
   virtual std::string as_string () const = 0;
 
-  virtual void accept_vis (ASTVisitor &vis) = 0;
-
   virtual void mark_for_strip () = 0;
   virtual bool is_marked_for_strip () const = 0;
 
@@ -1395,7 +1448,7 @@ public:
 
 /* Abstract base class for items used within an inherent impl block (the impl
  * name {} one) */
-class InherentImplItem
+class InherentImplItem : public Visitable
 {
 protected:
   // Clone function implementation as pure virtual method
@@ -1412,8 +1465,6 @@ public:
 
   virtual std::string as_string () const = 0;
 
-  virtual void accept_vis (ASTVisitor &vis) = 0;
-
   virtual void mark_for_strip () = 0;
   virtual bool is_marked_for_strip () const = 0;
 
@@ -1421,7 +1472,7 @@ public:
 };
 
 // Abstract base class for items used in a trait impl
-class TraitImplItem
+class TraitImplItem : public Visitable
 {
 protected:
   virtual TraitImplItem *clone_trait_impl_item_impl () const = 0;
@@ -1437,14 +1488,12 @@ public:
 
   virtual std::string as_string () const = 0;
 
-  virtual void accept_vis (ASTVisitor &vis) = 0;
-
   virtual void mark_for_strip () = 0;
   virtual bool is_marked_for_strip () const = 0;
 };
 
 // Abstract base class for an item used inside an extern block
-class ExternalItem
+class ExternalItem : public Visitable
 {
 public:
   ExternalItem () : node_id (Analysis::Mappings::get ()->get_next_node_id ()) {}
@@ -1458,8 +1507,6 @@ public:
   }
 
   virtual std::string as_string () const = 0;
-
-  virtual void accept_vis (ASTVisitor &vis) = 0;
 
   virtual void mark_for_strip () = 0;
   virtual bool is_marked_for_strip () const = 0;
@@ -1482,7 +1529,7 @@ private:
   DelimTokenTree token_tree;
 
   // One way of parsing the macro. Probably not applicable for all macros.
-  std::vector<std::unique_ptr<MetaItemInner> > parsed_items;
+  std::vector<std::unique_ptr<MetaItemInner>> parsed_items;
   bool parsed_to_meta_item = false;
   MacroExpander *expander = nullptr;
 
@@ -1549,22 +1596,22 @@ public:
   }
 
   void
-  set_meta_item_output (std::vector<std::unique_ptr<MetaItemInner> > new_items)
+  set_meta_item_output (std::vector<std::unique_ptr<MetaItemInner>> new_items)
   {
     parsed_items = std::move (new_items);
   }
   // TODO: mutable getter seems kinda dodgy
-  std::vector<std::unique_ptr<MetaItemInner> > &get_meta_items ()
+  std::vector<std::unique_ptr<MetaItemInner>> &get_meta_items ()
   {
     return parsed_items;
   }
-  const std::vector<std::unique_ptr<MetaItemInner> > &get_meta_items () const
+  const std::vector<std::unique_ptr<MetaItemInner>> &get_meta_items () const
   {
     return parsed_items;
   }
 };
 
-class SingleASTNode
+class SingleASTNode : public Visitable
 {
 public:
   enum NodeType
@@ -1780,7 +1827,7 @@ public:
     return std::move (type);
   }
 
-  void accept_vis (ASTVisitor &vis)
+  void accept_vis (ASTVisitor &vis) override
   {
     switch (kind)
       {
@@ -1840,7 +1887,7 @@ public:
 	return type == nullptr;
       }
 
-    gcc_unreachable ();
+    rust_unreachable ();
     return true;
   }
 
@@ -1866,7 +1913,7 @@ public:
 	return "Type: " + type->as_string ();
       }
 
-    gcc_unreachable ();
+    rust_unreachable ();
     return "";
   }
 };
@@ -1878,13 +1925,13 @@ struct Crate
   // dodgy spacing required here
   /* TODO: is it better to have a vector of items here or a module (implicit
    * top-level one)? */
-  std::vector<std::unique_ptr<Item> > items;
+  std::vector<std::unique_ptr<Item>> items;
 
   NodeId node_id;
 
 public:
   // Constructor
-  Crate (std::vector<std::unique_ptr<Item> > items,
+  Crate (std::vector<std::unique_ptr<Item>> items,
 	 std::vector<Attribute> inner_attrs)
     : inner_attrs (std::move (inner_attrs)), items (std::move (items)),
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
@@ -1934,6 +1981,16 @@ public:
 
   NodeId get_node_id () const { return node_id; }
   const std::vector<Attribute> &get_inner_attrs () const { return inner_attrs; }
+
+  std::vector<std::unique_ptr<AST::Item>> take_items ()
+  {
+    return std::move (items);
+  }
+
+  void set_items (std::vector<std::unique_ptr<AST::Item>> &&new_items)
+  {
+    items = std::move (new_items);
+  }
 };
 
 // Base path expression AST node - abstract
@@ -1942,5 +1999,16 @@ class PathExpr : public ExprWithoutBlock
 };
 } // namespace AST
 } // namespace Rust
+
+namespace std {
+template <> struct less<Rust::Identifier>
+{
+  bool operator() (const Rust::Identifier &lhs,
+		   const Rust::Identifier &rhs) const
+  {
+    return lhs.as_string () < rhs.as_string ();
+  }
+};
+} // namespace std
 
 #endif

@@ -87,6 +87,8 @@ public:
 
   const SubstitutionParamMapping *get_param_mapping () const;
 
+  const ParamType *get_param_ty () const;
+
   static SubstitutionArg error ();
 
   bool is_error () const;
@@ -97,6 +99,7 @@ public:
 
 private:
   const SubstitutionParamMapping *param;
+  const ParamType *original_param;
   BaseType *argument;
 };
 
@@ -109,7 +112,8 @@ public:
 				std::map<std::string, BaseType *> binding_args,
 				Location locus,
 				ParamSubstCb param_subst_cb = nullptr,
-				bool trait_item_flag = false);
+				bool trait_item_flag = false,
+				bool error_flag = false);
 
   SubstitutionArgumentMappings (const SubstitutionArgumentMappings &other);
   SubstitutionArgumentMappings &
@@ -120,6 +124,7 @@ public:
     = default;
 
   static SubstitutionArgumentMappings error ();
+  static SubstitutionArgumentMappings empty ();
 
   bool is_error () const;
 
@@ -161,6 +166,7 @@ private:
   Location locus;
   ParamSubstCb param_subst_cb;
   bool trait_item_flag;
+  bool error_flag;
 };
 
 class SubstitutionRef
@@ -315,10 +321,6 @@ public:
   SubstitutionArgumentMappings get_used_arguments () const;
 
 protected:
-  Resolver::AssociatedImplTrait *lookup_associated_impl (
-    const SubstitutionParamMapping &subst, const TypeBoundPredicate &bound,
-    const TyTy::BaseType *binding, bool *error_flag) const;
-
   std::vector<SubstitutionParamMapping> substitutions;
   SubstitutionArgumentMappings used_arguments;
 };

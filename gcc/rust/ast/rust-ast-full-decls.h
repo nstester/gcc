@@ -77,6 +77,7 @@ class QualifiedPathInType;
 class ExprWithBlock;
 class LiteralExpr;
 class AttrInputLiteral;
+class AttrInputMacro;
 class MetaItemLitExpr;
 class MetaItemPathLit;
 class OperatorExpr;
@@ -135,12 +136,8 @@ class WhileLetLoopExpr;
 class ForLoopExpr;
 class IfExpr;
 class IfExprConseqElse;
-class IfExprConseqIf;
 class IfLetExpr;
-class IfExprConseqIfLet;
 class IfLetExprConseqElse;
-class IfLetExprConseqIf;
-class IfLetExprConseqIfLet;
 struct MatchArm;
 // class MatchCase;
 // class MatchCaseBlockExpr;
@@ -149,14 +146,20 @@ struct MatchCase;
 class MatchExpr;
 class AwaitExpr;
 class AsyncBlockExpr;
+enum class InlineAsmOptions;
+struct AnonConst;
+struct InlineAsmRegOrRegClass;
+struct InlineAsmOperand;
+struct InlineAsmPlaceHolder;
+struct InlineAsmTemplatePiece;
+struct TupleClobber;
+struct TupleTemplateStr;
 class InlineAsm;
 
 // rust-stmt.h
 class EmptyStmt;
 class LetStmt;
 class ExprStmt;
-class ExprStmtWithoutBlock;
-class ExprStmtWithBlock;
 
 // rust-item.h
 class TypeParam;

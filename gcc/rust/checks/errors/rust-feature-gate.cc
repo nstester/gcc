@@ -42,9 +42,9 @@ FeatureGate::check (AST::Crate &crate)
 		{
 		  const auto &name_str = item->as_string ();
 		  auto tname = Feature::as_name (name_str);
-		  if (!tname.is_none ())
+		  if (tname.has_value ())
 		    {
-		      auto name = tname.get ();
+		      auto name = tname.value ();
 		      valid_features.insert (name);
 		    }
 
@@ -79,8 +79,8 @@ FeatureGate::gate (Feature::Name name, Location loc,
 	      "<https://github.com/rust-lang/rust/issues/%u> for more "
 	      "information. add `#![feature(%s)]` to the crate attributes to "
 	      "enable.";
-	  rust_error_at (loc, fmt_str, error_msg.c_str (), issue, issue,
-			 feature.as_string ().c_str ());
+	  rust_error_at (loc, ErrorCode ("E0658"), fmt_str, error_msg.c_str (),
+			 issue, issue, feature.as_string ().c_str ());
 	}
       else
 	{

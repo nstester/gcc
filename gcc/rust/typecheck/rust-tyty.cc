@@ -112,7 +112,7 @@ TypeKindFormat::to_string (TypeKind kind)
     case TypeKind::ERROR:
       return "ERROR";
     }
-  gcc_unreachable ();
+  rust_unreachable ();
 }
 
 bool
@@ -273,8 +273,11 @@ BaseType::get_locus () const
 
 // FIXME this is missing locus
 bool
-BaseType::satisfies_bound (const TypeBoundPredicate &predicate) const
+BaseType::satisfies_bound (const TypeBoundPredicate &predicate,
+			   bool emit_error) const
 {
+  bool is_infer_var = destructure ()->get_kind () == TyTy::TypeKind::INFER;
+
   const Resolver::TraitReference *query = predicate.get ();
   for (const auto &bound : specified_bounds)
     {
@@ -282,6 +285,9 @@ BaseType::satisfies_bound (const TypeBoundPredicate &predicate) const
       if (item->satisfies_bound (*query))
 	return true;
     }
+
+  if (is_infer_var)
+    return true;
 
   bool satisfied = false;
   auto probed = Resolver::TypeBoundsProbe::Probe (this);
@@ -313,6 +319,11 @@ BaseType::satisfies_bound (const TypeBoundPredicate &predicate) const
       const HIR::ImplBlock &impl = *(b.second);
       for (const auto &item : impl.get_impl_items ())
 	{
+	  bool is_associated_type = item->get_impl_item_type ()
+				    == HIR::ImplItem::ImplItemType::TYPE_ALIAS;
+	  if (!is_associated_type)
+	    continue;
+
 	  TyTy::BaseType *impl_item_ty = nullptr;
 	  Analysis::NodeMapping i = item->get_impl_mappings ();
 	  bool query_ok = Resolver::query_type (i.get_hirid (), &impl_item_ty);
@@ -331,15 +342,22 @@ BaseType::satisfies_bound (const TypeBoundPredicate &predicate) const
 	  // compare the types
 	  if (!bound_ty->can_eq (impl_item_ty, false))
 	    {
-	      RichLocation r (mappings->lookup_location (get_ref ()));
-	      r.add_range (predicate.get_locus ());
-	      r.add_range (mappings->lookup_location (i.get_hirid ()));
+	      if (!impl_item_ty->can_eq (bound_ty, false))
+		{
+		  if (emit_error)
+		    {
+		      rich_location r (line_table,
+				       mappings->lookup_location (get_ref ()));
+		      r.add_range (predicate.get_locus ());
+		      r.add_range (mappings->lookup_location (i.get_hirid ()));
 
-	      rust_error_at (
-		r, "expected %<%s%> got %<%s%>",
-		bound_ty->destructure ()->get_name ().c_str (),
-		impl_item_ty->destructure ()->get_name ().c_str ());
-	      return false;
+		      rust_error_at (
+			r, "expected %<%s%> got %<%s%>",
+			bound_ty->destructure ()->get_name ().c_str (),
+			impl_item_ty->destructure ()->get_name ().c_str ());
+		    }
+		  return false;
+		}
 	    }
 	}
 
@@ -357,14 +375,14 @@ BaseType::bounds_compatible (const BaseType &other, Location locus,
     unsatisfied_bounds;
   for (auto &bound : get_specified_bounds ())
     {
-      if (!other.satisfies_bound (bound))
+      if (!other.satisfies_bound (bound, emit_error))
 	unsatisfied_bounds.push_back (bound);
     }
 
   // lets emit a single error for this
   if (unsatisfied_bounds.size () > 0)
     {
-      RichLocation r (locus);
+      rich_location r (line_table, locus);
       std::string missing_preds;
       for (size_t i = 0; i < unsatisfied_bounds.size (); i++)
 	{
@@ -379,7 +397,7 @@ BaseType::bounds_compatible (const BaseType &other, Location locus,
 
       if (emit_error)
 	{
-	  rust_error_at (r,
+	  rust_error_at (r, ErrorCode ("E0277"),
 			 "bounds not satisfied for %s %<%s%> is not satisfied",
 			 other.get_name ().c_str (), missing_preds.c_str ());
 	  // rust_assert (!emit_error);
@@ -446,7 +464,7 @@ BaseType::destructure ()
       if (recurisve_ops++ >= rust_max_recursion_depth)
 	{
 	  rust_error_at (
-	    Location (),
+	    UNDEF_LOCATION,
 	    "%<recursion depth%> count exceeds limit of %i (use "
 	    "%<frust-max-recursion-depth=%> to increase the limit)",
 	    rust_max_recursion_depth);
@@ -498,7 +516,7 @@ BaseType::destructure () const
       if (recurisve_ops++ >= rust_max_recursion_depth)
 	{
 	  rust_error_at (
-	    Location (),
+	    UNDEF_LOCATION,
 	    "%<recursion depth%> count exceeds limit of %i (use "
 	    "%<frust-max-recursion-depth=%> to increase the limit)",
 	    rust_max_recursion_depth);
@@ -654,7 +672,7 @@ BaseType::monomorphized_clone () const
       break;
     }
 
-  gcc_unreachable ();
+  rust_unreachable ();
   return nullptr;
 }
 
@@ -1250,12 +1268,12 @@ InferType::apply_primitive_type_hint (const BaseType &hint)
 
 ErrorType::ErrorType (HirId ref, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::ERROR,
-	      {Resolver::CanonicalPath::create_empty (), Location ()}, refs)
+	      {Resolver::CanonicalPath::create_empty (), UNDEF_LOCATION}, refs)
 {}
 
 ErrorType::ErrorType (HirId ref, HirId ty_ref, std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::ERROR,
-	      {Resolver::CanonicalPath::create_empty (), Location ()}, refs)
+	      {Resolver::CanonicalPath::create_empty (), UNDEF_LOCATION}, refs)
 {}
 
 std::string
@@ -1388,7 +1406,7 @@ VariantDef::variant_type_string (VariantType type)
     case STRUCT:
       return "struct";
     }
-  gcc_unreachable ();
+  rust_unreachable ();
   return "";
 }
 
@@ -1437,8 +1455,7 @@ VariantDef::get_error_node ()
 {
   static VariantDef node
     = VariantDef (UNKNOWN_HIRID, UNKNOWN_DEFID, "",
-		  {Resolver::CanonicalPath::create_empty (),
-		   Linemap::unknown_location ()},
+		  {Resolver::CanonicalPath::create_empty (), UNKNOWN_LOCATION},
 		  nullptr);
 
   return node;
@@ -1805,7 +1822,7 @@ TupleType::TupleType (HirId ref, HirId ty_ref, Location locus,
 TupleType *
 TupleType::get_unit_type (HirId ref)
 {
-  return new TupleType (ref, Linemap::predeclared_location ());
+  return new TupleType (ref, BUILTINS_LOCATION);
 }
 
 size_t
@@ -2262,7 +2279,7 @@ ClosureType::clone () const
 ClosureType *
 ClosureType::handle_substitions (SubstitutionArgumentMappings &mappings)
 {
-  gcc_unreachable ();
+  rust_unreachable ();
   return nullptr;
 }
 
@@ -2464,15 +2481,13 @@ SliceType::handle_substitions (SubstitutionArgumentMappings &mappings)
 
 BoolType::BoolType (HirId ref, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::BOOL,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
 BoolType::BoolType (HirId ref, HirId ty_ref, std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::BOOL,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
@@ -2517,16 +2532,14 @@ BoolType::clone () const
 
 IntType::IntType (HirId ref, IntKind kind, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::INT,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     int_kind (kind)
 {}
 
 IntType::IntType (HirId ref, HirId ty_ref, IntKind kind, std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::INT,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     int_kind (kind)
 {}
@@ -2571,7 +2584,7 @@ IntType::as_string () const
     case I128:
       return "i128";
     }
-  gcc_unreachable ();
+  rust_unreachable ();
   return "__unknown_int_type";
 }
 
@@ -2603,8 +2616,7 @@ IntType::is_equal (const BaseType &other) const
 
 UintType::UintType (HirId ref, UintKind kind, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::UINT,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     uint_kind (kind)
 {}
@@ -2612,8 +2624,7 @@ UintType::UintType (HirId ref, UintKind kind, std::set<HirId> refs)
 UintType::UintType (HirId ref, HirId ty_ref, UintKind kind,
 		    std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::UINT,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     uint_kind (kind)
 {}
@@ -2658,7 +2669,7 @@ UintType::as_string () const
     case U128:
       return "u128";
     }
-  gcc_unreachable ();
+  rust_unreachable ();
   return "__unknown_uint_type";
 }
 
@@ -2690,8 +2701,7 @@ UintType::is_equal (const BaseType &other) const
 
 FloatType::FloatType (HirId ref, FloatKind kind, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::FLOAT,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     float_kind (kind)
 {}
@@ -2699,8 +2709,7 @@ FloatType::FloatType (HirId ref, FloatKind kind, std::set<HirId> refs)
 FloatType::FloatType (HirId ref, HirId ty_ref, FloatKind kind,
 		      std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::FLOAT,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     float_kind (kind)
 {}
@@ -2739,7 +2748,7 @@ FloatType::as_string () const
     case F64:
       return "f64";
     }
-  gcc_unreachable ();
+  rust_unreachable ();
   return "__unknown_float_type";
 }
 
@@ -2771,15 +2780,13 @@ FloatType::is_equal (const BaseType &other) const
 
 USizeType::USizeType (HirId ref, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::USIZE,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
 USizeType::USizeType (HirId ref, HirId ty_ref, std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::USIZE,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
@@ -2824,15 +2831,13 @@ USizeType::clone () const
 
 ISizeType::ISizeType (HirId ref, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::ISIZE,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
 ISizeType::ISizeType (HirId ref, HirId ty_ref, std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::ISIZE,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
@@ -2877,15 +2882,13 @@ ISizeType::clone () const
 
 CharType::CharType (HirId ref, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::CHAR,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
 CharType::CharType (HirId ref, HirId ty_ref, std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::CHAR,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
@@ -2931,8 +2934,7 @@ CharType::clone () const
 ReferenceType::ReferenceType (HirId ref, TyVar base, Mutability mut,
 			      std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::REF,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     base (base), mut (mut)
 {}
@@ -2940,8 +2942,7 @@ ReferenceType::ReferenceType (HirId ref, TyVar base, Mutability mut,
 ReferenceType::ReferenceType (HirId ref, HirId ty_ref, TyVar base,
 			      Mutability mut, std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::REF,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     base (base), mut (mut)
 {}
@@ -2961,7 +2962,7 @@ ReferenceType::is_mutable () const
 bool
 ReferenceType::is_dyn_object () const
 {
-  return is_dyn_slice_type () || is_dyn_str_type ();
+  return is_dyn_slice_type () || is_dyn_str_type () || is_dyn_obj_type ();
 }
 
 bool
@@ -2987,6 +2988,19 @@ ReferenceType::is_dyn_str_type (const TyTy::StrType **str) const
     return true;
 
   *str = static_cast<const TyTy::StrType *> (element);
+  return true;
+}
+
+bool
+ReferenceType::is_dyn_obj_type (const TyTy::DynamicObjectType **dyn) const
+{
+  const TyTy::BaseType *element = get_base ()->destructure ();
+  if (element->get_kind () != TyTy::TypeKind::DYNAMIC)
+    return false;
+  if (dyn == nullptr)
+    return true;
+
+  *dyn = static_cast<const TyTy::DynamicObjectType *> (element);
   return true;
 }
 
@@ -3076,8 +3090,7 @@ ReferenceType::handle_substitions (SubstitutionArgumentMappings &mappings)
 PointerType::PointerType (HirId ref, TyVar base, Mutability mut,
 			  std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::POINTER,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     base (base), mut (mut)
 {}
@@ -3085,8 +3098,7 @@ PointerType::PointerType (HirId ref, TyVar base, Mutability mut,
 PointerType::PointerType (HirId ref, HirId ty_ref, TyVar base, Mutability mut,
 			  std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::POINTER,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     base (base), mut (mut)
 {}
@@ -3112,7 +3124,7 @@ PointerType::is_const () const
 bool
 PointerType::is_dyn_object () const
 {
-  return is_dyn_slice_type () || is_dyn_str_type ();
+  return is_dyn_slice_type () || is_dyn_str_type () || is_dyn_obj_type ();
 }
 
 bool
@@ -3138,6 +3150,19 @@ PointerType::is_dyn_str_type (const TyTy::StrType **str) const
     return true;
 
   *str = static_cast<const TyTy::StrType *> (element);
+  return true;
+}
+
+bool
+PointerType::is_dyn_obj_type (const TyTy::DynamicObjectType **dyn) const
+{
+  const TyTy::BaseType *element = get_base ()->destructure ();
+  if (element->get_kind () != TyTy::TypeKind::DYNAMIC)
+    return false;
+  if (dyn == nullptr)
+    return true;
+
+  *dyn = static_cast<const TyTy::DynamicObjectType *> (element);
   return true;
 }
 
@@ -3403,15 +3428,13 @@ ParamType::is_implicit_self_trait () const
 
 StrType::StrType (HirId ref, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::STR,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
 StrType::StrType (HirId ref, HirId ty_ref, std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::STR,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
@@ -3462,15 +3485,13 @@ StrType::is_equal (const BaseType &other) const
 
 NeverType::NeverType (HirId ref, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::NEVER,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
 NeverType::NeverType (HirId ref, HirId ty_ref, std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::NEVER,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs)
 {}
 
@@ -3516,8 +3537,7 @@ NeverType::clone () const
 PlaceholderType::PlaceholderType (std::string symbol, HirId ref,
 				  std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::PLACEHOLDER,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     symbol (symbol)
 {}
@@ -3525,8 +3545,7 @@ PlaceholderType::PlaceholderType (std::string symbol, HirId ref,
 PlaceholderType::PlaceholderType (std::string symbol, HirId ref, HirId ty_ref,
 				  std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::PLACEHOLDER,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     symbol (symbol)
 {}
@@ -3631,8 +3650,7 @@ ProjectionType::ProjectionType (
   std::vector<SubstitutionParamMapping> subst_refs,
   SubstitutionArgumentMappings generic_arguments, std::set<HirId> refs)
   : BaseType (ref, ref, TypeKind::PROJECTION,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     SubstitutionRef (std::move (subst_refs), std::move (generic_arguments)),
     base (base), trait (trait), item (item)
@@ -3644,8 +3662,7 @@ ProjectionType::ProjectionType (
   std::vector<SubstitutionParamMapping> subst_refs,
   SubstitutionArgumentMappings generic_arguments, std::set<HirId> refs)
   : BaseType (ref, ty_ref, TypeKind::PROJECTION,
-	      {Resolver::CanonicalPath::create_empty (),
-	       Linemap::predeclared_location ()},
+	      {Resolver::CanonicalPath::create_empty (), BUILTINS_LOCATION},
 	      refs),
     SubstitutionRef (std::move (subst_refs), std::move (generic_arguments)),
     base (base), trait (trait), item (item)
@@ -3834,7 +3851,7 @@ DynamicObjectType::is_equal (const BaseType &other) const
   if (num_specified_bounds () != other.num_specified_bounds ())
     return false;
 
-  return bounds_compatible (other, Location (), false);
+  return bounds_compatible (other, UNDEF_LOCATION, false);
 }
 
 const std::vector<

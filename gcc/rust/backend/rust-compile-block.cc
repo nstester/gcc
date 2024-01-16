@@ -71,27 +71,32 @@ CompileBlock::visit (HIR::BlockExpr &expr)
 
   if (expr.has_expr ())
     {
-      // the previous passes will ensure this is a valid return or
-      // a valid trailing expression
       tree compiled_expr = CompileExpr::Compile (expr.expr.get (), ctx);
-      if (compiled_expr != nullptr)
+      if (result != nullptr)
 	{
-	  if (result == nullptr)
-	    {
-	      ctx->add_statement (compiled_expr);
-	    }
-	  else
-	    {
-	      tree result_reference = ctx->get_backend ()->var_expression (
-		result, expr.get_final_expr ()->get_locus ());
+	  Location locus = expr.get_final_expr ()->get_locus ();
+	  tree result_reference
+	    = ctx->get_backend ()->var_expression (result, locus);
 
-	      tree assignment
-		= ctx->get_backend ()->assignment_statement (result_reference,
-							     compiled_expr,
-							     expr.get_locus ());
-	      ctx->add_statement (assignment);
-	    }
+	  tree assignment
+	    = ctx->get_backend ()->assignment_statement (result_reference,
+							 compiled_expr,
+							 expr.get_locus ());
+	  ctx->add_statement (assignment);
 	}
+    }
+  else if (result != nullptr)
+    {
+      Location locus = expr.get_locus ();
+      tree compiled_expr = unit_expression (ctx, expr.get_locus ());
+      tree result_reference
+	= ctx->get_backend ()->var_expression (result, locus);
+
+      tree assignment
+	= ctx->get_backend ()->assignment_statement (result_reference,
+						     compiled_expr,
+						     expr.get_locus ());
+      ctx->add_statement (assignment);
     }
 
   ctx->pop_block ();
@@ -103,8 +108,10 @@ CompileConditionalBlocks::visit (HIR::IfExpr &expr)
 {
   fncontext fnctx = ctx->peek_fn ();
   tree fndecl = fnctx.fndecl;
-  tree condition_expr = CompileExpr::Compile (expr.get_if_condition (), ctx);
-  tree then_block = CompileBlock::compile (expr.get_if_block (), ctx, result);
+  tree condition_expr
+    = CompileExpr::Compile (expr.get_if_condition ().get (), ctx);
+  tree then_block
+    = CompileBlock::compile (expr.get_if_block ().get (), ctx, result);
 
   translated
     = ctx->get_backend ()->if_statement (fndecl, condition_expr, then_block,
@@ -116,8 +123,10 @@ CompileConditionalBlocks::visit (HIR::IfExprConseqElse &expr)
 {
   fncontext fnctx = ctx->peek_fn ();
   tree fndecl = fnctx.fndecl;
-  tree condition_expr = CompileExpr::Compile (expr.get_if_condition (), ctx);
-  tree then_block = CompileBlock::compile (expr.get_if_block (), ctx, result);
+  tree condition_expr
+    = CompileExpr::Compile (expr.get_if_condition ().get (), ctx);
+  tree then_block
+    = CompileBlock::compile (expr.get_if_block ().get (), ctx, result);
 
   // else block
   std::vector<Bvariable *> locals;
@@ -129,7 +138,8 @@ CompileConditionalBlocks::visit (HIR::IfExprConseqElse &expr)
   ctx->push_block (else_block);
 
   tree else_stmt_decl
-    = CompileExprWithBlock::compile (expr.get_else_block (), ctx, result);
+    = CompileExprWithBlock::compile (expr.get_else_block ().get (), ctx,
+				     result);
 
   ctx->add_statement (else_stmt_decl);
 

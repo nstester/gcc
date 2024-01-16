@@ -33,7 +33,7 @@ ConstChecker::ConstChecker ()
 void
 ConstChecker::go (HIR::Crate &crate)
 {
-  for (auto &item : crate.items)
+  for (auto &item : crate.get_items ())
     item->accept_vis (*this);
 }
 
@@ -72,7 +72,7 @@ ConstChecker::ctx_to_str (ConstGenericCtx ctx)
     case ConstGenericCtx::Impl:
       return "impl";
     default:
-      gcc_unreachable ();
+      rust_unreachable ();
     }
 }
 
@@ -346,11 +346,10 @@ ConstChecker::check_function_call (HirId fn_id, Location locus)
 void
 ConstChecker::visit (CallExpr &expr)
 {
-  auto fn = expr.get_fnexpr ();
-  if (!fn)
+  if (!expr.get_fnexpr ())
     return;
 
-  NodeId ast_node_id = fn->get_mappings ().get_nodeid ();
+  NodeId ast_node_id = expr.get_fnexpr ()->get_mappings ().get_nodeid ();
   NodeId ref_node_id;
   HirId definition_id;
 
@@ -821,13 +820,7 @@ ConstChecker::visit (LetStmt &stmt)
 }
 
 void
-ConstChecker::visit (ExprStmtWithoutBlock &stmt)
-{
-  stmt.get_expr ()->accept_vis (*this);
-}
-
-void
-ConstChecker::visit (ExprStmtWithBlock &stmt)
+ConstChecker::visit (ExprStmt &stmt)
 {
   stmt.get_expr ()->accept_vis (*this);
 }

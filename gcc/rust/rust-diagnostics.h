@@ -70,6 +70,9 @@ extern void
 rust_error_at (const Location, const char *fmt, ...)
   RUST_ATTRIBUTE_GCC_DIAG (2, 3);
 extern void
+rust_error_at (const Location, const ErrorCode, const char *fmt, ...)
+  RUST_ATTRIBUTE_GCC_DIAG (3, 4);
+extern void
 rust_warning_at (const Location, int opt, const char *fmt, ...)
   RUST_ATTRIBUTE_GCC_DIAG (3, 4);
 extern void
@@ -82,10 +85,10 @@ rust_inform (const Location, const char *fmt, ...)
 
 // rich locations
 extern void
-rust_error_at (const RichLocation &, const char *fmt, ...)
+rust_error_at (const rich_location &, const char *fmt, ...)
   RUST_ATTRIBUTE_GCC_DIAG (2, 3);
 extern void
-rust_error_at (const RichLocation &, const ErrorCode, const char *fmt, ...)
+rust_error_at (const rich_location &, const ErrorCode, const char *fmt, ...)
   RUST_ATTRIBUTE_GCC_DIAG (3, 4);
 // clang-format on
 
@@ -110,9 +113,12 @@ rust_be_internal_error_at (const Location, const std::string &errmsg)
 extern void
 rust_be_error_at (const Location, const std::string &errmsg);
 extern void
-rust_be_error_at (const RichLocation &, const std::string &errmsg);
+rust_be_error_at (const Location, const ErrorCode,
+		  const std::string &errmsg);
 extern void
-rust_be_error_at (const RichLocation &, const ErrorCode,
+rust_be_error_at (const rich_location &, const std::string &errmsg);
+extern void
+rust_be_error_at (const rich_location &, const ErrorCode,
 		  const std::string &errmsg);
 extern void
 rust_be_warning_at (const Location, int opt, const std::string &warningmsg);
@@ -200,12 +206,11 @@ struct Error
 } // namespace Rust
 
 // rust_debug uses normal printf formatting, not GCC diagnostic formatting.
-#define rust_debug(...) rust_debug_loc (Location (), __VA_ARGS__)
+#define rust_debug(...) rust_debug_loc (UNDEF_LOCATION, __VA_ARGS__)
 
 // rust_sorry_at wraps GCC diagnostic "sorry_at" to accept "Location" instead of
 // "location_t"
-#define rust_sorry_at(location, ...)                                           \
-  sorry_at (location.gcc_location (), __VA_ARGS__)
+#define rust_sorry_at(location, ...) sorry_at (location, __VA_ARGS__)
 
 void
 rust_debug_loc (const Location location, const char *fmt,

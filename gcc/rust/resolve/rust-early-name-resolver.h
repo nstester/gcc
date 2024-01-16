@@ -54,6 +54,18 @@ private:
   }
 
   /**
+   * Accumulate all of the nested macros which escape their module through the
+   * use of the #[macro_use] attribute.
+   *
+   * This function recursively accumulates macros in all of the nested modules
+   * of an item container (an AST::Crate or an AST::Module) and returns this new
+   * list of items. You can then use the `take_items` and `set_items` functions
+   * on these containers to replace their list of items.
+   */
+  std::vector<std::unique_ptr<AST::Item>>
+  accumulate_escaped_macros (AST::Module &module);
+
+  /**
    * The "scope" we are currently in.
    *
    * This involves lexical scopes:
@@ -130,6 +142,7 @@ private:
   virtual void visit (AST::QualifiedPathInType &path);
   virtual void visit (AST::LiteralExpr &expr);
   virtual void visit (AST::AttrInputLiteral &attr_input);
+  virtual void visit (AST::AttrInputMacro &attr_input);
   virtual void visit (AST::MetaItemLitExpr &meta_item);
   virtual void visit (AST::MetaItemPathLit &meta_item);
   virtual void visit (AST::BorrowExpr &expr);
@@ -177,12 +190,8 @@ private:
   virtual void visit (AST::ForLoopExpr &expr);
   virtual void visit (AST::IfExpr &expr);
   virtual void visit (AST::IfExprConseqElse &expr);
-  virtual void visit (AST::IfExprConseqIf &expr);
-  virtual void visit (AST::IfExprConseqIfLet &expr);
   virtual void visit (AST::IfLetExpr &expr);
   virtual void visit (AST::IfLetExprConseqElse &expr);
-  virtual void visit (AST::IfLetExprConseqIf &expr);
-  virtual void visit (AST::IfLetExprConseqIfLet &expr);
   virtual void visit (AST::MatchExpr &expr);
   virtual void visit (AST::AwaitExpr &expr);
   virtual void visit (AST::AsyncBlockExpr &expr);
@@ -254,8 +263,7 @@ private:
   virtual void visit (AST::AltPattern &pattern);
   virtual void visit (AST::EmptyStmt &stmt);
   virtual void visit (AST::LetStmt &stmt);
-  virtual void visit (AST::ExprStmtWithoutBlock &stmt);
-  virtual void visit (AST::ExprStmtWithBlock &stmt);
+  virtual void visit (AST::ExprStmt &stmt);
   virtual void visit (AST::TraitBound &bound);
   virtual void visit (AST::ImplTraitType &type);
   virtual void visit (AST::TraitObjectType &type);

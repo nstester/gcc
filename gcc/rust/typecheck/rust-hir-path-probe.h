@@ -20,10 +20,8 @@
 #define RUST_HIR_PATH_PROBE_H
 
 #include "rust-hir-type-check-base.h"
-#include "rust-hir-full.h"
+#include "rust-hir-visitor.h"
 #include "rust-tyty.h"
-#include "rust-substitution-mapper.h"
-#include "rust-hir-type-bounds.h"
 
 namespace Rust {
 namespace Resolver {
@@ -162,11 +160,12 @@ public:
   static void Report (std::set<PathProbeCandidate> &candidates,
 		      const HIR::PathIdentSegment &query, Location query_locus)
   {
-    RichLocation r (query_locus);
+    rich_location r (line_table, query_locus);
     for (auto &c : candidates)
       r.add_range (c.locus);
 
-    rust_error_at (r, "multiple applicable items in scope for: %s",
+    rust_error_at (r, ErrorCode ("E0034"),
+		   "multiple applicable items in scope for: %s",
 		   query.as_string ().c_str ());
   }
 };

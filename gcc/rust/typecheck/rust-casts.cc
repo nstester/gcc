@@ -40,9 +40,16 @@ TypeCastRules::check ()
   // https://github.com/rust-lang/rust/blob/7eac88abb2e57e752f3302f02be5f3ce3d7adfb4/compiler/rustc_typeck/src/check/cast.rs#L565-L582
   auto possible_coercion
     = TypeCoercionRules::TryCoerce (from.get_ty (), to.get_ty (), locus,
-				    true /*allow-autoderef*/);
+				    true /*allow-autoderef*/,
+				    true /*is_cast_site*/);
   if (!possible_coercion.is_error ())
-    return possible_coercion;
+    {
+      // given the attempt was ok we need to ensure we perform it so that any
+      // inference variables are unified correctly
+      return TypeCoercionRules::Coerce (from.get_ty (), to.get_ty (), locus,
+					true /*allow-autoderef*/,
+					true /*is_cast_site*/);
+    }
 
   // try the simple cast rules
   auto simple_cast = cast_rules ();
@@ -64,7 +71,6 @@ TypeCastRules::cast_rules ()
 
   rust_debug ("cast_rules from={%s} to={%s}", from_type->debug_str ().c_str (),
 	      to.get_ty ()->debug_str ().c_str ());
-
   switch (from_type->get_kind ())
     {
       case TyTy::TypeKind::INFER: {
@@ -79,8 +85,21 @@ TypeCastRules::cast_rules ()
 	  case TyTy::InferType::InferTypeKind::INTEGRAL:
 	    switch (to.get_ty ()->get_kind ())
 	      {
-	      case TyTy::TypeKind::CHAR:
-	      case TyTy::TypeKind::BOOL:
+		case TyTy::TypeKind::CHAR: {
+		  // only u8 and char
+		  bool was_uint
+		    = from.get_ty ()->get_kind () == TyTy::TypeKind::UINT;
+		  bool was_u8
+		    = was_uint
+		      && (static_cast<TyTy::UintType *> (from.get_ty ())
+			    ->get_uint_kind ()
+			  == TyTy::UintType::UintKind::U8);
+		  if (was_u8)
+		    return TypeCoercionRules::CoercionResult{
+		      {}, to.get_ty ()->clone ()};
+		}
+		break;
+
 	      case TyTy::TypeKind::USIZE:
 	      case TyTy::TypeKind::ISIZE:
 	      case TyTy::TypeKind::UINT:
@@ -282,7 +301,7 @@ void
 TypeCastRules::emit_cast_error () const
 {
   // error[E0604]
-  RichLocation r (locus);
+  rich_location r (line_table, locus);
   r.add_range (from.get_locus ());
   r.add_range (to.get_locus ());
   rust_error_at (r, ErrorCode ("E0054"), "invalid cast %<%s%> to %<%s%>",

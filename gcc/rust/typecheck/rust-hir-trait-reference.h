@@ -20,7 +20,6 @@
 #define RUST_HIR_TRAIT_REF_H
 
 #include "rust-hir-full.h"
-#include "rust-hir-type-check-util.h"
 #include "rust-tyty-visitor.h"
 
 namespace Rust {
@@ -52,7 +51,7 @@ public:
   static TraitItemReference error ()
   {
     return TraitItemReference ("", false, ERROR, nullptr, nullptr, {},
-			       Location ());
+			       UNDEF_LOCATION);
   }
 
   static TraitItemReference &error_node ()
@@ -238,25 +237,30 @@ private:
 class AssociatedImplTrait
 {
 public:
-  AssociatedImplTrait (TraitReference *trait, HIR::ImplBlock *impl,
+  AssociatedImplTrait (TraitReference *trait,
+		       TyTy::TypeBoundPredicate predicate, HIR::ImplBlock *impl,
 		       TyTy::BaseType *self,
 		       Resolver::TypeCheckContext *context);
 
-  TraitReference *get_trait ();
+  TyTy::TypeBoundPredicate &get_predicate ();
 
   HIR::ImplBlock *get_impl_block ();
 
   TyTy::BaseType *get_self ();
   const TyTy::BaseType *get_self () const;
 
+  void setup_raw_associated_types ();
+
   TyTy::BaseType *
   setup_associated_types (const TyTy::BaseType *self,
-			  const TyTy::TypeBoundPredicate &bound);
+			  const TyTy::TypeBoundPredicate &bound,
+			  TyTy::SubstitutionArgumentMappings *args = nullptr);
 
   void reset_associated_types ();
 
 private:
   TraitReference *trait;
+  TyTy::TypeBoundPredicate predicate;
   HIR::ImplBlock *impl;
   TyTy::BaseType *self;
   Resolver::TypeCheckContext *context;

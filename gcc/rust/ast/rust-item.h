@@ -77,7 +77,7 @@ public:
   // Returns whether the type param has an outer attribute.
   bool has_outer_attribute () const { return !outer_attr.is_empty (); }
 
-  TypeParam (Identifier type_representation, Location locus = Location (),
+  TypeParam (Identifier type_representation, Location locus = UNDEF_LOCATION,
 	     std::vector<std::unique_ptr<TypeParamBound>> type_param_bounds
 	     = std::vector<std::unique_ptr<TypeParamBound>> (),
 	     std::unique_ptr<Type> type = nullptr,
@@ -575,7 +575,7 @@ public:
   // Creates an error FunctionParam.
   static FunctionParam create_error ()
   {
-    return FunctionParam (nullptr, nullptr, {}, Location ());
+    return FunctionParam (nullptr, nullptr, {}, UNDEF_LOCATION);
   }
 
   std::string as_string () const;
@@ -642,7 +642,7 @@ public:
   }
 
   // Returns whether a visibility has a path
-  bool has_path () const { return !(is_error ()) && vis_type == PUB_IN_PATH; }
+  bool has_path () const { return !is_error () && vis_type >= PUB_CRATE; }
 
   // Returns whether visibility is public or not.
   bool is_public () const { return vis_type != PRIV && !is_error (); }
@@ -653,7 +653,8 @@ public:
   // Creates an error visibility.
   static Visibility create_error ()
   {
-    return Visibility (PUB_IN_PATH, SimplePath::create_empty (), Location ());
+    return Visibility (PUB_IN_PATH, SimplePath::create_empty (),
+		       UNDEF_LOCATION);
   }
 
   // Unique pointer custom clone function
@@ -701,7 +702,7 @@ public:
   // Creates a private visibility
   static Visibility create_private ()
   {
-    return Visibility (PRIV, SimplePath::create_empty (), Location ());
+    return Visibility (PRIV, SimplePath::create_empty (), UNDEF_LOCATION);
   }
 
   // Creates a public visibility with a given path or whatever.
@@ -752,7 +753,7 @@ public:
   // Creates an error state method.
   static Method create_error ()
   {
-    return Method ("", FunctionQualifiers (Location (), NONE, true),
+    return Method ({""}, FunctionQualifiers (UNDEF_LOCATION, NONE, true),
 		   std::vector<std::unique_ptr<GenericParam>> (),
 		   SelfParam::create_error (), std::vector<FunctionParam> (),
 		   nullptr, WhereClause::create_empty (), nullptr,
@@ -979,8 +980,11 @@ public:
   Visibility &get_visibility () { return visibility; }
   const Visibility &get_visibility () const { return visibility; }
 
-  std::vector<Attribute> &get_outer_attrs () { return outer_attrs; }
-  const std::vector<Attribute> &get_outer_attrs () const { return outer_attrs; }
+  std::vector<Attribute> &get_outer_attrs () override { return outer_attrs; }
+  const std::vector<Attribute> &get_outer_attrs () const override
+  {
+    return outer_attrs;
+  }
 };
 
 // Rust module item - abstract base class
@@ -999,6 +1003,8 @@ public:
   };
 
   Identifier get_name () const { return module_name; }
+
+  AST::Kind get_ast_kind () const override { return AST::Kind::MODULE; }
 
 private:
   Identifier module_name;
@@ -1112,6 +1118,16 @@ public:
   const std::vector<std::unique_ptr<Item>> &get_items () const { return items; }
   std::vector<std::unique_ptr<Item>> &get_items () { return items; }
 
+  std::vector<std::unique_ptr<AST::Item>> take_items ()
+  {
+    return std::move (items);
+  }
+
+  void set_items (std::vector<std::unique_ptr<AST::Item>> &&new_items)
+  {
+    items = std::move (new_items);
+  }
+
   // move constructors
   Module (Module &&other) = default;
   Module &operator= (Module &&other) = default;
@@ -1121,7 +1137,7 @@ public:
   Location get_locus () const override final { return locus; }
 
   // Invalid if name is empty, so base stripping on that.
-  void mark_for_strip () override { module_name = ""; }
+  void mark_for_strip () override { module_name = {""}; }
   bool is_marked_for_strip () const override { return module_name.empty (); }
 
 protected:
@@ -1280,6 +1296,8 @@ public:
 
   void accept_vis (ASTVisitor &vis) override;
 
+  PathType get_glob_type () { return glob_type; }
+
   Kind get_kind () const override { return Glob; }
 
   SimplePath get_path () const
@@ -1367,6 +1385,8 @@ public:
 
   std::string as_string () const override;
 
+  PathType get_path_type () { return path_type; }
+
   void accept_vis (ASTVisitor &vis) override;
 
   Kind get_kind () const override { return List; }
@@ -1375,6 +1395,8 @@ public:
     rust_assert (has_path ());
     return path;
   }
+
+  std::vector<std::unique_ptr<UseTree>> &get_trees () { return trees; }
 
   const std::vector<std::unique_ptr<UseTree>> &get_trees () const
   {
@@ -1423,6 +1445,8 @@ public:
   bool has_identifier () const { return bind_type == IDENTIFIER; }
 
   std::string as_string () const override;
+
+  NewBindType get_new_bind_type () { return bind_type; }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -1497,6 +1521,9 @@ public:
   UseDeclaration &operator= (UseDeclaration &&other) = default;
 
   Location get_locus () const override final { return locus; }
+
+  std::unique_ptr<UseTree> &get_tree () { return use_tree; }
+
   const std::unique_ptr<UseTree> &get_tree () const { return use_tree; }
 
   void accept_vis (ASTVisitor &vis) override;
@@ -1839,7 +1866,7 @@ public:
   Location get_locus () const override final { return locus; }
 
   // Invalid if name is empty, so base stripping on that.
-  void mark_for_strip () override { struct_name = ""; }
+  void mark_for_strip () override { struct_name = {""}; }
   bool is_marked_for_strip () const override { return struct_name.empty (); }
 
   Identifier get_struct_name () const { return struct_name; }
@@ -1975,7 +2002,7 @@ public:
   static StructField create_error ()
   {
     return StructField (std::string (""), nullptr, Visibility::create_error (),
-			Location ());
+			UNDEF_LOCATION);
   }
 
   std::string as_string () const;
@@ -2122,7 +2149,7 @@ public:
   // Creates an error state tuple field.
   static TupleField create_error ()
   {
-    return TupleField (nullptr, Visibility::create_error (), Location ());
+    return TupleField (nullptr, Visibility::create_error (), UNDEF_LOCATION);
   }
 
   std::string as_string () const;
@@ -2214,7 +2241,7 @@ public:
   Identifier get_identifier () const { return variant_name; }
 
   // Based on idea that name is never empty.
-  void mark_for_strip () override { variant_name = ""; }
+  void mark_for_strip () override { variant_name = {""}; }
   bool is_marked_for_strip () const override { return variant_name.empty (); }
 
 protected:
@@ -2435,7 +2462,7 @@ public:
   Identifier get_identifier () const { return enum_name; }
 
   // Invalid if name is empty, so base stripping on that.
-  void mark_for_strip () override { enum_name = ""; }
+  void mark_for_strip () override { enum_name = {""}; }
   bool is_marked_for_strip () const override { return enum_name.empty (); }
 
   // TODO: this mutable getter seems really dodgy. Think up better way.
@@ -2535,7 +2562,7 @@ public:
   void accept_vis (ASTVisitor &vis) override;
 
   // Invalid if name is empty, so base stripping on that.
-  void mark_for_strip () override { union_name = ""; }
+  void mark_for_strip () override { union_name = {""}; }
   bool is_marked_for_strip () const override { return union_name.empty (); }
 
   // TODO: this mutable getter seems really dodgy. Think up better way.
@@ -2641,6 +2668,8 @@ public:
   {
     return type == nullptr && const_expr == nullptr;
   }
+
+  bool has_expr () { return const_expr != nullptr; }
 
   // TODO: is this better? Or is a "vis_block" better?
   std::unique_ptr<Expr> &get_expr ()
@@ -2753,6 +2782,8 @@ public:
   {
     return type == nullptr && expr == nullptr;
   }
+
+  bool has_expr () { return expr != nullptr; }
 
   // TODO: is this better? Or is a "vis_block" better?
   std::unique_ptr<Expr> &get_expr ()
@@ -2877,7 +2908,7 @@ public:
   std::string as_string () const;
 
   // Invalid if function name is empty, so base stripping on that.
-  void mark_for_strip () { function_name = ""; }
+  void mark_for_strip () { function_name = {""}; }
   bool is_marked_for_strip () const { return function_name.empty (); }
 
   // TODO: this mutable getter seems really dodgy. Think up better way.
@@ -3090,7 +3121,7 @@ public:
   std::string as_string () const;
 
   // Invalid if method name is empty, so base stripping on that.
-  void mark_for_strip () { function_name = ""; }
+  void mark_for_strip () { function_name = {""}; }
   bool is_marked_for_strip () const { return function_name.empty (); }
 
   // TODO: this mutable getter seems really dodgy. Think up better way.
@@ -3369,7 +3400,7 @@ public:
   void accept_vis (ASTVisitor &vis) override;
 
   // Invalid if name is empty, so base stripping on that.
-  void mark_for_strip () override { name = ""; }
+  void mark_for_strip () override { name = {""}; }
   bool is_marked_for_strip () const override { return name.empty (); }
 
   // TODO: this mutable getter seems really dodgy. Think up better way.
@@ -3504,7 +3535,7 @@ public:
   void accept_vis (ASTVisitor &vis) override;
 
   // Invalid if trait name is empty, so base stripping on that.
-  void mark_for_strip () override { name = ""; }
+  void mark_for_strip () override { name = {""}; }
   bool is_marked_for_strip () const override { return name.empty (); }
 
   // TODO: think of better way to do this
@@ -4072,6 +4103,8 @@ public:
 
   Identifier get_identifier () const { return item_name; }
 
+  Visibility &get_visibility () { return visibility; }
+
   const Visibility &get_visibility () const { return visibility; }
 
   bool is_mut () const { return has_mut; }
@@ -4115,10 +4148,12 @@ public:
 
   std::string get_name () const { return name; }
 
+  Location get_locus () { return locus; }
+
   // Creates an error state named function parameter.
   static NamedFunctionParam create_error ()
   {
-    return NamedFunctionParam ("", nullptr, {}, Location ());
+    return NamedFunctionParam ("", nullptr, {}, UNDEF_LOCATION);
   }
 
   NamedFunctionParam (std::string name, std::unique_ptr<Type> param_type,
@@ -4312,7 +4347,7 @@ public:
   void accept_vis (ASTVisitor &vis) override;
 
   // Based on idea that nane should never be empty.
-  void mark_for_strip () override { item_name = ""; };
+  void mark_for_strip () override { item_name = {""}; };
   bool is_marked_for_strip () const override { return item_name.empty (); };
 
   // TODO: this mutable getter seems really dodgy. Think up better way.

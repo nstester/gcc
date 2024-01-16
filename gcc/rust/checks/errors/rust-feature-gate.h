@@ -48,6 +48,7 @@ public:
   void visit (AST::QualifiedPathInType &path) override {}
   void visit (AST::LiteralExpr &expr) override {}
   void visit (AST::AttrInputLiteral &attr_input) override {}
+  void visit (AST::AttrInputMacro &attr_input) override {}
   void visit (AST::MetaItemLitExpr &meta_item) override {}
   void visit (AST::MetaItemPathLit &meta_item) override {}
   void visit (AST::BorrowExpr &expr) override {}
@@ -95,12 +96,8 @@ public:
   void visit (AST::ForLoopExpr &expr) override {}
   void visit (AST::IfExpr &expr) override {}
   void visit (AST::IfExprConseqElse &expr) override {}
-  void visit (AST::IfExprConseqIf &expr) override {}
-  void visit (AST::IfExprConseqIfLet &expr) override {}
   void visit (AST::IfLetExpr &expr) override {}
   void visit (AST::IfLetExprConseqElse &expr) override {}
-  void visit (AST::IfLetExprConseqIf &expr) override {}
-  void visit (AST::IfLetExprConseqIfLet &expr) override {}
   void visit (AST::MatchExpr &expr) override {}
   void visit (AST::AwaitExpr &expr) override {}
   void visit (AST::AsyncBlockExpr &expr) override {}
@@ -172,8 +169,7 @@ public:
   void visit (AST::AltPattern &pattern) override {}
   void visit (AST::EmptyStmt &stmt) override {}
   void visit (AST::LetStmt &stmt) override {}
-  void visit (AST::ExprStmtWithoutBlock &stmt) override {}
-  void visit (AST::ExprStmtWithBlock &stmt) override {}
+  void visit (AST::ExprStmt &stmt) override {}
   void visit (AST::TraitBound &bound) override {}
   void visit (AST::ImplTraitType &type) override {}
   void visit (AST::TraitObjectType &type) override {}

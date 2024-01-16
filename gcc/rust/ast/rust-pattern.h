@@ -39,9 +39,10 @@ public:
       node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
 
-  LiteralPattern (std::string val, Literal::LitType type, Location locus)
-    : lit (Literal (std::move (val), type, PrimitiveCoreType::CORETYPE_STR)),
-      locus (locus), node_id (Analysis::Mappings::get ()->get_next_node_id ())
+  LiteralPattern (std::string val, Literal::LitType type, Location locus,
+		  PrimitiveCoreType type_hint)
+    : lit (Literal (std::move (val), type, type_hint)), locus (locus),
+      node_id (Analysis::Mappings::get ()->get_next_node_id ())
   {}
 
   Location get_locus () const override final { return locus; }
@@ -413,6 +414,12 @@ public:
 
   Location get_locus () const override final { return locus; }
 
+  bool get_has_ellipsis_syntax () { return has_ellipsis_syntax; }
+
+  bool get_has_lower_bound () { return lower != nullptr; }
+
+  bool get_has_upper_bound () { return upper != nullptr; }
+
   void accept_vis (ASTVisitor &vis) override;
 
   // TODO: is this better? or is a "vis_bound" better?
@@ -645,6 +652,8 @@ public:
     return tuple_pattern == nullptr;
   }
 
+  TupleIndex get_index () { return index; }
+
   // TODO: is this better? Or is a "vis_pattern" better?
   std::unique_ptr<Pattern> &get_index_pattern ()
   {
@@ -763,7 +772,7 @@ public:
   void accept_vis (ASTVisitor &vis) override;
 
   // based on idea of identifier no longer existing
-  void mark_for_strip () override { ident = {}; }
+  void mark_for_strip () override { ident = {""}; }
   bool is_marked_for_strip () const override { return ident.empty (); }
 
   const Identifier &get_identifier () const { return ident; }
@@ -1221,41 +1230,6 @@ protected:
   // pure virtual clone implementation
   virtual TuplePatternItems *clone_tuple_pattern_items_impl () const = 0;
 };
-
-// Class representing TuplePattern patterns where there is only a single pattern
-/*class TuplePatternItemsSingle : public TuplePatternItems {
-    // Pattern pattern;
-    std::unique_ptr<Pattern> pattern;
-
-  public:
-    TuplePatternItemsSingle(Pattern* pattern) : pattern(pattern) {}
-
-    // Copy constructor uses clone
-    TuplePatternItemsSingle(TuplePatternItemsSingle const& other) :
-      pattern(other.pattern->clone_pattern()) {}
-
-    // Destructor - define here if required
-
-    // Overload assignment operator to clone
-    TuplePatternItemsSingle& operator=(TuplePatternItemsSingle const& other) {
-	pattern = other.pattern->clone_pattern();
-
-	return *this;
-    }
-
-    // move constructors
-    TuplePatternItemsSingle(TuplePatternItemsSingle&& other) = default;
-    TuplePatternItemsSingle& operator=(TuplePatternItemsSingle&& other) =
-default;
-
-  protected:
-    // Use covariance to implement clone function as returning this object
-rather than base virtual TuplePatternItemsSingle*
-clone_tuple_pattern_items_impl() const override { return new
-TuplePatternItemsSingle(*this);
-    }
-};*/
-// removed in favour of single-element TuplePatternItemsMultiple
 
 // Class representing TuplePattern patterns where there are multiple patterns
 class TuplePatternItemsMultiple : public TuplePatternItems

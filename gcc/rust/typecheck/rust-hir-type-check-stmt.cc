@@ -36,15 +36,9 @@ TypeCheckStmt::Resolve (HIR::Stmt *stmt)
 }
 
 void
-TypeCheckStmt::visit (HIR::ExprStmtWithBlock &stmt)
+TypeCheckStmt::visit (HIR::ExprStmt &stmt)
 {
-  infered = TypeCheckExpr::Resolve (stmt.get_expr ());
-}
-
-void
-TypeCheckStmt::visit (HIR::ExprStmtWithoutBlock &stmt)
-{
-  infered = TypeCheckExpr::Resolve (stmt.get_expr ());
+  infered = TypeCheckExpr::Resolve (stmt.get_expr ().get ());
 }
 
 void
@@ -65,8 +59,9 @@ TypeCheckStmt::visit (HIR::ExternBlock &extern_block)
 void
 TypeCheckStmt::visit (HIR::ConstantItem &constant)
 {
-  TyTy::BaseType *type = TypeCheckType::Resolve (constant.get_type ());
-  TyTy::BaseType *expr_type = TypeCheckExpr::Resolve (constant.get_expr ());
+  TyTy::BaseType *type = TypeCheckType::Resolve (constant.get_type ().get ());
+  TyTy::BaseType *expr_type
+    = TypeCheckExpr::Resolve (constant.get_expr ().get ());
 
   infered = coercion_site (
     constant.get_mappings ().get_hirid (),
@@ -83,11 +78,11 @@ TypeCheckStmt::visit (HIR::LetStmt &stmt)
 
   HIR::Pattern &stmt_pattern = *stmt.get_pattern ();
   TyTy::BaseType *init_expr_ty = nullptr;
-  Location init_expr_locus;
+  Location init_expr_locus = UNKNOWN_LOCATION;
   if (stmt.has_init_expr ())
     {
       init_expr_locus = stmt.get_init_expr ()->get_locus ();
-      init_expr_ty = TypeCheckExpr::Resolve (stmt.get_init_expr ());
+      init_expr_ty = TypeCheckExpr::Resolve (stmt.get_init_expr ().get ());
       if (init_expr_ty->get_kind () == TyTy::TypeKind::ERROR)
 	return;
 
@@ -99,7 +94,7 @@ TypeCheckStmt::visit (HIR::LetStmt &stmt)
   Location specified_ty_locus;
   if (stmt.has_type ())
     {
-      specified_ty = TypeCheckType::Resolve (stmt.get_type ());
+      specified_ty = TypeCheckType::Resolve (stmt.get_type ().get ());
       specified_ty_locus = stmt.get_type ()->get_locus ();
     }
 

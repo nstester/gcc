@@ -226,6 +226,12 @@ get_token_description (TokenId id);
  * x-macros */
 const char *
 token_id_to_str (TokenId id);
+/* checks if a token is a keyword */
+bool
+token_id_is_keyword (TokenId id);
+/* gets the string associated with a keyword */
+const std::string &
+token_id_keyword_string (TokenId id);
 // Get type hint description as a string.
 const char *
 get_type_hint_string (PrimitiveCoreType type);
@@ -380,6 +386,9 @@ public:
   // Gets location of the token.
   Location get_locus () const { return locus; }
 
+  // Set location of the token.
+  void set_locus (Location locus) { this->locus = locus; }
+
   // Gets string description of the token.
   const std::string &
   get_str () const; /*{
@@ -443,7 +452,23 @@ return *str;
 
   // Returns whether the token is a pure decimal int literal
   bool is_pure_decimal () const { return type_hint == CORETYPE_PURE_DECIMAL; }
+
+  // Return the token representation as someone would find it in the original
+  // source code file.
+  std::string as_string () const;
 };
 } // namespace Rust
+
+namespace std {
+template <> struct hash<Rust::PrimitiveCoreType>
+{
+  size_t operator() (const Rust::PrimitiveCoreType &coretype) const noexcept
+  {
+    return hash<std::underlying_type<Rust::PrimitiveCoreType>::type> () (
+      static_cast<std::underlying_type<Rust::PrimitiveCoreType>::type> (
+	coretype));
+  }
+};
+} // namespace std
 
 #endif

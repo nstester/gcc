@@ -94,6 +94,7 @@ public:
   // rust-expr.h
   virtual void visit (AST::LiteralExpr &expr);
   virtual void visit (AST::AttrInputLiteral &attr_input);
+  virtual void visit (AST::AttrInputMacro &attr_input);
   virtual void visit (AST::MetaItemLitExpr &meta_item);
   virtual void visit (AST::MetaItemPathLit &meta_item);
   virtual void visit (AST::BorrowExpr &expr);
@@ -143,12 +144,8 @@ public:
   virtual void visit (AST::ForLoopExpr &expr);
   virtual void visit (AST::IfExpr &expr);
   virtual void visit (AST::IfExprConseqElse &expr);
-  virtual void visit (AST::IfExprConseqIf &expr);
-  virtual void visit (AST::IfExprConseqIfLet &expr);
   virtual void visit (AST::IfLetExpr &expr);
   virtual void visit (AST::IfLetExprConseqElse &expr);
-  virtual void visit (AST::IfLetExprConseqIf &expr);
-  virtual void visit (AST::IfLetExprConseqIfLet &expr);
   //  virtual void visit(MatchCase& match_case);
   // virtual void visit (AST::MatchCaseBlockExpr &match_case);
   // virtual void visit (AST::MatchCaseExpr &match_case);
@@ -238,8 +235,7 @@ public:
   // rust-stmt.h
   virtual void visit (AST::EmptyStmt &stmt);
   virtual void visit (AST::LetStmt &stmt);
-  virtual void visit (AST::ExprStmtWithoutBlock &stmt);
-  virtual void visit (AST::ExprStmtWithBlock &stmt);
+  virtual void visit (AST::ExprStmt &stmt);
 
   // rust-type.h
   virtual void visit (AST::TraitBound &bound);
@@ -318,6 +314,9 @@ protected:
   HIR::ExternBlock *lower_extern_block (AST::ExternBlock &extern_block);
 
   HIR::ClosureParam lower_closure_param (AST::ClosureParam &param);
+
+  /* Lower a macro definition if it should be exported */
+  void lower_macro_definition (AST::MacroRulesDefinition &def);
 };
 
 } // namespace HIR

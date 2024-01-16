@@ -18,9 +18,7 @@
 
 #include "rust-compile-item.h"
 #include "rust-compile-implitem.h"
-#include "rust-compile-expr.h"
 #include "rust-compile-extern.h"
-#include "rust-constexpr.h"
 
 namespace Rust {
 namespace Compile {
@@ -49,9 +47,9 @@ CompileItem::visit (HIR::StaticItem &var)
     var.get_mappings ().get_nodeid (), &canonical_path);
   rust_assert (ok);
 
-  HIR::Expr *const_value_expr = var.get_expr ();
+  HIR::Expr *const_value_expr = var.get_expr ().get ();
   ctx->push_const_context ();
-  tree value = compile_constant_item (ctx, resolved_type, canonical_path,
+  tree value = compile_constant_item (resolved_type, canonical_path,
 				      const_value_expr, var.get_locus ());
   ctx->pop_const_context ();
 
@@ -66,7 +64,9 @@ CompileItem::visit (HIR::StaticItem &var)
     = ctx->get_backend ()->global_variable (name, asm_name, type, is_external,
 					    is_hidden, in_unique_section,
 					    var.get_locus ());
-  ctx->get_backend ()->global_variable_set_init (static_global, value);
+
+  tree init = value == error_mark_node ? error_mark_node : DECL_INITIAL (value);
+  ctx->get_backend ()->global_variable_set_init (static_global, init);
 
   ctx->insert_var_decl (var.get_mappings ().get_hirid (), static_global);
   ctx->push_var (static_global);
@@ -94,11 +94,11 @@ CompileItem::visit (HIR::ConstantItem &constant)
     constant.get_mappings ().get_nodeid (), &canonical_path);
   rust_assert (ok);
 
-  HIR::Expr *const_value_expr = constant.get_expr ();
+  HIR::Expr *const_value_expr = constant.get_expr ().get ();
   ctx->push_const_context ();
   tree const_expr
-    = compile_constant_item (ctx, resolved_type, canonical_path,
-			     const_value_expr, constant.get_locus ());
+    = compile_constant_item (resolved_type, canonical_path, const_value_expr,
+			     constant.get_locus ());
   ctx->pop_const_context ();
 
   ctx->push_const (const_expr);
@@ -133,6 +133,23 @@ CompileItem::visit (HIR::Function &function)
 	  fntype->monomorphize ();
 	}
     }
+  else
+    {
+      // if this is part of a trait impl block which is not generic we need to
+      // ensure associated types are setup
+      HirId parent_impl_block = UNKNOWN_HIRID;
+      HirId id = function.get_mappings ().get_hirid ();
+      HIR::ImplItem *impl_item
+	= ctx->get_mappings ()->lookup_hir_implitem (id, &parent_impl_block);
+      if (impl_item != nullptr)
+	{
+	  Resolver::AssociatedImplTrait *impl = nullptr;
+	  bool found = ctx->get_tyctx ()->lookup_associated_trait_impl (
+	    parent_impl_block, &impl);
+	  if (found)
+	    impl->setup_raw_associated_types ();
+	}
+    }
 
   const Resolver::CanonicalPath *canonical_path = nullptr;
   bool ok = ctx->get_mappings ()->lookup_canonical_path (
@@ -147,18 +164,8 @@ CompileItem::visit (HIR::Function &function)
   if (ctx->lookup_function_decl (fntype->get_ty_ref (), &lookup,
 				 fntype->get_id (), fntype, asm_name))
     {
-      // has this been added to the list then it must be finished
-      if (ctx->function_completed (lookup))
-	{
-	  tree dummy = NULL_TREE;
-	  if (!ctx->lookup_function_decl (fntype->get_ty_ref (), &dummy))
-	    {
-	      ctx->insert_function_decl (fntype, lookup);
-	    }
-
-	  reference = address_expression (lookup, ref_locus);
-	  return;
-	}
+      reference = address_expression (lookup, ref_locus);
+      return;
     }
 
   if (fntype->has_subsititions_defined ())
@@ -171,13 +178,13 @@ CompileItem::visit (HIR::Function &function)
     ctx->push_const_context ();
 
   tree fndecl
-    = compile_function (ctx, function.get_function_name (),
+    = compile_function (function.get_function_name ().as_string (),
 			function.get_self_param (),
 			function.get_function_params (),
 			function.get_qualifiers (), function.get_visibility (),
 			function.get_outer_attrs (), function.get_locus (),
 			function.get_definition ().get (), canonical_path,
-			fntype, function.has_function_return_type ());
+			fntype);
   reference = address_expression (fndecl, ref_locus);
 
   if (function.get_qualifiers ().is_const ())

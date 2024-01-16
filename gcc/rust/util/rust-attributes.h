@@ -113,6 +113,7 @@ private:
   // rust-expr.h
   void visit (AST::LiteralExpr &expr);
   void visit (AST::AttrInputLiteral &attr_input);
+  void visit (AST::AttrInputMacro &attr_input);
   void visit (AST::MetaItemLitExpr &meta_item);
   void visit (AST::MetaItemPathLit &meta_item);
   void visit (AST::BorrowExpr &expr);
@@ -160,12 +161,8 @@ private:
   void visit (AST::ForLoopExpr &expr);
   void visit (AST::IfExpr &expr);
   void visit (AST::IfExprConseqElse &expr);
-  void visit (AST::IfExprConseqIf &expr);
-  void visit (AST::IfExprConseqIfLet &expr);
   void visit (AST::IfLetExpr &expr);
   void visit (AST::IfLetExprConseqElse &expr);
-  void visit (AST::IfLetExprConseqIf &expr);
-  void visit (AST::IfLetExprConseqIfLet &expr);
   void visit (AST::MatchExpr &expr);
   void visit (AST::AwaitExpr &expr);
   void visit (AST::AsyncBlockExpr &expr);
@@ -249,8 +246,7 @@ private:
   // rust-stmt.h
   void visit (AST::EmptyStmt &stmt);
   void visit (AST::LetStmt &stmt);
-  void visit (AST::ExprStmtWithoutBlock &stmt);
-  void visit (AST::ExprStmtWithBlock &stmt);
+  void visit (AST::ExprStmt &stmt);
 
   // rust-type.h
   void visit (AST::TraitBound &bound);

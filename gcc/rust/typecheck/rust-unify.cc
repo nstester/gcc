@@ -119,11 +119,23 @@ UnifyRules::emit_type_mismatch () const
   TyTy::BaseType *expected = lhs.get_ty ();
   TyTy::BaseType *expr = rhs.get_ty ();
 
-  RichLocation r (locus);
+  rich_location r (line_table, locus);
   r.add_range (lhs.get_locus ());
   r.add_range (rhs.get_locus ());
   rust_error_at (r, "expected %<%s%> got %<%s%>",
 		 expected->get_name ().c_str (), expr->get_name ().c_str ());
+}
+
+void
+UnifyRules::emit_abi_mismatch (const TyTy::FnType &expected,
+			       const TyTy::FnType &got) const
+{
+  rich_location r (line_table, locus);
+  r.add_range (lhs.get_locus ());
+  r.add_range (rhs.get_locus ());
+  rust_error_at (r, "mistached abi %<%s%> got %<%s%>",
+		 get_string_from_abi (expected.get_abi ()).c_str (),
+		 get_string_from_abi (got.get_abi ()).c_str ());
 }
 
 TyTy::BaseType *
@@ -139,13 +151,30 @@ UnifyRules::go ()
 	      rtype->debug_str ().c_str ());
 
   // check bounds
-  if (ltype->num_specified_bounds () > 0)
+  bool ltype_is_placeholder = ltype->get_kind () == TyTy::TypeKind::PLACEHOLDER;
+  bool rtype_is_placeholder = rtype->get_kind () == TyTy::TypeKind::PLACEHOLDER;
+  bool types_equal = ltype->is_equal (*rtype);
+  bool should_check_bounds
+    = !types_equal && !(ltype_is_placeholder || rtype_is_placeholder);
+  if (should_check_bounds)
     {
-      if (!ltype->bounds_compatible (*rtype, locus, emit_error))
+      if (ltype->num_specified_bounds () > 0)
 	{
-	  // already emitted an error
-	  emit_error = false;
-	  return new TyTy::ErrorType (0);
+	  if (!ltype->bounds_compatible (*rtype, locus, emit_error))
+	    {
+	      // already emitted an error
+	      emit_error = false;
+	      return new TyTy::ErrorType (0);
+	    }
+	}
+      else if (rtype->num_specified_bounds () > 0)
+	{
+	  if (!rtype->bounds_compatible (*ltype, locus, emit_error))
+	    {
+	      // already emitted an error
+	      emit_error = false;
+	      return new TyTy::ErrorType (0);
+	    }
 	}
     }
 
@@ -912,6 +941,19 @@ UnifyRules::expect_fndef (TyTy::FnType *ltype, TyTy::BaseType *rtype)
 	    return new TyTy::ErrorType (0);
 	  }
 
+	// ABI match? see
+	// https://gcc-rust.zulipchat.com/#narrow/stream/266897-general/topic/extern.20blocks/near/346416045
+	if (ltype->get_abi () != type.get_abi ())
+	  {
+	    if (emit_error)
+	      {
+		emit_abi_mismatch (*ltype, type);
+	      }
+	    return new TyTy::ErrorType (0);
+	  }
+
+	// DEF Id match? see https://github.com/Rust-GCC/gccrs/issues/2053
+
 	return ltype->clone ();
       }
       break;
@@ -1538,17 +1580,8 @@ UnifyRules::expect_placeholder (TyTy::PlaceholderType *ltype,
       }
       break;
 
-      case TyTy::PLACEHOLDER: {
-	TyTy::PlaceholderType &type
-	  = *static_cast<TyTy::PlaceholderType *> (rtype);
-	bool symbol_match
-	  = ltype->get_symbol ().compare (type.get_symbol ()) == 0;
-	if (symbol_match)
-	  {
-	    return type.clone ();
-	  }
-      }
-      break;
+    case TyTy::PLACEHOLDER:
+      return ltype->clone ();
 
     case TyTy::PROJECTION:
     case TyTy::DYNAMIC:
@@ -1571,6 +1604,10 @@ UnifyRules::expect_placeholder (TyTy::PlaceholderType *ltype,
     case TyTy::USIZE:
     case TyTy::ISIZE:
     case TyTy::NEVER:
+      if (infer_flag)
+	return rtype->clone ();
+      gcc_fallthrough ();
+
     case TyTy::ERROR:
       return new TyTy::ErrorType (0);
     }
@@ -1594,7 +1631,7 @@ UnifyRules::expect_projection (TyTy::ProjectionType *ltype,
 
       // FIXME
     case TyTy::PROJECTION:
-      gcc_unreachable ();
+      rust_unreachable ();
       break;
 
     case TyTy::DYNAMIC:

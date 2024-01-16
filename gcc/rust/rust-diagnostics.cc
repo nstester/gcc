@@ -119,7 +119,7 @@ expand_message (const char *fmt, va_list ap)
   if (nwr == -1)
     {
       // memory allocation failed
-      rust_be_error_at (Linemap::unknown_location (),
+      rust_be_error_at (UNKNOWN_LOCATION,
 			"memory allocation failed in vasprintf");
       rust_assert (0);
     }
@@ -179,8 +179,7 @@ rust_internal_error_at (const Location location, const char *fmt, ...)
 void
 rust_be_error_at (const Location location, const std::string &errmsg)
 {
-  location_t gcc_loc = location.gcc_location ();
-  error_at (gcc_loc, "%s", errmsg.c_str ());
+  error_at (location, "%s", errmsg.c_str ());
 }
 
 void
@@ -214,11 +213,10 @@ private:
 };
 
 void
-rust_be_error_at (const RichLocation &location, const ErrorCode code,
+rust_be_error_at (const Location location, const ErrorCode code,
 		  const std::string &errmsg)
 {
-  /* TODO: 'error_at' would like a non-'const' 'rich_location *'.  */
-  rich_location &gcc_loc = const_cast<rich_location &> (location.get ());
+  rich_location gcc_loc (line_table, location);
   diagnostic_metadata m;
   rust_error_code_rule rule (code);
   m.add_rule (rule);
@@ -226,7 +224,30 @@ rust_be_error_at (const RichLocation &location, const ErrorCode code,
 }
 
 void
-rust_error_at (const RichLocation &location, const ErrorCode code,
+rust_error_at (const Location location, const ErrorCode code, const char *fmt,
+	       ...)
+{
+  va_list ap;
+
+  va_start (ap, fmt);
+  rust_be_error_at (location, code, expand_message (fmt, ap));
+  va_end (ap);
+}
+
+void
+rust_be_error_at (const rich_location &location, const ErrorCode code,
+		  const std::string &errmsg)
+{
+  /* TODO: 'error_at' would like a non-'const' 'rich_location *'.  */
+  rich_location &gcc_loc = const_cast<rich_location &> (location);
+  diagnostic_metadata m;
+  rust_error_code_rule rule (code);
+  m.add_rule (rule);
+  error_meta (&gcc_loc, m, "%s", errmsg.c_str ());
+}
+
+void
+rust_error_at (const rich_location &location, const ErrorCode code,
 	       const char *fmt, ...)
 {
   va_list ap;
@@ -240,8 +261,7 @@ void
 rust_be_warning_at (const Location location, int opt,
 		    const std::string &warningmsg)
 {
-  location_t gcc_loc = location.gcc_location ();
-  warning_at (gcc_loc, opt, "%s", warningmsg.c_str ());
+  warning_at (location, opt, "%s", warningmsg.c_str ());
 }
 
 void
@@ -257,8 +277,7 @@ rust_warning_at (const Location location, int opt, const char *fmt, ...)
 void
 rust_be_fatal_error (const Location location, const std::string &fatalmsg)
 {
-  location_t gcc_loc = location.gcc_location ();
-  fatal_error (gcc_loc, "%s", fatalmsg.c_str ());
+  fatal_error (location, "%s", fatalmsg.c_str ());
 }
 
 void
@@ -274,8 +293,7 @@ rust_fatal_error (const Location location, const char *fmt, ...)
 void
 rust_be_inform (const Location location, const std::string &infomsg)
 {
-  location_t gcc_loc = location.gcc_location ();
-  inform (gcc_loc, "%s", infomsg.c_str ());
+  inform (location, "%s", infomsg.c_str ());
 }
 
 void
@@ -290,15 +308,15 @@ rust_inform (const Location location, const char *fmt, ...)
 
 // Rich Locations
 void
-rust_be_error_at (const RichLocation &location, const std::string &errmsg)
+rust_be_error_at (const rich_location &location, const std::string &errmsg)
 {
   /* TODO: 'error_at' would like a non-'const' 'rich_location *'.  */
-  rich_location &gcc_loc = const_cast<rich_location &> (location.get ());
+  rich_location &gcc_loc = const_cast<rich_location &> (location);
   error_at (&gcc_loc, "%s", errmsg.c_str ());
 }
 
 void
-rust_error_at (const RichLocation &location, const char *fmt, ...)
+rust_error_at (const rich_location &location, const char *fmt, ...)
 {
   va_list ap;
 
@@ -327,7 +345,7 @@ rust_debug_loc (const Location location, const char *fmt, ...)
   va_end (ap);
   if (nwr == -1)
     {
-      rust_be_error_at (Linemap::unknown_location (),
+      rust_be_error_at (UNKNOWN_LOCATION,
 			"memory allocation failed in vasprintf");
       rust_assert (0);
     }
