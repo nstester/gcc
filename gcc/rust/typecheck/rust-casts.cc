@@ -39,7 +39,8 @@ TypeCastRules::check ()
 {
   // https://github.com/rust-lang/rust/blob/7eac88abb2e57e752f3302f02be5f3ce3d7adfb4/compiler/rustc_typeck/src/check/cast.rs#L565-L582
   auto possible_coercion
-    = TypeCoercionRules::TryCoerce (from.get_ty (), to.get_ty (), locus);
+    = TypeCoercionRules::TryCoerce (from.get_ty (), to.get_ty (), locus,
+				    true /*allow-autoderef*/);
   if (!possible_coercion.is_error ())
     return possible_coercion;
 
@@ -59,15 +60,16 @@ TypeCastRules::cast_rules ()
   // https://github.com/rust-lang/rust/blob/7eac88abb2e57e752f3302f02be5f3ce3d7adfb4/compiler/rustc_typeck/src/check/cast.rs#L596
   // https://github.com/rust-lang/rust/blob/7eac88abb2e57e752f3302f02be5f3ce3d7adfb4/compiler/rustc_typeck/src/check/cast.rs#L654
 
-  rust_debug ("cast_rules from={%s} to={%s}",
-	      from.get_ty ()->debug_str ().c_str (),
+  TyTy::BaseType *from_type = from.get_ty ()->destructure ();
+
+  rust_debug ("cast_rules from={%s} to={%s}", from_type->debug_str ().c_str (),
 	      to.get_ty ()->debug_str ().c_str ());
 
-  switch (from.get_ty ()->get_kind ())
+  switch (from_type->get_kind ())
     {
       case TyTy::TypeKind::INFER: {
 	TyTy::InferType *from_infer
-	  = static_cast<TyTy::InferType *> (from.get_ty ());
+	  = static_cast<TyTy::InferType *> (from_type);
 	switch (from_infer->get_infer_kind ())
 	  {
 	  case TyTy::InferType::InferTypeKind::GENERAL:

@@ -21,65 +21,86 @@
 namespace Rust {
 namespace HIR {
 
-Dump::Dump (std::ostream &stream) : stream (stream), indent (0) {}
+Dump::Dump (std::ostream &stream) : stream (stream) {}
 
 void
 Dump::go (HIR::Crate &crate)
 {
-  stream << "Crate"
-	 << " "
-	 << "{" << std::endl;
+  stream << "Crate {" << std::endl;
+  // inner attributes
+  if (!crate.inner_attrs.empty ())
+    {
+      indentation.increment ();
+      stream << indentation;
+      stream << "inner_attrs: [";
+      for (auto &attr : crate.inner_attrs)
+	stream << attr.as_string ();
+      stream << "]," << std::endl;
+      indentation.decrement ();
+    }
+
+  indentation.increment ();
+  stream << indentation;
   //
 
-  indent++;
-  stream << std::string (indent, indent_char);
-  stream << "inner_attrs"
-	 << ":"
-	 << " "
-	 << "[";
-  for (auto &attr : crate.inner_attrs)
-    stream << attr.as_string ();
-  stream << "]"
-	 << "," << std::endl;
-  indent--;
+  stream << "items: [";
 
-  indent++;
-  stream << std::string (indent, indent_char);
-  //
-
-  stream << "items"
-	 << ":"
-	 << " "
-	 << "[";
-
-  stream << std::string (indent, indent_char);
+  stream << indentation;
   for (const auto &item : crate.items)
     {
       stream << std::endl;
       item->accept_vis (*this);
     }
-  stream << std::string (indent, indent_char);
-  stream << "]"
-	 << "," << std::endl;
-  indent--;
+  stream << std::endl;
+  stream << indentation;
+
+  stream << "]," << std::endl;
+  indentation.decrement ();
   //
 
-  indent++;
-  stream << std::string (indent, indent_char);
-  stream << "node_mappings"
-	 << ":"
-	 << " "
-	 << "[";
-  // TODO: print crate mapping attrs
-  stream << "]" << std::endl;
-  indent--;
+  indentation.increment ();
+  stream << indentation;
+  stream << "node_mappings: ";
+  stream << crate.get_mappings ().as_string ();
+  indentation.decrement ();
 
-  stream << "}" << std::endl;
+  stream << "\n}" << std::endl;
 }
 
 void
-Dump::visit (Lifetime &)
-{}
+Dump::visit (AST::Attribute &attribute)
+{
+  std::string path_str = attribute.get_path ().as_string ();
+  stream << path_str;
+  if (attribute.has_attr_input ())
+    stream << attribute.get_attr_input ().as_string ();
+}
+
+void
+Dump::visit (Lifetime &lifetime)
+{
+  if (lifetime.is_error ())
+    {
+      stream << "error lifetime";
+      return;
+    }
+
+  switch (lifetime.get_lifetime_type ())
+    {
+    case AST::Lifetime::LifetimeType::NAMED:
+      stream << "'" << lifetime.get_name ();
+      break;
+    case AST::Lifetime::LifetimeType::STATIC:
+      stream << "'static";
+      break;
+    case AST::Lifetime::LifetimeType::WILDCARD:
+      stream << "'_";
+      break;
+    default:
+      stream << "ERROR-MARK-STRING: lifetime type failure";
+      break;
+    }
+}
 void
 Dump::visit (LifetimeParam &)
 {}
@@ -108,11 +129,8 @@ Dump::visit (QualifiedPathInType &)
 void
 Dump::visit (LiteralExpr &literal_expr)
 {
-  indent++;
-  stream << std::string (indent, indent_char);
-  stream << "( " + literal_expr.get_literal ().as_string () + " ("
-	      + literal_expr.get_mappings ().as_string () + "))";
-  stream << "\n";
+  stream << literal_expr.get_literal ().as_string () << " "
+	 << literal_expr.get_mappings ().as_string ();
 }
 void
 Dump::visit (BorrowExpr &)
@@ -127,8 +145,56 @@ void
 Dump::visit (NegationExpr &)
 {}
 void
-Dump::visit (ArithmeticOrLogicalExpr &)
-{}
+Dump::visit (ArithmeticOrLogicalExpr &aole)
+{
+  std::string operator_str;
+  operator_str.reserve (1);
+
+  // which operator
+  switch (aole.get_expr_type ())
+    {
+    case ArithmeticOrLogicalOperator::ADD:
+      operator_str = "+";
+      break;
+    case ArithmeticOrLogicalOperator::SUBTRACT:
+      operator_str = "-";
+      break;
+    case ArithmeticOrLogicalOperator::MULTIPLY:
+      operator_str = "*";
+      break;
+    case ArithmeticOrLogicalOperator::DIVIDE:
+      operator_str = "/";
+      break;
+    case ArithmeticOrLogicalOperator::MODULUS:
+      operator_str = "%";
+      break;
+    case ArithmeticOrLogicalOperator::BITWISE_AND:
+      operator_str = "&";
+      break;
+    case ArithmeticOrLogicalOperator::BITWISE_OR:
+      operator_str = "|";
+      break;
+    case ArithmeticOrLogicalOperator::BITWISE_XOR:
+      operator_str = "^";
+      break;
+    case ArithmeticOrLogicalOperator::LEFT_SHIFT:
+      operator_str = "<<";
+      break;
+    case ArithmeticOrLogicalOperator::RIGHT_SHIFT:
+      operator_str = ">>";
+      break;
+    default:
+      gcc_unreachable ();
+      break;
+    }
+
+  aole.visit_lhs (*this);
+  stream << "\n";
+  stream << indentation;
+  stream << operator_str << "\n";
+  stream << indentation;
+  aole.visit_rhs (*this);
+}
 void
 Dump::visit (ComparisonExpr &)
 {}
@@ -200,17 +266,50 @@ void
 Dump::visit (ClosureExpr &)
 {}
 void
-Dump::visit (BlockExpr &)
+Dump::visit (BlockExpr &block_expr)
 {
-  stream << "BlockExpr"
-	 << ":"
-	 << " "
-	 << "[";
-  indent++;
-  // TODO: print statements
-  // TODO: print tail expression if exists
-  stream << "]";
-  indent--;
+  stream << "BlockExpr: [\n";
+
+  indentation.increment ();
+  // TODO: inner attributes
+  if (!block_expr.inner_attrs.empty ())
+    {
+      stream << indentation << "inner_attrs: [";
+      indentation.increment ();
+      for (auto &attr : block_expr.inner_attrs)
+	{
+	  stream << "\n";
+	  stream << indentation;
+	  visit (attr);
+	}
+      indentation.decrement ();
+      stream << "\n" << indentation << "]\n";
+    }
+
+  // statements
+  // impl null pointer check
+
+  if (block_expr.has_statements ())
+    {
+      auto &stmts = block_expr.get_statements ();
+      for (auto &stmt : stmts)
+	{
+	  stream << indentation << "Stmt: {\n";
+	  stmt->accept_vis (*this);
+	  stream << "\n";
+	  stream << indentation << "}\n";
+	}
+    }
+
+  // final expression
+  if (block_expr.has_expr ())
+    {
+      stream << indentation << "final expression:";
+      stream << "\n" << indentation << block_expr.expr->as_string ();
+    }
+
+  indentation.decrement ();
+  stream << "\n" << indentation << "]";
 }
 
 void
@@ -262,22 +361,10 @@ void
 Dump::visit (IfExprConseqElse &)
 {}
 void
-Dump::visit (IfExprConseqIf &)
-{}
-void
-Dump::visit (IfExprConseqIfLet &)
-{}
-void
 Dump::visit (IfLetExpr &)
 {}
 void
 Dump::visit (IfLetExprConseqElse &)
-{}
-void
-Dump::visit (IfLetExprConseqIf &)
-{}
-void
-Dump::visit (IfLetExprConseqIfLet &)
 {}
 
 void
@@ -324,20 +411,77 @@ void
 Dump::visit (UseDeclaration &)
 {}
 void
-Dump::visit (Function &)
+Dump::visit (Function &func)
 {
-  indent++;
-  stream << std::string (indent, indent_char);
-  stream << "Function"
-	 << " ";
-  stream << "{" << std::endl;
-  // TODO: print function params
-  stream << std::string (indent, indent_char);
-  stream << "}" << std::endl;
+  indentation.increment ();
+  stream << indentation << "Function {" << std::endl;
+  indentation.increment ();
+
+  // function name
+  stream << indentation << "func_name: ";
+  auto func_name = func.get_function_name ();
+  stream << func_name;
+  stream << ",\n";
+
+  // return type
+  stream << indentation << "return_type: ";
+  if (func.has_return_type ())
+    {
+      auto &ret_type = func.get_return_type ();
+      stream << ret_type->as_string ();
+      stream << ",\n";
+    }
+  else
+    {
+      stream << "void,\n";
+    }
+
+  // function params
+  if (func.has_function_params ())
+    {
+      stream << indentation << "params: [\n";
+      indentation.increment ();
+      auto &func_params = func.get_function_params ();
+      for (const auto &item : func_params)
+	{
+	  stream << indentation << item.as_string () << ",\n";
+	}
+
+      // parameter node mappings
+      stream << indentation << "node_mappings: [\n";
+      for (const auto &item : func_params)
+	{
+	  auto nmap = item.get_mappings ();
+	  indentation.increment ();
+	  stream << indentation;
+	  auto pname = item.param_name->as_string ();
+	  stream << pname << ": ";
+	  stream << nmap.as_string () << ",\n";
+	  indentation.decrement ();
+	}
+      stream << indentation << "],";
+      indentation.decrement ();
+      stream << "\n";
+      stream << indentation << "],";
+      stream << "\n";
+    }
+
+  // function body
+  stream << indentation;
+  auto &func_body = func.get_definition ();
+  func_body->accept_vis (*this);
+
+  // func node mappings
+  stream << "\n";
+  stream << indentation << "node_mappings: ";
+  stream << func.get_impl_mappings ().as_string ();
+  indentation.decrement ();
+  stream << "\n";
+  stream << indentation << "}" << std::endl;
   // TODO: get function definition and visit block
 
-  stream << std::endl;
-  indent--;
+  // stream << std::endl;
+  indentation.decrement ();
 }
 void
 Dump::visit (TypeAlias &)
@@ -402,8 +546,11 @@ void
 Dump::visit (LiteralPattern &)
 {}
 void
-Dump::visit (IdentifierPattern &)
-{}
+Dump::visit (IdentifierPattern &ident)
+{
+  auto ident_name = ident.get_identifier ();
+  stream << ident_name;
+}
 void
 Dump::visit (WildcardPattern &)
 {}
@@ -459,16 +606,54 @@ Dump::visit (TuplePattern &)
 void
 Dump::visit (SlicePattern &)
 {}
+void
+Dump::visit (AltPattern &)
+{}
 
 void
 Dump::visit (EmptyStmt &)
 {}
 void
-Dump::visit (LetStmt &)
-{}
+Dump::visit (LetStmt &let_stmt)
+{
+  indentation.increment ();
+  // TODO: outer attributes
+  stream << indentation << "LetStmt: {\n";
+  indentation.increment ();
+  stream << indentation;
+
+  auto var_pattern = let_stmt.get_pattern ();
+  stream << var_pattern->as_string ();
+  // return type
+  if (let_stmt.has_type ())
+    {
+      auto ret_type = let_stmt.get_type ();
+      stream << ": " << ret_type->as_string ();
+    }
+
+  // init expr
+  if (let_stmt.has_init_expr ())
+    {
+      stream << " = Expr: {\n ";
+      indentation.increment ();
+      stream << indentation;
+      auto expr = let_stmt.get_init_expr ();
+      expr->accept_vis (*this);
+      stream << "\n";
+      stream << indentation << "}\n";
+      indentation.decrement ();
+    }
+  indentation.decrement ();
+  stream << indentation << "}\n";
+
+  indentation.decrement ();
+}
 void
-Dump::visit (ExprStmtWithoutBlock &)
-{}
+Dump::visit (ExprStmtWithoutBlock &expr_stmt)
+{
+  auto expr = expr_stmt.get_expr ();
+  expr->accept_vis (*this);
+}
 void
 Dump::visit (ExprStmtWithBlock &)
 {}

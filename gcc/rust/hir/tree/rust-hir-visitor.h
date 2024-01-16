@@ -81,12 +81,8 @@ public:
   virtual void visit (ForLoopExpr &expr) = 0;
   virtual void visit (IfExpr &expr) = 0;
   virtual void visit (IfExprConseqElse &expr) = 0;
-  virtual void visit (IfExprConseqIf &expr) = 0;
-  virtual void visit (IfExprConseqIfLet &expr) = 0;
   virtual void visit (IfLetExpr &expr) = 0;
   virtual void visit (IfLetExprConseqElse &expr) = 0;
-  virtual void visit (IfLetExprConseqIf &expr) = 0;
-  virtual void visit (IfLetExprConseqIfLet &expr) = 0;
   virtual void visit (MatchExpr &expr) = 0;
   virtual void visit (AwaitExpr &expr) = 0;
   virtual void visit (AsyncBlockExpr &expr) = 0;
@@ -139,6 +135,7 @@ public:
   virtual void visit (TuplePatternItemsRanged &tuple_items) = 0;
   virtual void visit (TuplePattern &pattern) = 0;
   virtual void visit (SlicePattern &pattern) = 0;
+  virtual void visit (AltPattern &pattern) = 0;
   virtual void visit (EmptyStmt &stmt) = 0;
   virtual void visit (LetStmt &stmt) = 0;
   virtual void visit (ExprStmtWithoutBlock &stmt) = 0;
@@ -222,12 +219,8 @@ public:
   virtual void visit (ForLoopExpr &) override {}
   virtual void visit (IfExpr &) override {}
   virtual void visit (IfExprConseqElse &) override {}
-  virtual void visit (IfExprConseqIf &) override {}
-  virtual void visit (IfExprConseqIfLet &) override {}
   virtual void visit (IfLetExpr &) override {}
   virtual void visit (IfLetExprConseqElse &) override {}
-  virtual void visit (IfLetExprConseqIf &) override {}
-  virtual void visit (IfLetExprConseqIfLet &) override {}
 
   virtual void visit (MatchExpr &) override {}
   virtual void visit (AwaitExpr &) override {}
@@ -290,6 +283,7 @@ public:
   virtual void visit (TuplePatternItemsRanged &) override {}
   virtual void visit (TuplePattern &) override {}
   virtual void visit (SlicePattern &) override {}
+  virtual void visit (AltPattern &) override {}
 
   virtual void visit (EmptyStmt &) override {}
   virtual void visit (LetStmt &) override {}
@@ -454,12 +448,8 @@ public:
   virtual void visit (ForLoopExpr &expr) = 0;
   virtual void visit (IfExpr &expr) = 0;
   virtual void visit (IfExprConseqElse &expr) = 0;
-  virtual void visit (IfExprConseqIf &expr) = 0;
-  virtual void visit (IfExprConseqIfLet &expr) = 0;
   virtual void visit (IfLetExpr &expr) = 0;
   virtual void visit (IfLetExprConseqElse &expr) = 0;
-  virtual void visit (IfLetExprConseqIf &expr) = 0;
-  virtual void visit (IfLetExprConseqIfLet &expr) = 0;
   virtual void visit (MatchExpr &expr) = 0;
   virtual void visit (AwaitExpr &expr) = 0;
   virtual void visit (AsyncBlockExpr &expr) = 0;
@@ -475,6 +465,7 @@ public:
   virtual void visit (RangePattern &) = 0;
   virtual void visit (ReferencePattern &) = 0;
   virtual void visit (SlicePattern &) = 0;
+  virtual void visit (AltPattern &) = 0;
   virtual void visit (StructPattern &) = 0;
   virtual void visit (TuplePattern &) = 0;
   virtual void visit (TupleStructPattern &) = 0;

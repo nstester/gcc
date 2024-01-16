@@ -223,6 +223,7 @@ public:
   void visit (AST::Trait &trait) override;
   void visit (AST::InherentImpl &impl) override;
   void visit (AST::TraitImpl &impl) override;
+  void visit (AST::ExternalTypeItem &item) override;
   void visit (AST::ExternalStaticItem &item) override;
   void visit (AST::ExternalFunctionItem &item) override;
   void visit (AST::ExternBlock &block) override;
@@ -241,6 +242,7 @@ public:
   void visit (AST::LiteralPattern &) override;
   void visit (AST::IdentifierPattern &pattern) override;
   void visit (AST::WildcardPattern &) override;
+  void visit (AST::RestPattern &) override;
   void visit (AST::RangePatternBoundLiteral &) override;
   void visit (AST::RangePatternBoundPath &bound) override;
   void visit (AST::RangePatternBoundQualPath &bound) override;

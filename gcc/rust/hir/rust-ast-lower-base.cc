@@ -352,6 +352,9 @@ ASTLoweringBase::visit (AST::TraitImpl &)
 {}
 //  void ASTLoweringBase::visit(ExternalItemitem) {}
 void
+ASTLoweringBase::visit (AST::ExternalTypeItem &)
+{}
+void
 ASTLoweringBase::visit (AST::ExternalStaticItem &)
 {}
 void
@@ -405,6 +408,9 @@ ASTLoweringBase::visit (AST::IdentifierPattern &)
 {}
 void
 ASTLoweringBase::visit (AST::WildcardPattern &)
+{}
+void
+ASTLoweringBase::visit (AST::RestPattern &)
 {}
 //  void ASTLoweringBase::visit(RangePatternBoundbound) {}
 void

@@ -138,6 +138,7 @@ public:
   void visit (AST::InherentImpl &);
   void visit (AST::TraitImpl &);
 
+  void visit (AST::ExternalTypeItem &);
   void visit (AST::ExternalStaticItem &);
   void visit (AST::ExternalFunctionItem &);
   void visit (AST::ExternBlock &);
@@ -157,6 +158,7 @@ public:
   void visit (AST::LiteralPattern &);
   void visit (AST::IdentifierPattern &);
   void visit (AST::WildcardPattern &);
+  void visit (AST::RestPattern &);
 
   void visit (AST::RangePatternBoundLiteral &);
   void visit (AST::RangePatternBoundPath &);

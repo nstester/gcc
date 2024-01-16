@@ -2397,6 +2397,7 @@ QualifiedPathInType::as_string () const
    * literalised */
   std::string str = path_type.as_string ();
 
+  str += "::" + associated_segment->as_string ();
   for (const auto &segment : segments)
     str += "::" + segment->as_string ();
 
@@ -3402,6 +3403,16 @@ EnumItemDiscriminant::as_string () const
 
   // add equal and expression
   str += " = " + expression->as_string ();
+
+  return str;
+}
+
+std::string
+ExternalTypeItem::as_string () const
+{
+  auto str = append_attributes (outer_attrs, OUTER);
+
+  str += "type " + item_name + ";";
 
   return str;
 }
@@ -5493,6 +5504,12 @@ TraitImpl::accept_vis (ASTVisitor &vis)
 }
 
 void
+ExternalTypeItem::accept_vis (ASTVisitor &vis)
+{
+  vis.visit (*this);
+}
+
+void
 ExternalStaticItem::accept_vis (ASTVisitor &vis)
 {
   vis.visit (*this);
@@ -5554,6 +5571,12 @@ IdentifierPattern::accept_vis (ASTVisitor &vis)
 
 void
 WildcardPattern::accept_vis (ASTVisitor &vis)
+{
+  vis.visit (*this);
+}
+
+void
+RestPattern::accept_vis (ASTVisitor &vis)
 {
   vis.visit (*this);
 }

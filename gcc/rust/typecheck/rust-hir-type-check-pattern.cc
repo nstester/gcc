@@ -18,6 +18,7 @@
 
 #include "rust-hir-type-check-pattern.h"
 #include "rust-hir-type-check-expr.h"
+#include "rust-type-util.h"
 
 namespace Rust {
 namespace Resolver {
@@ -262,16 +263,30 @@ TypeCheckPattern::visit (HIR::TuplePattern &pattern)
 	  = *static_cast<HIR::TuplePatternItemsMultiple *> (
 	    pattern.get_items ().get ());
 
-	std::vector<TyTy::TyVar> pattern_elems;
-	for (size_t i = 0; i < ref.get_patterns ().size (); i++)
+	if (parent->get_kind () != TyTy::TUPLE)
 	  {
-	    auto &p = ref.get_patterns ()[i];
-	    TyTy::BaseType *par_type = parent;
-	    if (parent->get_kind () == TyTy::TUPLE)
-	      {
-		TyTy::TupleType &par = *static_cast<TyTy::TupleType *> (parent);
-		par_type = par.get_field (i);
-	      }
+	    rust_error_at (pattern.get_locus (), "expected %s, found tuple",
+			   parent->as_string ().c_str ());
+	    break;
+	  }
+
+	const auto &patterns = ref.get_patterns ();
+	size_t nitems_to_resolve = patterns.size ();
+
+	TyTy::TupleType &par = *static_cast<TyTy::TupleType *> (parent);
+	if (patterns.size () != par.get_fields ().size ())
+	  {
+	    emit_pattern_size_error (pattern, par.get_fields ().size (),
+				     patterns.size ());
+	    nitems_to_resolve
+	      = std::min (nitems_to_resolve, par.get_fields ().size ());
+	  }
+
+	std::vector<TyTy::TyVar> pattern_elems;
+	for (size_t i = 0; i < nitems_to_resolve; i++)
+	  {
+	    auto &p = patterns[i];
+	    TyTy::BaseType *par_type = par.get_field (i);
 
 	    TyTy::BaseType *elem
 	      = TypeCheckPattern::Resolve (p.get (), par_type);
@@ -307,73 +322,13 @@ TypeCheckPattern::visit (HIR::RangePattern &pattern)
   // Resolve the upper and lower bounds, and ensure they are compatible types
   TyTy::BaseType *upper = nullptr, *lower = nullptr;
 
-  // TODO: It would be nice to factor this out into a helper since the logic for
-  // both bounds is exactly the same...
-  switch (pattern.get_upper_bound ()->get_bound_type ())
-    {
-      case HIR::RangePatternBound::RangePatternBoundType::LITERAL: {
-	HIR::RangePatternBoundLiteral &ref
-	  = *static_cast<HIR::RangePatternBoundLiteral *> (
-	    pattern.get_upper_bound ().get ());
+  upper = typecheck_range_pattern_bound (pattern.get_upper_bound (),
+					 pattern.get_pattern_mappings (),
+					 pattern.get_locus ());
 
-	HIR::Literal lit = ref.get_literal ();
-
-	upper = resolve_literal (pattern.get_pattern_mappings (), lit,
-				 pattern.get_locus ());
-      }
-      break;
-
-      case HIR::RangePatternBound::RangePatternBoundType::PATH: {
-	HIR::RangePatternBoundPath &ref
-	  = *static_cast<HIR::RangePatternBoundPath *> (
-	    pattern.get_upper_bound ().get ());
-
-	upper = TypeCheckExpr::Resolve (&ref.get_path ());
-      }
-      break;
-
-      case HIR::RangePatternBound::RangePatternBoundType::QUALPATH: {
-	HIR::RangePatternBoundQualPath &ref
-	  = *static_cast<HIR::RangePatternBoundQualPath *> (
-	    pattern.get_upper_bound ().get ());
-
-	upper = TypeCheckExpr::Resolve (&ref.get_qualified_path ());
-      }
-      break;
-    }
-
-  switch (pattern.get_lower_bound ()->get_bound_type ())
-    {
-      case HIR::RangePatternBound::RangePatternBoundType::LITERAL: {
-	HIR::RangePatternBoundLiteral &ref
-	  = *static_cast<HIR::RangePatternBoundLiteral *> (
-	    pattern.get_lower_bound ().get ());
-
-	HIR::Literal lit = ref.get_literal ();
-
-	lower = resolve_literal (pattern.get_pattern_mappings (), lit,
-				 pattern.get_locus ());
-      }
-      break;
-
-      case HIR::RangePatternBound::RangePatternBoundType::PATH: {
-	HIR::RangePatternBoundPath &ref
-	  = *static_cast<HIR::RangePatternBoundPath *> (
-	    pattern.get_lower_bound ().get ());
-
-	lower = TypeCheckExpr::Resolve (&ref.get_path ());
-      }
-      break;
-
-      case HIR::RangePatternBound::RangePatternBoundType::QUALPATH: {
-	HIR::RangePatternBoundQualPath &ref
-	  = *static_cast<HIR::RangePatternBoundQualPath *> (
-	    pattern.get_lower_bound ().get ());
-
-	lower = TypeCheckExpr::Resolve (&ref.get_qualified_path ());
-      }
-      break;
-    }
+  lower = typecheck_range_pattern_bound (pattern.get_lower_bound (),
+					 pattern.get_pattern_mappings (),
+					 pattern.get_locus ());
 
   infered = unify_site (pattern.get_pattern_mappings ().get_hirid (),
 			TyTy::TyWithLocation (upper),
@@ -387,24 +342,96 @@ TypeCheckPattern::visit (HIR::IdentifierPattern &)
 }
 
 void
-TypeCheckPattern::visit (HIR::QualifiedPathInExpression &)
+TypeCheckPattern::visit (HIR::QualifiedPathInExpression &pattern)
 {
-  // TODO
-  gcc_unreachable ();
+  rust_sorry_at (pattern.get_locus (),
+		 "type checking qualified path patterns not supported");
 }
 
 void
-TypeCheckPattern::visit (HIR::ReferencePattern &)
+TypeCheckPattern::visit (HIR::ReferencePattern &pattern)
 {
-  // TODO
-  gcc_unreachable ();
+  if (parent->get_kind () != TyTy::TypeKind::REF)
+    rust_error_at (pattern.get_locus (), "expected %s, found reference",
+		   parent->as_string ().c_str ());
+
+  TyTy::ReferenceType *ref_ty_ty = static_cast<TyTy::ReferenceType *> (parent);
+  TyTy::BaseType *infered_base
+    = TypeCheckPattern::Resolve (pattern.get_referenced_pattern ().get (),
+				 ref_ty_ty->get_base ());
+  infered
+    = new TyTy::ReferenceType (pattern.get_pattern_mappings ().get_hirid (),
+			       TyTy::TyVar (infered_base->get_ref ()),
+			       pattern.is_mut () ? Mutability::Mut
+						 : Mutability::Imm);
 }
 
 void
-TypeCheckPattern::visit (HIR::SlicePattern &)
+TypeCheckPattern::visit (HIR::SlicePattern &pattern)
 {
-  // TODO
-  gcc_unreachable ();
+  rust_sorry_at (pattern.get_locus (),
+		 "type checking qualified path patterns not supported");
+}
+
+void
+TypeCheckPattern::emit_pattern_size_error (const HIR::Pattern &pattern,
+					   size_t expected_field_count,
+					   size_t got_field_count)
+{
+  RichLocation r (pattern.get_locus ());
+  r.add_range (mappings->lookup_location (parent->get_ref ()));
+  rust_error_at (r,
+		 "expected a tuple with %lu %s, found one "
+		 "with %lu %s",
+		 (unsigned long) expected_field_count,
+		 expected_field_count == 1 ? "element" : "elements",
+		 (unsigned long) got_field_count,
+		 got_field_count == 1 ? "element" : "elements");
+}
+
+TyTy::BaseType *
+TypeCheckPattern::typecheck_range_pattern_bound (
+  std::unique_ptr<Rust::HIR::RangePatternBound> &bound,
+  Analysis::NodeMapping mappings, Location locus)
+{
+  TyTy::BaseType *resolved_bound = nullptr;
+  switch (bound->get_bound_type ())
+    {
+      case HIR::RangePatternBound::RangePatternBoundType::LITERAL: {
+	HIR::RangePatternBoundLiteral &ref
+	  = *static_cast<HIR::RangePatternBoundLiteral *> (bound.get ());
+
+	HIR::Literal lit = ref.get_literal ();
+
+	resolved_bound = resolve_literal (mappings, lit, locus);
+      }
+      break;
+
+      case HIR::RangePatternBound::RangePatternBoundType::PATH: {
+	HIR::RangePatternBoundPath &ref
+	  = *static_cast<HIR::RangePatternBoundPath *> (bound.get ());
+
+	resolved_bound = TypeCheckExpr::Resolve (&ref.get_path ());
+      }
+      break;
+
+      case HIR::RangePatternBound::RangePatternBoundType::QUALPATH: {
+	HIR::RangePatternBoundQualPath &ref
+	  = *static_cast<HIR::RangePatternBoundQualPath *> (bound.get ());
+
+	resolved_bound = TypeCheckExpr::Resolve (&ref.get_qualified_path ());
+      }
+      break;
+    }
+
+  return resolved_bound;
+}
+
+void
+TypeCheckPattern::visit (HIR::AltPattern &pattern)
+{
+  rust_sorry_at (pattern.get_locus (),
+		 "type checking alternate patterns not supported");
 }
 
 } // namespace Resolver

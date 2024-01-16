@@ -42,10 +42,12 @@ public:
   };
 
   static CoercionResult Coerce (TyTy::BaseType *receiver,
-				TyTy::BaseType *expected, Location locus);
+				TyTy::BaseType *expected, Location locus,
+				bool allow_autoderef);
 
   static CoercionResult TryCoerce (TyTy::BaseType *receiver,
-				   TyTy::BaseType *expected, Location locus);
+				   TyTy::BaseType *expected, Location locus,
+				   bool allow_autoderef);
 
   CoercionResult coerce_unsafe_ptr (TyTy::BaseType *receiver,
 				    TyTy::PointerType *expected,
@@ -66,10 +68,10 @@ public:
   void object_unsafe_error (Location expr_locus, Location lhs, Location rhs);
 
 protected:
-  TypeCoercionRules (TyTy::BaseType *expected, Location locus,
-		     bool emit_errors);
+  TypeCoercionRules (TyTy::BaseType *expected, Location locus, bool emit_errors,
+		     bool allow_autoderef, bool try_flag);
 
-  bool select (const TyTy::BaseType &autoderefed) override;
+  bool select (TyTy::BaseType &autoderefed) override;
 
   bool do_coercion (TyTy::BaseType *receiver);
 
@@ -85,6 +87,7 @@ private:
   // mutable fields
   CoercionResult try_result;
   bool emit_errors;
+  bool try_flag;
 };
 
 } // namespace Resolver

@@ -19,27 +19,13 @@
 #include "rust-ast-visitor.h"
 #include "rust-ast.h"
 #include "rust-ast-full.h"
+#include "rust-dump.h"
 
 #ifndef RUST_AST_DUMP_H
 #define RUST_AST_DUMP_H
 
 namespace Rust {
 namespace AST {
-
-// TODO: We might want to reuse this class somewhere else
-class Indent
-{
-public:
-  Indent ();
-
-  friend std::ostream &operator<< (std::ostream &stream, const Indent &indent);
-
-  void increment ();
-  void decrement ();
-
-private:
-  size_t tabs;
-};
 
 class Dump : public ASTVisitor
 {
@@ -251,6 +237,7 @@ private:
   void visit (Trait &trait);
   void visit (InherentImpl &impl);
   void visit (TraitImpl &impl);
+  void visit (ExternalTypeItem &item);
   void visit (ExternalStaticItem &item);
   void visit (ExternalFunctionItem &item);
   void visit (ExternBlock &block);
@@ -272,6 +259,7 @@ private:
   void visit (LiteralPattern &pattern);
   void visit (IdentifierPattern &pattern);
   void visit (WildcardPattern &pattern);
+  void visit (RestPattern &pattern);
   // void visit(RangePatternBound& bound);
   void visit (RangePatternBoundLiteral &bound);
   void visit (RangePatternBoundPath &bound);

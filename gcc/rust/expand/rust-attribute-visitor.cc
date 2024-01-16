@@ -2148,15 +2148,6 @@ AttrVisitor::visit (AST::Module &module)
 	}
     }
 
-  // Parse the module's items if they haven't been expanded and the file
-  // should be parsed (i.e isn't hidden behind an untrue or impossible cfg
-  // directive)
-  if (!module.is_marked_for_strip ()
-      && module.get_kind () == AST::Module::ModuleKind::UNLOADED)
-    {
-      module.load_items ();
-    }
-
   // strip items if required
   expand_pointer_allow_strip (module.get_items ());
 }
@@ -2734,6 +2725,20 @@ AttrVisitor::visit (AST::TraitImpl &impl)
   expand_macro_children (MacroExpander::TRAIT_IMPL, impl.get_impl_items (),
 			 extractor);
 }
+
+void
+AttrVisitor::visit (AST::ExternalTypeItem &item)
+{
+  expander.expand_cfg_attrs (item.get_outer_attrs ());
+
+  if (expander.fails_cfg_with_expand (item.get_outer_attrs ()))
+    item.mark_for_strip ();
+
+  // TODO: Can we do anything like expand a macro here?
+  // extern "C" { type ffi_ty!(); }
+  // ?
+}
+
 void
 AttrVisitor::visit (AST::ExternalStaticItem &item)
 {
@@ -2757,6 +2762,7 @@ AttrVisitor::visit (AST::ExternalStaticItem &item)
 
   expander.pop_context ();
 }
+
 void
 AttrVisitor::visit (AST::ExternalFunctionItem &item)
 {
@@ -2918,6 +2924,11 @@ AttrVisitor::visit (AST::IdentifierPattern &pattern)
 }
 void
 AttrVisitor::visit (AST::WildcardPattern &)
+{
+  // not possible
+}
+void
+AttrVisitor::visit (AST::RestPattern &)
 {
   // not possible
 }

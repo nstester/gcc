@@ -189,6 +189,7 @@ public:
   virtual void visit (AST::InherentImpl &impl);
   virtual void visit (AST::TraitImpl &impl);
   //  virtual void visit(ExternalItem& item);
+  virtual void visit (AST::ExternalTypeItem &item);
   virtual void visit (AST::ExternalStaticItem &item);
   virtual void visit (AST::ExternalFunctionItem &item);
   virtual void visit (AST::ExternBlock &block);
@@ -210,6 +211,7 @@ public:
   virtual void visit (AST::LiteralPattern &pattern);
   virtual void visit (AST::IdentifierPattern &pattern);
   virtual void visit (AST::WildcardPattern &pattern);
+  virtual void visit (AST::RestPattern &pattern);
   //  virtual void visit(RangePatternBound& bound);
   virtual void visit (AST::RangePatternBoundLiteral &bound);
   virtual void visit (AST::RangePatternBoundPath &bound);

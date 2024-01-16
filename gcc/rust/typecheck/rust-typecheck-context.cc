@@ -109,6 +109,16 @@ TypeCheckContext::lookup_type (HirId id, TyTy::BaseType **type) const
 }
 
 void
+TypeCheckContext::clear_type (TyTy::BaseType *ty)
+{
+  auto it = resolved.find (ty->get_ref ());
+  if (it == resolved.end ())
+    return;
+
+  resolved.erase (it);
+}
+
+void
 TypeCheckContext::insert_type_by_node_id (NodeId ref, HirId id)
 {
   rust_assert (node_id_refs.find (ref) == node_id_refs.end ());
@@ -174,7 +184,8 @@ void
 TypeCheckContext::push_new_loop_context (HirId id, Location locus)
 {
   TyTy::BaseType *infer_var
-    = new TyTy::InferType (id, TyTy::InferType::InferTypeKind::GENERAL, locus);
+    = new TyTy::InferType (id, TyTy::InferType::InferTypeKind::GENERAL,
+			   TyTy::InferType::TypeHint::Default (), locus);
   loop_type_stack.push_back (infer_var);
 }
 
@@ -427,8 +438,8 @@ void
 TypeCheckContext::insert_resolved_predicate (HirId id,
 					     TyTy::TypeBoundPredicate predicate)
 {
-  auto it = predicates.find (id);
-  rust_assert (it == predicates.end ());
+  // auto it = predicates.find (id);
+  // rust_assert (it == predicates.end ());
 
   predicates.insert ({id, predicate});
 }

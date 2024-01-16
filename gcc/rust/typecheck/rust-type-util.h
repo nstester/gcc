@@ -20,6 +20,7 @@
 #define RUST_TYPE_UTIL
 
 #include "rust-mapping-common.h"
+#include "rust-tyty.h"
 
 namespace Rust {
 
@@ -29,8 +30,25 @@ class BaseType;
 
 namespace Resolver {
 
-extern bool
+bool
 query_type (HirId reference, TyTy::BaseType **result);
+
+TyTy::BaseType *
+unify_site (HirId id, TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
+	    Location unify_locus);
+
+TyTy::BaseType *
+unify_site_and (HirId id, TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
+		Location unify_locus, bool emit_errors, bool commit_if_ok,
+		bool implicit_infer_vars, bool cleanup);
+
+TyTy::BaseType *
+coercion_site (HirId id, TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
+	       Location coercion_locus);
+
+TyTy::BaseType *
+cast_site (HirId id, TyTy::TyWithLocation from, TyTy::TyWithLocation to,
+	   Location cast_locus);
 
 } // namespace Resolver
 } // namespace Rust

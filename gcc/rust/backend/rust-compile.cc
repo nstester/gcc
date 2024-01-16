@@ -19,14 +19,10 @@
 #include "rust-compile.h"
 #include "rust-compile-item.h"
 #include "rust-compile-implitem.h"
-#include "rust-compile-expr.h"
-#include "rust-compile-struct-field-expr.h"
-#include "rust-compile-stmt.h"
-#include "rust-hir-trait-resolve.h"
-#include "rust-hir-path-probe.h"
 #include "rust-hir-type-bounds.h"
-#include "rust-hir-dot-operator.h"
-#include "rust-compile-block.h"
+#include "rust-compile-type.h"
+#include "rust-substitution-mapper.h"
+#include "rust-type-util.h"
 
 namespace Rust {
 namespace Compile {
@@ -54,10 +50,9 @@ CompileCrate::go ()
 // Shared methods in compilation
 
 tree
-HIRCompileBase::coercion_site (HirId id, tree rvalue,
-			       const TyTy::BaseType *rval,
-			       const TyTy::BaseType *lval,
-			       Location lvalue_locus, Location rvalue_locus)
+HIRCompileBase::coercion_site (HirId id, tree rvalue, TyTy::BaseType *rval,
+			       TyTy::BaseType *lval, Location lvalue_locus,
+			       Location rvalue_locus)
 {
   std::vector<Resolver::Adjustment> *adjustments = nullptr;
   bool ok = ctx->get_tyctx ()->lookup_autoderef_mappings (id, &adjustments);
@@ -70,15 +65,15 @@ HIRCompileBase::coercion_site (HirId id, tree rvalue,
 }
 
 tree
-HIRCompileBase::coercion_site1 (tree rvalue, const TyTy::BaseType *rval,
-				const TyTy::BaseType *lval,
-				Location lvalue_locus, Location rvalue_locus)
+HIRCompileBase::coercion_site1 (tree rvalue, TyTy::BaseType *rval,
+				TyTy::BaseType *lval, Location lvalue_locus,
+				Location rvalue_locus)
 {
   if (rvalue == error_mark_node)
     return error_mark_node;
 
-  const TyTy::BaseType *actual = rval->destructure ();
-  const TyTy::BaseType *expected = lval->destructure ();
+  TyTy::BaseType *actual = rval->destructure ();
+  TyTy::BaseType *expected = lval->destructure ();
 
   if (expected->get_kind () == TyTy::TypeKind::REF)
     {
@@ -306,11 +301,6 @@ HIRCompileBase::compute_address_for_trait_item (
     = self_bound->lookup_associated_item (ref->get_identifier ());
   rust_assert (!associated_self_item.is_error ());
 
-  TyTy::BaseType *mono1 = associated_self_item.get_tyty_for_receiver (self);
-  rust_assert (mono1 != nullptr);
-  rust_assert (mono1->get_kind () == TyTy::TypeKind::FNDEF);
-  TyTy::FnType *assocated_item_ty1 = static_cast<TyTy::FnType *> (mono1);
-
   // Lookup the impl-block for the associated impl_item if it exists
   HIR::Function *associated_function = nullptr;
   for (auto &impl_item : associated_impl_block->get_impl_items ())
@@ -340,10 +330,14 @@ HIRCompileBase::compute_address_for_trait_item (
 
       if (lookup_fntype->needs_substitution ())
 	{
-	  TyTy::SubstitutionArgumentMappings mappings
-	    = assocated_item_ty1->solve_missing_mappings_from_this (
-	      *trait_item_fntype, *lookup_fntype);
-	  lookup_fntype = lookup_fntype->handle_substitions (mappings);
+	  TyTy::BaseType *infer
+	    = Resolver::SubstMapper::InferSubst (lookup_fntype, Location ());
+	  infer
+	    = Resolver::unify_site (infer->get_ref (),
+				    TyTy::TyWithLocation (trait_item_fntype),
+				    TyTy::TyWithLocation (infer), Location ());
+	  rust_assert (infer->get_kind () == TyTy::TypeKind::FNDEF);
+	  lookup_fntype = static_cast<TyTy::FnType *> (infer);
 	}
 
       return CompileInherentImplItem::Compile (associated_function, ctx,

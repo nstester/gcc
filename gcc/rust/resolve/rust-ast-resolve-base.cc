@@ -447,6 +447,10 @@ ResolverBase::visit (AST::TraitImpl &)
 {}
 
 void
+ResolverBase::visit (AST::ExternalTypeItem &)
+{}
+
+void
 ResolverBase::visit (AST::ExternalStaticItem &)
 {}
 
@@ -512,6 +516,10 @@ ResolverBase::visit (AST::IdentifierPattern &)
 
 void
 ResolverBase::visit (AST::WildcardPattern &)
+{}
+
+void
+ResolverBase::visit (AST::RestPattern &)
 {}
 
 void

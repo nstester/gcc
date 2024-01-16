@@ -622,6 +622,10 @@ AttributeChecker::visit (AST::TraitImpl &)
 {}
 
 void
+AttributeChecker::visit (AST::ExternalTypeItem &)
+{}
+
+void
 AttributeChecker::visit (AST::ExternalStaticItem &)
 {}
 
@@ -689,6 +693,10 @@ AttributeChecker::visit (AST::IdentifierPattern &)
 
 void
 AttributeChecker::visit (AST::WildcardPattern &)
+{}
+
+void
+AttributeChecker::visit (AST::RestPattern &)
 {}
 
 // void AttributeChecker::visit(RangePatternBound& ){}

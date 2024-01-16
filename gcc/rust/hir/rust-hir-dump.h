@@ -22,6 +22,7 @@
 #include "rust-hir-visitor.h"
 #include "rust-hir.h"
 #include "rust-hir-full.h"
+#include "rust-dump.h"
 
 namespace Rust {
 namespace HIR {
@@ -33,10 +34,10 @@ public:
   void go (HIR::Crate &crate);
 
 private:
+  Indent indentation;
   std::ostream &stream;
-  std::size_t indent; // current indentation level
-  char indent_char = '\t';
 
+  void visit (AST::Attribute &attribute);
   virtual void visit (Lifetime &) override;
   virtual void visit (LifetimeParam &) override;
   virtual void visit (PathInExpression &) override;
@@ -96,12 +97,8 @@ private:
   virtual void visit (ForLoopExpr &) override;
   virtual void visit (IfExpr &) override;
   virtual void visit (IfExprConseqElse &) override;
-  virtual void visit (IfExprConseqIf &) override;
-  virtual void visit (IfExprConseqIfLet &) override;
   virtual void visit (IfLetExpr &) override;
   virtual void visit (IfLetExprConseqElse &) override;
-  virtual void visit (IfLetExprConseqIf &) override;
-  virtual void visit (IfLetExprConseqIfLet &) override;
 
   virtual void visit (MatchExpr &) override;
   virtual void visit (AwaitExpr &) override;
@@ -164,6 +161,7 @@ private:
   virtual void visit (TuplePatternItemsRanged &) override;
   virtual void visit (TuplePattern &) override;
   virtual void visit (SlicePattern &) override;
+  virtual void visit (AltPattern &) override;
 
   virtual void visit (EmptyStmt &) override;
   virtual void visit (LetStmt &) override;

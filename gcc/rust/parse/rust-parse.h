@@ -126,6 +126,7 @@ public:
 
   std::unique_ptr<AST::Item> parse_item (bool called_from_statement);
   std::unique_ptr<AST::Pattern> parse_pattern ();
+  std::unique_ptr<AST::Pattern> parse_pattern_no_alt ();
 
   /**
    * Parse a statement
@@ -272,6 +273,8 @@ private:
   template <typename EndTokenPred>
   std::vector<AST::Lifetime> parse_lifetime_bounds (EndTokenPred is_end_token);
   AST::Lifetime parse_lifetime ();
+  std::unique_ptr<AST::ExternalTypeItem>
+  parse_external_type_item (AST::Visibility vis, AST::AttrVec outer_attrs);
   std::unique_ptr<AST::TypeAlias> parse_type_alias (AST::Visibility vis,
 						    AST::AttrVec outer_attrs);
   std::unique_ptr<AST::Struct> parse_struct (AST::Visibility vis,

@@ -191,6 +191,31 @@ protected:
   }
 };
 
+class RestPattern : public Pattern
+{
+  Location locus;
+  NodeId node_id;
+
+public:
+  std::string as_string () const override { return ".."; }
+
+  RestPattern (Location locus)
+    : locus (locus), node_id (Analysis::Mappings::get ()->get_next_node_id ())
+  {}
+
+  Location get_locus () const override final { return locus; }
+
+  void accept_vis (ASTVisitor &vis) override;
+
+  NodeId get_pattern_node_id () const override final { return node_id; }
+
+protected:
+  RestPattern *clone_pattern_impl () const override
+  {
+    return new RestPattern (*this);
+  }
+};
+
 // Base range pattern bound (lower or upper limit) - abstract
 class RangePatternBound
 {
@@ -759,9 +784,8 @@ protected:
 };
 
 // Elements of a struct pattern
-struct StructPatternElements
+class StructPatternElements
 {
-private:
   // bool has_struct_pattern_fields;
   std::vector<std::unique_ptr<StructPatternField>> fields;
 
@@ -817,6 +841,7 @@ public:
     struct_pattern_etc_attrs = other.struct_pattern_etc_attrs;
     has_struct_pattern_etc = other.has_struct_pattern_etc;
 
+    fields.clear ();
     fields.reserve (other.fields.size ());
     for (const auto &e : other.fields)
       fields.push_back (e->clone_struct_pattern_field ());
@@ -894,7 +919,7 @@ public:
    * is empty). */
   bool has_struct_pattern_elems () const { return !elems.is_empty (); }
 
-  Location get_locus () const { return path.get_locus (); }
+  Location get_locus () const override { return path.get_locus (); }
 
   void accept_vis (ASTVisitor &vis) override;
 
@@ -973,6 +998,7 @@ public:
   // Overloaded assignment operator with vector clone
   TupleStructItemsNoRange &operator= (TupleStructItemsNoRange const &other)
   {
+    patterns.clear ();
     patterns.reserve (other.patterns.size ());
     for (const auto &e : other.patterns)
       patterns.push_back (e->clone_pattern ());
@@ -1035,10 +1061,12 @@ public:
   // Overloaded assignment operator to clone
   TupleStructItemsRange &operator= (TupleStructItemsRange const &other)
   {
+    lower_patterns.clear ();
     lower_patterns.reserve (other.lower_patterns.size ());
     for (const auto &e : other.lower_patterns)
       lower_patterns.push_back (e->clone_pattern ());
 
+    upper_patterns.clear ();
     upper_patterns.reserve (other.upper_patterns.size ());
     for (const auto &e : other.upper_patterns)
       upper_patterns.push_back (e->clone_pattern ());
@@ -1250,6 +1278,7 @@ public:
   // Overloaded assignment operator to vector clone
   TuplePatternItemsMultiple &operator= (TuplePatternItemsMultiple const &other)
   {
+    patterns.clear ();
     patterns.reserve (other.patterns.size ());
     for (const auto &e : other.patterns)
       patterns.push_back (e->clone_pattern ());
@@ -1315,10 +1344,12 @@ public:
   // Overloaded assignment operator to clone
   TuplePatternItemsRanged &operator= (TuplePatternItemsRanged const &other)
   {
+    lower_patterns.clear ();
     lower_patterns.reserve (other.lower_patterns.size ());
     for (const auto &e : other.lower_patterns)
       lower_patterns.push_back (e->clone_pattern ());
 
+    upper_patterns.clear ();
     upper_patterns.reserve (other.upper_patterns.size ());
     for (const auto &e : other.upper_patterns)
       upper_patterns.push_back (e->clone_pattern ());
@@ -1528,6 +1559,7 @@ public:
     locus = other.locus;
     node_id = other.node_id;
 
+    items.clear ();
     items.reserve (other.items.size ());
     for (const auto &e : other.items)
       items.push_back (e->clone_pattern ());
@@ -1594,6 +1626,7 @@ public:
     locus = other.locus;
     node_id = other.node_id;
 
+    alts.clear ();
     alts.reserve (other.alts.size ());
     for (const auto &e : other.alts)
       alts.push_back (e->clone_pattern ());

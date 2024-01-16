@@ -53,9 +53,8 @@ public:
 };
 
 // A binding of an identifier to a type used in generic arguments in paths
-struct GenericArgsBinding
+class GenericArgsBinding
 {
-private:
   Identifier identifier;
   std::unique_ptr<Type> type;
 
@@ -431,6 +430,7 @@ protected:
   bool has_separating_scope_resolution;
   SegmentType type;
 
+public:
   // Clone function implementation - not pure virtual as overrided by subclasses
   virtual TypePathSegment *clone_type_path_segment_impl () const
   {
@@ -538,7 +538,6 @@ public:
     return SegmentType::GENERIC;
   }
 
-protected:
   // Use covariance to override base class method
   TypePathSegmentGeneric *clone_type_path_segment_impl () const override
   {
@@ -547,9 +546,8 @@ protected:
 };
 
 // A function as represented in a type path
-struct TypePathFunction
+class TypePathFunction
 {
-private:
   std::vector<std::unique_ptr<Type> > inputs;
   std::unique_ptr<Type> return_type;
 
@@ -654,7 +652,6 @@ public:
 
   TypePathFunction &get_function_path () { return function_path; }
 
-protected:
   // Use covariance to override base class method
   TypePathSegmentFunction *clone_type_path_segment_impl () const override
   {
@@ -762,9 +759,8 @@ public:
   }
 };
 
-struct QualifiedPathType
+class QualifiedPathType
 {
-private:
   std::unique_ptr<Type> type;
   std::unique_ptr<TypePath> trait;
   Location locus;
@@ -933,24 +929,24 @@ public:
       segments (std::move (path_segments))
   {}
 
-  /* TODO: maybe make a shortcut constructor that has QualifiedPathType elements
-   * as params */
-
   // Copy constructor with vector clone
   QualifiedPathInType (QualifiedPathInType const &other)
     : TypeNoBounds (other.mappings, other.locus), path_type (other.path_type)
   {
+    auto seg = other.associated_segment->clone_type_path_segment_impl ();
+    associated_segment = std::unique_ptr<TypePathSegment> (seg);
+
     segments.reserve (other.segments.size ());
     for (const auto &e : other.segments)
       segments.push_back (e->clone_type_path_segment ());
-
-    // Untested.
-    gcc_unreachable ();
   }
 
   // Overloaded assignment operator with vector clone
   QualifiedPathInType &operator= (QualifiedPathInType const &other)
   {
+    auto seg = other.associated_segment->clone_type_path_segment_impl ();
+    associated_segment = std::unique_ptr<TypePathSegment> (seg);
+
     path_type = other.path_type;
     locus = other.locus;
     mappings = other.mappings;

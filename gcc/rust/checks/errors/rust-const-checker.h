@@ -129,12 +129,8 @@ private:
   virtual void visit (ForLoopExpr &expr) override;
   virtual void visit (IfExpr &expr) override;
   virtual void visit (IfExprConseqElse &expr) override;
-  virtual void visit (IfExprConseqIf &expr) override;
-  virtual void visit (IfExprConseqIfLet &expr) override;
   virtual void visit (IfLetExpr &expr) override;
   virtual void visit (IfLetExprConseqElse &expr) override;
-  virtual void visit (IfLetExprConseqIf &expr) override;
-  virtual void visit (IfLetExprConseqIfLet &expr) override;
   virtual void visit (MatchExpr &expr) override;
   virtual void visit (AwaitExpr &expr) override;
   virtual void visit (AsyncBlockExpr &expr) override;
@@ -187,6 +183,7 @@ private:
   virtual void visit (TuplePatternItemsRanged &tuple_items) override;
   virtual void visit (TuplePattern &pattern) override;
   virtual void visit (SlicePattern &pattern) override;
+  virtual void visit (AltPattern &pattern) override;
   virtual void visit (EmptyStmt &stmt) override;
   virtual void visit (LetStmt &stmt) override;
   virtual void visit (ExprStmtWithoutBlock &stmt) override;

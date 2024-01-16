@@ -19,8 +19,6 @@
 #ifndef RUST_HIR_TYPE_CHECK
 #define RUST_HIR_TYPE_CHECK
 
-#include "rust-type-util.h"
-#include "rust-hir-full-decls.h"
 #include "rust-hir-map.h"
 #include "rust-tyty.h"
 #include "rust-hir-trait-reference.h"
@@ -84,6 +82,7 @@ public:
 		    TyTy::BaseType *type);
   void insert_implicit_type (TyTy::BaseType *type);
   bool lookup_type (HirId id, TyTy::BaseType **type) const;
+  void clear_type (TyTy::BaseType *ty);
 
   void insert_implicit_type (HirId id, TyTy::BaseType *type);
 

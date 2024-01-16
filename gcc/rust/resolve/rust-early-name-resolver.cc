@@ -326,7 +326,8 @@ EarlyNameResolver::visit (AST::ClosureExprInner &expr)
   expr.get_definition_expr ()->accept_vis (*this);
 
   for (auto &param : expr.get_params ())
-    param.get_type ()->accept_vis (*this);
+    if (param.has_type_given ())
+      param.get_type ()->accept_vis (*this);
 }
 
 void
@@ -580,6 +581,12 @@ EarlyNameResolver::visit (AST::Method &method)
 void
 EarlyNameResolver::visit (AST::Module &module)
 {
+  // Parse the module's items if they haven't been expanded and the file
+  // should be parsed (i.e isn't hidden behind an untrue or impossible cfg
+  // directive)
+  if (module.get_kind () == AST::Module::UNLOADED)
+    module.load_items ();
+
   scoped (module.get_node_id (), [&module, this] () {
     for (auto &item : module.get_items ())
       item->accept_vis (*this);
@@ -771,6 +778,12 @@ EarlyNameResolver::visit (AST::TraitImpl &impl)
 }
 
 void
+EarlyNameResolver::visit (AST::ExternalTypeItem &item)
+{
+  // nothing to do?
+}
+
+void
 EarlyNameResolver::visit (AST::ExternalStaticItem &item)
 {
   item.get_type ()->accept_vis (*this);
@@ -948,6 +961,10 @@ EarlyNameResolver::visit (AST::IdentifierPattern &pattern)
 
 void
 EarlyNameResolver::visit (AST::WildcardPattern &)
+{}
+
+void
+EarlyNameResolver::visit (AST::RestPattern &)
 {}
 
 void

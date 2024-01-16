@@ -20,7 +20,7 @@
 #define RUST_AST_RESOLVE_EXPR_H
 
 #include "rust-ast-resolve-base.h"
-#include "rust-ast-full.h"
+#include "rust-ast-resolve-pattern.h"
 
 namespace Rust {
 namespace Resolver {
@@ -79,7 +79,8 @@ public:
   void visit (AST::ClosureExprInnerTyped &expr) override;
 
 protected:
-  void resolve_closure_param (AST::ClosureParam &param);
+  void resolve_closure_param (AST::ClosureParam &param,
+			      std::vector<PatternBinding> &bindings);
 
 private:
   ResolveExpr (const CanonicalPath &prefix,

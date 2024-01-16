@@ -28,9 +28,28 @@ namespace Resolver {
 class UnifyRules
 {
 public:
+  struct InferenceSite
+  {
+    HirId pref;
+    HirId ptyref;
+    TyTy::ParamType *param;
+    TyTy::InferType *infer;
+  };
+  struct CommitSite
+  {
+    TyTy::BaseType *lhs;
+    TyTy::BaseType *rhs;
+    TyTy::BaseType *resolved;
+  };
+
   static TyTy::BaseType *Resolve (TyTy::TyWithLocation lhs,
 				  TyTy::TyWithLocation rhs, Location locus,
-				  bool commit_flag, bool emit_error);
+				  bool commit_flag, bool emit_error, bool infer,
+				  std::vector<CommitSite> &commits,
+				  std::vector<InferenceSite> &infers);
+
+  static void commit (TyTy::BaseType *base, TyTy::BaseType *other,
+		      TyTy::BaseType *resolved);
 
 protected:
   TyTy::BaseType *expect_inference_variable (TyTy::InferType *ltype,
@@ -66,10 +85,12 @@ protected:
 
 private:
   UnifyRules (TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
-	      Location locus, bool commit_flag, bool emit_error);
+	      Location locus, bool commit_flag, bool emit_error, bool infer,
+	      std::vector<CommitSite> &commits,
+	      std::vector<InferenceSite> &infers);
 
   void emit_type_mismatch () const;
-  void commit (TyTy::BaseType *resolved);
+
   TyTy::BaseType *go ();
 
   TyTy::BaseType *get_base ();
@@ -80,6 +101,9 @@ private:
   Location locus;
   bool commit_flag;
   bool emit_error;
+  bool infer_flag;
+  std::vector<CommitSite> &commits;
+  std::vector<InferenceSite> &infers;
 
   Analysis::Mappings &mappings;
   TypeCheckContext &context;

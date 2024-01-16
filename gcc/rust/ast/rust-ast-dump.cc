@@ -21,27 +21,6 @@
 namespace Rust {
 namespace AST {
 
-Indent::Indent () : tabs (0) {}
-
-std::ostream &
-operator<< (std::ostream &stream, const Indent &indent)
-{
-  return stream << std::string (indent.tabs, '\t');
-}
-
-void
-Indent::increment ()
-{
-  tabs++;
-}
-
-void
-Indent::decrement ()
-{
-  rust_assert (tabs != 0);
-  tabs--;
-}
-
 Dump::Dump (std::ostream &stream) : stream (stream), indentation (Indent ()) {}
 
 void
@@ -1433,6 +1412,14 @@ Dump::visit (TraitImpl &impl)
 }
 
 void
+Dump::visit (ExternalTypeItem &type)
+{
+  visit (type.get_visibility ());
+
+  stream << "type " << type.get_identifier () << ';';
+}
+
+void
 Dump::visit (ExternalStaticItem &)
 {}
 
@@ -1545,7 +1532,6 @@ Dump::visit (MacroRule &rule)
   visit (rule.get_matcher ());
   stream << " => ";
   visit (rule.get_transcriber ().get_token_tree ());
-  stream << ";";
 }
 
 void
@@ -1600,6 +1586,10 @@ Dump::visit (IdentifierPattern &pattern)
 
 void
 Dump::visit (WildcardPattern &)
+{}
+
+void
+Dump::visit (RestPattern &)
 {}
 
 // void Dump::visit(RangePatternBound& ){}

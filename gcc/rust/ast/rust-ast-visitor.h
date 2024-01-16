@@ -161,6 +161,7 @@ public:
   virtual void visit (InherentImpl &impl) = 0;
   virtual void visit (TraitImpl &impl) = 0;
   // virtual void visit(ExternalItem& item) = 0;
+  virtual void visit (ExternalTypeItem &type) = 0;
   virtual void visit (ExternalStaticItem &item) = 0;
   virtual void visit (ExternalFunctionItem &item) = 0;
   virtual void visit (ExternBlock &block) = 0;
@@ -182,6 +183,7 @@ public:
   virtual void visit (LiteralPattern &pattern) = 0;
   virtual void visit (IdentifierPattern &pattern) = 0;
   virtual void visit (WildcardPattern &pattern) = 0;
+  virtual void visit (RestPattern &pattern) = 0;
   // virtual void visit(RangePatternBound& bound) = 0;
   virtual void visit (RangePatternBoundLiteral &bound) = 0;
   virtual void visit (RangePatternBoundPath &bound) = 0;

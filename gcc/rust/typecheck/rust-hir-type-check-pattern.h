@@ -42,14 +42,18 @@ public:
   void visit (HIR::QualifiedPathInExpression &pattern) override;
   void visit (HIR::ReferencePattern &pattern) override;
   void visit (HIR::SlicePattern &pattern) override;
+  void visit (HIR::AltPattern &pattern) override;
 
 private:
   TypeCheckPattern (TyTy::BaseType *parent);
 
-  static TyTy::BaseType *
-  typecheck_range_pattern_bound (HIR::RangePatternBound *bound,
-				 Analysis::NodeMapping mappings,
-				 Location locus);
+  TyTy::BaseType *typecheck_range_pattern_bound (
+    std::unique_ptr<Rust::HIR::RangePatternBound> &bound,
+    Analysis::NodeMapping mappings, Location locus);
+
+  void emit_pattern_size_error (const HIR::Pattern &pattern,
+				size_t expected_field_count,
+				size_t got_field_count);
 
   TyTy::BaseType *parent;
   TyTy::BaseType *infered;

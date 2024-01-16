@@ -20,13 +20,14 @@
 #include "rust-hir-path-probe.h"
 #include "rust-hir-dot-operator.h"
 #include "rust-hir-trait-resolve.h"
+#include "rust-type-util.h"
 
 namespace Rust {
 namespace Resolver {
 
 static bool
 resolve_operator_overload_fn (
-  Analysis::RustLangItem::ItemType lang_item_type, const TyTy::BaseType *ty,
+  Analysis::RustLangItem::ItemType lang_item_type, TyTy::BaseType *ty,
   TyTy::FnType **resolved_fn, HIR::ImplItem **impl_item,
   Adjustment::AdjustmentType *requires_ref_adjustment);
 
@@ -40,7 +41,7 @@ Adjuster::adjust_type (const std::vector<Adjustment> &adjustments)
 }
 
 Adjustment
-Adjuster::try_deref_type (const TyTy::BaseType *ty,
+Adjuster::try_deref_type (TyTy::BaseType *ty,
 			  Analysis::RustLangItem::ItemType deref_lang_item)
 {
   HIR::ImplItem *impl_item = nullptr;
@@ -85,7 +86,7 @@ Adjuster::try_deref_type (const TyTy::BaseType *ty,
 }
 
 Adjustment
-Adjuster::try_raw_deref_type (const TyTy::BaseType *ty)
+Adjuster::try_raw_deref_type (TyTy::BaseType *ty)
 {
   bool is_valid_type = ty->get_kind () == TyTy::TypeKind::REF;
   if (!is_valid_type)
@@ -99,7 +100,7 @@ Adjuster::try_raw_deref_type (const TyTy::BaseType *ty)
 }
 
 Adjustment
-Adjuster::try_unsize_type (const TyTy::BaseType *ty)
+Adjuster::try_unsize_type (TyTy::BaseType *ty)
 {
   bool is_valid_type = ty->get_kind () == TyTy::TypeKind::ARRAY;
   if (!is_valid_type)
@@ -121,7 +122,7 @@ Adjuster::try_unsize_type (const TyTy::BaseType *ty)
 
 static bool
 resolve_operator_overload_fn (
-  Analysis::RustLangItem::ItemType lang_item_type, const TyTy::BaseType *ty,
+  Analysis::RustLangItem::ItemType lang_item_type, TyTy::BaseType *ty,
   TyTy::FnType **resolved_fn, HIR::ImplItem **impl_item,
   Adjustment::AdjustmentType *requires_ref_adjustment)
 {
@@ -265,9 +266,9 @@ resolve_operator_overload_fn (
 	  fn = static_cast<TyTy::FnType *> (lookup);
 
 	  Location unify_locus = mappings->lookup_location (ty->get_ref ());
-	  TypeCheckBase::unify_site (
-	    ty->get_ref (), TyTy::TyWithLocation (fn->get_self_type ()),
-	    TyTy::TyWithLocation (adjusted_self), unify_locus);
+	  unify_site (ty->get_ref (),
+		      TyTy::TyWithLocation (fn->get_self_type ()),
+		      TyTy::TyWithLocation (adjusted_self), unify_locus);
 
 	  lookup = fn;
 	}
@@ -292,9 +293,9 @@ AutoderefCycle::try_hook (const TyTy::BaseType &)
 {}
 
 bool
-AutoderefCycle::cycle (const TyTy::BaseType *receiver)
+AutoderefCycle::cycle (TyTy::BaseType *receiver)
 {
-  const TyTy::BaseType *r = receiver;
+  TyTy::BaseType *r = receiver;
   while (true)
     {
       rust_debug ("autoderef try 1: {%s}", r->debug_str ().c_str ());
@@ -382,7 +383,7 @@ AutoderefCycle::cycle (const TyTy::BaseType *receiver)
 }
 
 bool
-AutoderefCycle::try_autoderefed (const TyTy::BaseType *r)
+AutoderefCycle::try_autoderefed (TyTy::BaseType *r)
 {
   try_hook (*r);
 
