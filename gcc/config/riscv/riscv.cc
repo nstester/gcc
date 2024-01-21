@@ -4873,11 +4873,7 @@ riscv_pass_fpr_pair (machine_mode mode, unsigned regno1,
    For a library call, FNTYPE is 0.  */
 
 void
-riscv_init_cumulative_args (CUMULATIVE_ARGS *cum,
-			    tree fntype ATTRIBUTE_UNUSED,
-			    rtx libname ATTRIBUTE_UNUSED,
-			    tree fndecl ATTRIBUTE_UNUSED,
-			    int caller ATTRIBUTE_UNUSED)
+riscv_init_cumulative_args (CUMULATIVE_ARGS *cum, tree fntype, rtx, tree, int)
 {
   memset (cum, 0, sizeof (*cum));
 
