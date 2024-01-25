@@ -8221,11 +8221,21 @@
 	   || (memory_operand (operands[0], V8DImode)
 	       && register_operand (operands[1], V8DImode)))
     {
+      std::pair<rtx, rtx> last_pair = {};
       for (int offset = 0; offset < 64; offset += 16)
-	emit_move_insn (simplify_gen_subreg (TImode, operands[0],
-					     V8DImode, offset),
-			simplify_gen_subreg (TImode, operands[1],
-					     V8DImode, offset));
+        {
+	  std::pair<rtx, rtx> pair = {
+	    simplify_gen_subreg (TImode, operands[0], V8DImode, offset),
+	    simplify_gen_subreg (TImode, operands[1], V8DImode, offset)
+	  };
+	  if (register_operand (pair.first, TImode)
+	      && reg_overlap_mentioned_p (pair.first, pair.second))
+	    last_pair = pair;
+	  else
+	    emit_move_insn (pair.first, pair.second);
+        }
+      if (last_pair.first)
+	emit_move_insn (last_pair.first, last_pair.second);
       DONE;
     }
   else
@@ -8503,6 +8513,18 @@
   "TARGET_SIMD"
   "<PERMUTE:perm_insn>\\t%0.<Vtype>, %1.<Vtype>, %2.<Vtype>"
   [(set_attr "type" "neon_permute<q>")]
+)
+
+;; ZIP1 ignores the contents of the upper halves of the registers,
+;; so we can describe 128-bit operations in terms of 64-bit inputs.
+(define_insn "aarch64_zip1<mode>_low"
+  [(set (match_operand:VQ 0 "register_operand" "=w")
+	(unspec:VQ [(match_operand:<VHALF> 1 "register_operand" "w")
+		    (match_operand:<VHALF> 2 "register_operand" "w")]
+		   UNSPEC_ZIP1))]
+  "TARGET_SIMD"
+  "zip1\t%0.<Vtype>, %1.<Vtype>, %2.<Vtype>"
+  [(set_attr "type" "neon_permute_q")]
 )
 
 ;; This instruction's pattern is generated directly by
@@ -9685,9 +9707,8 @@
        not sufficient uses of the zero to make the split worthwhile.  */
     rtx res = simplify_gen_subreg (<VNARROWQ2>mode, operands[0],
 				   <MODE>mode, 0);
-    rtx zero = aarch64_gen_shareable_zero (<VNARROWQ2>mode);
-    rtx op = lowpart_subreg (<VNARROWQ2>mode, operands[1], <VNARROWQ>mode);
-    emit_insn (gen_aarch64_zip1<Vnarrowq2> (res, op, zero));
+    rtx zero = aarch64_gen_shareable_zero (<VNARROWQ>mode);
+    emit_insn (gen_aarch64_zip1<Vnarrowq2>_low (res, operands[1], zero));
     DONE;
   }
   [(set_attr "type" "neon_shift_imm_long")]
