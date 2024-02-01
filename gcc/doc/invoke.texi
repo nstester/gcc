@@ -30262,6 +30262,14 @@ Supported extension are listed below:
 @tab 1.0
 @tab Integer conditional operations extension.
 
+@item za64rs
+@tab 1.0
+@tab Reservation set size of 64 bytes.
+
+@item za128rs
+@tab 1.0
+@tab Reservation set size of 128 bytes.
+
 @item zawrs
 @tab 1.0
 @tab Wait-on-reservation-set extension.
@@ -30369,6 +30377,26 @@ Supported extension are listed below:
 @item zicbop
 @tab 1.0
 @tab Cache-block prefetch extension.
+
+@item zic64b
+@tab 1.0
+@tab Cache block size isf 64 bytes.
+
+@item ziccamoa
+@tab 1.0
+@tab Main memory supports all atomics in A.
+
+@item ziccif
+@tab 1.0
+@tab Main memory supports instruction fetch with atomicity requirement.
+
+@item zicclsm
+@tab 1.0
+@tab Main memory supports misaligned loads/stores.
+
+@item ziccrse
+@tab 1.0
+@tab Main memory supports forward progress on LR/SC sequences.
 
 @item zicntr
 @tab 2.0
@@ -30686,7 +30714,8 @@ Permissible values for this option are: @samp{sifive-e20}, @samp{sifive-e21},
 Optimize the output for the given processor, specified by microarchitecture or
 particular CPU name.  Permissible values for this option are: @samp{rocket},
 @samp{sifive-3-series}, @samp{sifive-5-series}, @samp{sifive-7-series},
-@samp{thead-c906}, @samp{size}, and all valid options for @option{-mcpu=}.
+@samp{thead-c906}, @samp{size}, @samp{sifive-p600-series},
+and all valid options for @option{-mcpu=}.
 
 When @option{-mtune=} is not specified, use the setting from @option{-mcpu},
 the default is @samp{rocket} if both are not specified.
