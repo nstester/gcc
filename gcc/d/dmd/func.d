@@ -8,7 +8,7 @@
  * - `invariant`
  * - `unittest`
  *
- * Copyright:   Copyright (C) 1999-2023 by The D Language Foundation, All Rights Reserved
+ * Copyright:   Copyright (C) 1999-2024 by The D Language Foundation, All Rights Reserved
  * Authors:     $(LINK2 https://www.digitalmars.com, Walter Bright)
  * License:     $(LINK2 https://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
  * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/src/dmd/func.d, _func.d)
@@ -695,6 +695,7 @@ extern (C++) class FuncDeclaration : Declaration
         int result = 0;
         if (fd.ident == ident)
         {
+            import dmd.typesem : covariant;
             const cov = type.covariant(fd.type);
             if (cov != Covariant.distinct)
             {
@@ -721,6 +722,8 @@ extern (C++) class FuncDeclaration : Declaration
     final int findVtblIndex(Dsymbols* vtbl, int dim)
     {
         //printf("findVtblIndex() %s\n", toChars());
+        import dmd.typesem : covariant;
+
         FuncDeclaration mismatch = null;
         StorageClass mismatchstc = 0;
         int mismatchvi = -1;
@@ -947,6 +950,7 @@ extern (C++) class FuncDeclaration : Declaration
              */
             if (t.ty == Tfunction)
             {
+                import dmd.typesem : covariant;
                 auto tf = cast(TypeFunction)f.type;
                 if (tf.covariant(t) == Covariant.yes &&
                     tf.nextOf().implicitConvTo(t.nextOf()) >= MATCH.constant)
@@ -1157,6 +1161,7 @@ extern (C++) class FuncDeclaration : Declaration
             args.push(e);
         }
 
+        import dmd.typesem : callMatch;
         MATCH m = tg.callMatch(null, ArgumentList(&args, names), 1);
         if (m > MATCH.nomatch)
         {
@@ -4248,6 +4253,9 @@ extern (C++) class StaticCtorDeclaration : FuncDeclaration
  */
 extern (C++) final class SharedStaticCtorDeclaration : StaticCtorDeclaration
 {
+    /// Exclude this constructor from cyclic dependency check
+    bool standalone;
+
     extern (D) this(const ref Loc loc, const ref Loc endloc, StorageClass stc)
     {
         super(loc, endloc, "_sharedStaticCtor", stc);

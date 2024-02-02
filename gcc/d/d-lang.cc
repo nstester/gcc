@@ -23,6 +23,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "dmd/cond.h"
 #include "dmd/declaration.h"
 #include "dmd/doc.h"
+#include "dmd/dsymbol.h"
 #include "dmd/errors.h"
 #include "dmd/expression.h"
 #include "dmd/hdrgen.h"
@@ -1208,7 +1209,7 @@ d_parse_file (void)
 	    message ("import    %s", m->toChars ());
 
 	  OutBuffer buf;
-	  genhdrfile (m, buf);
+	  genhdrfile (m, global.params.dihdr.fullOutput, buf);
 	  d_write_file (m->hdrfile.toChars (), buf.peekChars ());
 	}
 
@@ -1226,7 +1227,7 @@ d_parse_file (void)
       if (global.params.v.verbose)
 	message ("importall %s", m->toChars ());
 
-      m->importAll (NULL);
+      importAll (m, NULL);
     }
 
   if (global.errors)
@@ -1372,7 +1373,7 @@ d_parse_file (void)
 	  OutBuffer buf;
 	  buf.doindent = 1;
 
-	  moduleToBuffer (buf, m);
+	  moduleToBuffer (buf, true, m);
 	  message ("%s", buf.peekChars ());
 	}
     }
