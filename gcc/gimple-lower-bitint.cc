@@ -1350,9 +1350,7 @@ bitint_large_huge::handle_cast (tree lhs_type, tree rhs1, tree idx)
       if (!tree_fits_uhwi_p (idx))
 	{
 	  if (m_upwards_2limb
-	      && (m_upwards_2limb * limb_prec
-		  <= ((unsigned) TYPE_PRECISION (rhs_type)
-		      - !TYPE_UNSIGNED (rhs_type))))
+	      && low >= m_upwards_2limb - m_first)
 	    {
 	      rhs1 = handle_operand (rhs1, idx);
 	      if (m_first)
@@ -1363,8 +1361,21 @@ bitint_large_huge::handle_cast (tree lhs_type, tree rhs1, tree idx)
 	    }
 	  bool single_comparison
 	    = low == high || (m_upwards_2limb && (low & 1) == m_first);
+	  tree idxc = idx;
+	  if (!single_comparison
+	      && m_upwards_2limb
+	      && !m_first
+	      && low + 1 == m_upwards_2limb)
+	    /* In this case we know that idx <= low always,
+	       so effectively we just needs a single comparison,
+	       idx < low or idx == low, but we'd need to emit different
+	       code for the 2 branches than single_comparison normally
+	       emits.  So, instead of special-casing that, emit a
+	       low <= low comparison which cfg cleanup will clean up
+	       at the end of the pass.  */
+	    idxc = size_int (low);
 	  g = gimple_build_cond (single_comparison ? LT_EXPR : LE_EXPR,
-				 idx, size_int (low), NULL_TREE, NULL_TREE);
+				 idxc, size_int (low), NULL_TREE, NULL_TREE);
 	  edge edge_true_true, edge_true_false, edge_false;
 	  if_then_if_then_else (g, (single_comparison ? NULL
 				    : gimple_build_cond (EQ_EXPR, idx,
@@ -1670,6 +1681,27 @@ bitint_large_huge::handle_cast (tree lhs_type, tree rhs1, tree idx)
   return NULL_TREE;
 }
 
+/* Add a new EH edge from SRC to EH_EDGE->dest, where EH_EDGE
+   is an older EH edge, and except for virtual PHIs duplicate the
+   PHI argument from the EH_EDGE to the new EH edge.  */
+
+static void
+add_eh_edge (basic_block src, edge eh_edge)
+{
+  edge e = make_edge (src, eh_edge->dest, EDGE_EH);
+  e->probability = profile_probability::very_unlikely ();
+  for (gphi_iterator gsi = gsi_start_phis (eh_edge->dest);
+       !gsi_end_p (gsi); gsi_next (&gsi))
+    {
+      gphi *phi = gsi.phi ();
+      tree lhs = gimple_phi_result (phi);
+      if (virtual_operand_p (lhs))
+	continue;
+      const phi_arg_d *arg = gimple_phi_arg (phi, eh_edge->dest_idx);
+      add_phi_arg (phi, arg->def, e, arg->locus);
+    }
+}
+
 /* Helper function for handle_stmt method, handle a load from memory.  */
 
 tree
@@ -1745,8 +1777,7 @@ bitint_large_huge::handle_load (gimple *stmt, tree idx)
 		  if (eh_edge)
 		    {
 		      edge e = split_block (gsi_bb (m_gsi), g);
-		      make_edge (e->src, eh_edge->dest, EDGE_EH)->probability
-			= profile_probability::very_unlikely ();
+		      add_eh_edge (e->src, eh_edge);
 		      m_gsi = gsi_after_labels (e->dest);
 		      if (gsi_bb (save_gsi) == e->src)
 			{
@@ -1865,8 +1896,7 @@ bitint_large_huge::handle_load (gimple *stmt, tree idx)
 		{
 		  edge e = split_block (gsi_bb (m_gsi), g);
 		  m_gsi = gsi_after_labels (e->dest);
-		  make_edge (e->src, eh_edge->dest, EDGE_EH)->probability
-		    = profile_probability::very_unlikely ();
+		  add_eh_edge (e->src, eh_edge);
 		}
 	    }
 	  if (conditional)
@@ -1923,8 +1953,7 @@ normal_load:
 	{
 	  edge e = split_block (gsi_bb (m_gsi), g);
 	  m_gsi = gsi_after_labels (e->dest);
-	  make_edge (e->src, eh_edge->dest, EDGE_EH)->probability
-	    = profile_probability::very_unlikely ();
+	  add_eh_edge (e->src, eh_edge);
 	}
       if (tree_fits_uhwi_p (idx))
 	{
@@ -2543,8 +2572,8 @@ bitint_large_huge::lower_mergeable_stmt (gimple *stmt, tree_code &cmp_code,
 			{
 			  edge e = split_block (gsi_bb (m_gsi), g);
 			  m_gsi = gsi_after_labels (e->dest);
-			  make_edge (e->src, eh_pad, EDGE_EH)->probability
-			    = profile_probability::very_unlikely ();
+			  add_eh_edge (e->src,
+				       find_edge (gimple_bb (stmt), eh_pad));
 			}
 		    }
 		  if (kind == bitint_prec_large)
@@ -2622,8 +2651,8 @@ bitint_large_huge::lower_mergeable_stmt (gimple *stmt, tree_code &cmp_code,
 		    {
 		      edge e = split_block (gsi_bb (m_gsi), g);
 		      m_gsi = gsi_after_labels (e->dest);
-		      make_edge (e->src, eh_pad, EDGE_EH)->probability
-			= profile_probability::very_unlikely ();
+		      add_eh_edge (e->src,
+				   find_edge (gimple_bb (stmt), eh_pad));
 		    }
 		}
 	      if (new_bb)
@@ -2766,8 +2795,7 @@ bitint_large_huge::lower_mergeable_stmt (gimple *stmt, tree_code &cmp_code,
 		{
 		  edge e = split_block (gsi_bb (m_gsi), g);
 		  m_gsi = gsi_after_labels (e->dest);
-		  make_edge (e->src, eh_pad, EDGE_EH)->probability
-		    = profile_probability::very_unlikely ();
+		  add_eh_edge (e->src, find_edge (gimple_bb (stmt), eh_pad));
 		}
 	    }
 	  if (kind == bitint_prec_huge && i == (bo_bit != 0))
@@ -2811,8 +2839,7 @@ bitint_large_huge::lower_mergeable_stmt (gimple *stmt, tree_code &cmp_code,
 	    {
 	      edge e = split_block (gsi_bb (m_gsi), g);
 	      m_gsi = gsi_after_labels (e->dest);
-	      make_edge (e->src, eh_pad, EDGE_EH)->probability
-		= profile_probability::very_unlikely ();
+	      add_eh_edge (e->src, find_edge (gimple_bb (stmt), eh_pad));
 	    }
 	}
     }
@@ -3468,8 +3495,7 @@ bitint_large_huge::lower_muldiv_stmt (tree obj, gimple *stmt)
 	{
 	  edge e2 = split_block (gsi_bb (m_gsi), g);
 	  m_gsi = gsi_after_labels (e2->dest);
-	  make_edge (e2->src, e1->dest, EDGE_EH)->probability
-	    = profile_probability::very_unlikely ();
+	  add_eh_edge (e2->src, e1);
 	}
     }
 }
