@@ -6334,8 +6334,10 @@ aarch64_function_ok_for_sibcall (tree, tree exp)
   tree fntype = TREE_TYPE (TREE_TYPE (CALL_EXPR_FN (exp)));
   if (aarch64_fntype_pstate_sm (fntype) & ~aarch64_cfun_incoming_pstate_sm ())
     return false;
-  if (aarch64_fntype_pstate_za (fntype) != aarch64_cfun_incoming_pstate_za ())
-    return false;
+  for (auto state : { "za", "zt0" })
+    if (bool (aarch64_cfun_shared_flags (state))
+	!= bool (aarch64_fntype_shared_flags (fntype, state)))
+      return false;
   return true;
 }
 
@@ -9523,7 +9525,9 @@ aarch64_expand_prologue (void)
   if (aarch64_cfun_enables_pstate_sm ())
     force_isa_mode = AARCH64_FL_SM_ON;
 
-  if (flag_stack_clash_protection && known_eq (callee_adjust, 0))
+  if (flag_stack_clash_protection
+      && known_eq (callee_adjust, 0)
+      && known_lt (frame.reg_offset[VG_REGNUM], 0))
     {
       /* Fold the SVE allocation into the initial allocation.
 	 We don't do this in aarch64_layout_arg to avoid pessimizing
@@ -9651,7 +9655,10 @@ aarch64_expand_prologue (void)
   if (maybe_ne (sve_callee_adjust, 0))
     {
       gcc_assert (!flag_stack_clash_protection
-		  || known_eq (initial_adjust, 0));
+		  || known_eq (initial_adjust, 0)
+		  /* The VG save isn't shrink-wrapped and so serves as
+		     a probe of the initial allocation.  */
+		  || known_eq (frame.reg_offset[VG_REGNUM], bytes_below_sp));
       aarch64_allocate_and_probe_stack_space (tmp1_rtx, tmp0_rtx,
 					      sve_callee_adjust,
 					      force_isa_mode,
@@ -19536,7 +19543,6 @@ aarch64_option_valid_attribute_p (tree fndecl, tree, tree args, int)
 			      TREE_TARGET_OPTION (target_option_current_node));
 
   ret = aarch64_process_target_attr (args);
-  ret = aarch64_process_target_attr (args);
   if (ret)
     {
       tree version_attr = lookup_attribute ("target_version",
@@ -29333,13 +29339,25 @@ aarch64_mode_emit_local_sme_state (aarch64_local_sme_state mode,
 	     bl __arm_tpidr2_save
 	     msr tpidr2_el0, xzr
 	     zero { za }       // Only if ZA is live
+	     zero { zt0 }      // Only if ZT0 is live
 	 no_save:  */
-      bool is_active = (mode == aarch64_local_sme_state::ACTIVE_LIVE
-			|| mode == aarch64_local_sme_state::ACTIVE_DEAD);
       auto tmp_reg = gen_reg_rtx (DImode);
-      auto active_flag = gen_int_mode (is_active, DImode);
       emit_insn (gen_aarch64_read_tpidr2 (tmp_reg));
-      emit_insn (gen_aarch64_commit_lazy_save (tmp_reg, active_flag));
+      auto label = gen_label_rtx ();
+      rtx branch = aarch64_gen_compare_zero_and_branch (EQ, tmp_reg, label);
+      auto jump = emit_jump_insn (branch);
+      JUMP_LABEL (jump) = label;
+      emit_insn (gen_aarch64_tpidr2_save ());
+      emit_insn (gen_aarch64_clear_tpidr2 ());
+      if (mode == aarch64_local_sme_state::ACTIVE_LIVE
+	  || mode == aarch64_local_sme_state::ACTIVE_DEAD)
+	{
+	  if (aarch64_cfun_has_state ("za"))
+	    emit_insn (gen_aarch64_initial_zero_za ());
+	  if (aarch64_cfun_has_state ("zt0"))
+	    emit_insn (gen_aarch64_sme_zero_zt0 ());
+	}
+      emit_label (label);
     }
 
   if (mode == aarch64_local_sme_state::ACTIVE_LIVE
@@ -29513,6 +29531,8 @@ aarch64_mode_emit (int entity, int mode, int prev_mode, HARD_REG_SET live)
   HARD_REG_SET clobbers = {};
   for (rtx_insn *insn = seq; insn; insn = NEXT_INSN (insn))
     {
+      if (!NONDEBUG_INSN_P (insn))
+	continue;
       vec_rtx_properties properties;
       properties.add_insn (insn, false);
       for (rtx_obj_reference ref : properties.refs ())
