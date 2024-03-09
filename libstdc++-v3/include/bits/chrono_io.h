@@ -2164,6 +2164,8 @@ namespace __detail
       year_month_day _M_ymd{};
       weekday _M_wd{};
       __format::_ChronoParts _M_need;
+      unsigned _M_is_leap_second : 1 {};
+      unsigned _M_reserved : 15 {};
 
       template<typename _CharT, typename _Traits, typename _Alloc>
 	basic_istream<_CharT, _Traits>&
@@ -2742,8 +2744,13 @@ namespace __detail
       __detail::_Parser_t<_Duration> __p(__need);
       if (__p(__is, __fmt, __abbrev, __offset))
 	{
-	  auto __st = __p._M_sys_days + __p._M_time - *__offset;
-	  __tp = chrono::time_point_cast<_Duration>(__st);
+	  if (__p._M_is_leap_second)
+	    __is.setstate(ios_base::failbit);
+	  else
+	    {
+	      auto __st = __p._M_sys_days + __p._M_time - *__offset;
+	      __tp = chrono::time_point_cast<_Duration>(__st);
+	    }
 	}
       return __is;
     }
@@ -2765,9 +2772,21 @@ namespace __detail
 		basic_string<_CharT, _Traits, _Alloc>* __abbrev = nullptr,
 		minutes* __offset = nullptr)
     {
-      sys_time<_Duration> __st;
-      if (chrono::from_stream(__is, __fmt, __st, __abbrev, __offset))
-	__tp = utc_clock::from_sys(__st);
+      minutes __off{};
+      if (!__offset)
+	__offset = &__off;
+      using __format::_ChronoParts;
+      auto __need = _ChronoParts::_Year | _ChronoParts::_Month
+		    | _ChronoParts::_Day | _ChronoParts::_TimeOfDay;
+      __detail::_Parser_t<_Duration> __p(__need);
+      if (__p(__is, __fmt, __abbrev, __offset))
+	{
+	  // Converting to utc_time before adding _M_time is necessary for
+	  // "23:59:60" to correctly produce a time within a leap second.
+	  auto __ut = utc_clock::from_sys(__p._M_sys_days) + __p._M_time
+			- *__offset;
+	  __tp = chrono::time_point_cast<_Duration>(__ut);
+	}
       return __is;
     }
 
@@ -2788,9 +2807,24 @@ namespace __detail
 		basic_string<_CharT, _Traits, _Alloc>* __abbrev = nullptr,
 		minutes* __offset = nullptr)
     {
-      utc_time<_Duration> __ut;
-      if (chrono::from_stream(__is, __fmt, __ut, __abbrev, __offset))
-	__tp = tai_clock::from_utc(__ut);
+      minutes __off{};
+      if (!__offset)
+	__offset = &__off;
+      using __format::_ChronoParts;
+      auto __need = _ChronoParts::_Year | _ChronoParts::_Month
+		    | _ChronoParts::_Day | _ChronoParts::_TimeOfDay;
+      __detail::_Parser_t<_Duration> __p(__need);
+      if (__p(__is, __fmt, __abbrev, __offset))
+	{
+	  if (__p._M_is_leap_second)
+	    __is.setstate(ios_base::failbit);
+	  else
+	    {
+	      auto __st = __p._M_sys_days + __p._M_time - *__offset;
+	      auto __tt = tai_clock::from_utc(utc_clock::from_sys(__st));
+	      __tp = chrono::time_point_cast<_Duration>(__tt);
+	    }
+	}
       return __is;
     }
 
@@ -2811,9 +2845,24 @@ namespace __detail
 		basic_string<_CharT, _Traits, _Alloc>* __abbrev = nullptr,
 		minutes* __offset = nullptr)
     {
-      utc_time<_Duration> __ut;
-      if (chrono::from_stream(__is, __fmt, __ut, __abbrev, __offset))
-	__tp = gps_clock::from_utc(__ut);
+      minutes __off{};
+      if (!__offset)
+	__offset = &__off;
+      using __format::_ChronoParts;
+      auto __need = _ChronoParts::_Year | _ChronoParts::_Month
+		    | _ChronoParts::_Day | _ChronoParts::_TimeOfDay;
+      __detail::_Parser_t<_Duration> __p(__need);
+      if (__p(__is, __fmt, __abbrev, __offset))
+	{
+	  if (__p._M_is_leap_second)
+	    __is.setstate(ios_base::failbit);
+	  else
+	    {
+	      auto __st = __p._M_sys_days + __p._M_time - *__offset;
+	      auto __tt = gps_clock::from_utc(utc_clock::from_sys(__st));
+	      __tp = chrono::time_point_cast<_Duration>(__tt);
+	    }
+	}
       return __is;
     }
 
@@ -2836,7 +2885,7 @@ namespace __detail
     {
       sys_time<_Duration> __st;
       if (chrono::from_stream(__is, __fmt, __st, __abbrev, __offset))
-	__tp = file_clock::from_sys(__st);
+	__tp = chrono::time_point_cast<_Duration>(file_clock::from_sys(__st));
       return __is;
     }
 
@@ -3107,6 +3156,16 @@ namespace __detail
 
 	  minutes __tz_offset = __bad_min;
 	  basic_string<_CharT, _Traits> __tz_abbr;
+
+	  if ((_M_need & _ChronoParts::_TimeOfDay)
+		&& (_M_need & _ChronoParts::_Year))
+	    {
+	      // For time_points assume "00:00:00" is implicitly present,
+	      // so we don't fail to parse if it's not (PR libstdc++/114240).
+	      // We will still fail to parse if there's no year+month+day.
+	      __h = hours(0);
+	      __parts = _ChronoParts::_TimeOfDay;
+	    }
 
 	  // bool __is_neg = false; // TODO: how is this handled for parsing?
 
@@ -4049,7 +4108,7 @@ namespace __detail
 	      const bool __need_wday = _M_need & _ChronoParts::_Weekday;
 
 	      // Whether the caller wants _M_sys_days and _M_time.
-	      // Only true for time_points.
+	      // Only true for durations and time_points.
 	      const bool __need_time = _M_need & _ChronoParts::_TimeOfDay;
 
 	      if (__need_wday && __wday != __bad_wday)
@@ -4209,6 +4268,7 @@ namespace __detail
 		    {
 		      __ok = true;
 		      __t += __s;
+		      _M_is_leap_second = __s >= seconds(60);
 		    }
 
 		  if (__ok)
