@@ -7365,7 +7365,15 @@ riscv_expand_prologue (void)
       /* Second step for constant frame.  */
       HOST_WIDE_INT constant_frame = remaining_size.to_constant ();
       if (constant_frame == 0)
-	return;
+	{
+	  /* We must have allocated stack space for the scalable frame.
+	     Emit a stack tie if we have a frame pointer so that the
+	     allocation is ordered WRT fp setup and subsequent writes
+	     into the frame.  */
+	  if (frame_pointer_needed)
+	    riscv_emit_stack_tie ();
+	  return;
+	}
 
       if (SMALL_OPERAND (-constant_frame))
 	{
@@ -7385,6 +7393,13 @@ riscv_expand_prologue (void)
 	  insn = gen_rtx_SET (stack_pointer_rtx, insn);
 	  riscv_set_frame_expr (insn);
 	}
+
+      /* We must have allocated the remainder of the stack frame.
+	 Emit a stack tie if we have a frame pointer so that the
+	 allocation is ordered WRT fp setup and subsequent writes
+	 into the frame.  */
+      if (frame_pointer_needed)
+	riscv_emit_stack_tie ();
     }
 }
 
@@ -8691,8 +8706,13 @@ riscv_declare_function_name (FILE *stream, const char *name, tree fndecl)
   if (DECL_FUNCTION_SPECIFIC_TARGET (fndecl))
     {
       fprintf (stream, "\t.option push\n");
-      std::string isa = riscv_current_subset_list ()->to_string (true);
+
+      std::string *target_name = riscv_func_target_get (fndecl);
+      std::string isa = target_name != NULL
+	? *target_name
+	: riscv_cmdline_subset_list ()->to_string (true);
       fprintf (stream, "\t.option arch, %s\n", isa.c_str ());
+      riscv_func_target_remove_and_destory (fndecl);
 
       struct cl_target_option *local_cl_target =
 	TREE_TARGET_OPTION (DECL_FUNCTION_SPECIFIC_TARGET (fndecl));
@@ -9491,6 +9511,10 @@ riscv_set_current_function (tree decl)
   /* First set the target options.  */
   cl_target_option_restore (&global_options, &global_options_set,
 			    TREE_TARGET_OPTION (new_tree));
+
+  /* The ISA extension can vary based on the function extension like target.
+     Thus, make sure that the machine modes are reflected correctly here.  */
+  init_adjust_machine_modes ();
 
   riscv_save_restore_target_globals (new_tree);
 }
