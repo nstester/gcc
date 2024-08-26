@@ -29,6 +29,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "diagnostic.h"
 #include "diagnostic-metadata.h"
 #include "diagnostic-path.h"
+#include "diagnostic-format.h"
 #include "json.h"
 #include "cpplib.h"
 #include "logical-location.h"
@@ -580,7 +581,9 @@ public:
      (SARIF v2.1.0 section 3.27.13).
    - doesn't capture -Werror cleanly
    - doesn't capture inlining information (can SARIF handle this?)
-   - doesn't capture macro expansion information (can SARIF handle this?).  */
+   - doesn't capture macro expansion information (can SARIF handle this?).
+   - doesn't capture any diagnostic_metadata::rules associated with
+     a diagnostic.  */
 
 class sarif_builder
 {
@@ -590,9 +593,9 @@ public:
 		 const char *main_input_filename_,
 		 bool formatted);
 
-  void end_diagnostic (diagnostic_context &context,
-		       const diagnostic_info &diagnostic,
-		       diagnostic_t orig_diag_kind);
+  void on_report_diagnostic (diagnostic_context &context,
+			     const diagnostic_info &diagnostic,
+			     diagnostic_t orig_diag_kind);
   void emit_diagram (diagnostic_context &context,
 		     const diagnostic_diagram &diagram);
   void end_group ();
@@ -1348,13 +1351,15 @@ sarif_builder::sarif_builder (diagnostic_context &context,
 			  false);
 }
 
-/* Implementation of "end_diagnostic" for SARIF output.  */
+/* Implementation of "on_report_diagnostic" for SARIF output.  */
 
 void
-sarif_builder::end_diagnostic (diagnostic_context &context,
-			       const diagnostic_info &diagnostic,
-			       diagnostic_t orig_diag_kind)
+sarif_builder::on_report_diagnostic (diagnostic_context &context,
+				     const diagnostic_info &diagnostic,
+				     diagnostic_t orig_diag_kind)
 {
+  pp_output_formatted_text (context.printer, context.get_urlifier ());
+
   if (diagnostic.kind == DK_ICE || diagnostic.kind == DK_ICE_NOBT)
     {
       m_invocation_obj->add_notification_for_ice (context, diagnostic, *this);
@@ -1522,6 +1527,8 @@ sarif_builder::make_result_object (diagnostic_context &context,
 	}
 
       diagnostic.metadata->maybe_add_sarif_properties (*result_obj);
+
+      /* We don't yet support diagnostic_metadata::rule.  */
     }
 
   /* "level" property (SARIF v2.1.0 section 3.27.10).  */
@@ -2916,15 +2923,10 @@ public:
     m_builder.end_group ();
   }
   void
-  on_begin_diagnostic (const diagnostic_info &) final override
+  on_report_diagnostic (const diagnostic_info &diagnostic,
+			    diagnostic_t orig_diag_kind) final override
   {
-    /* No-op,  */
-  }
-  void
-  on_end_diagnostic (const diagnostic_info &diagnostic,
-		     diagnostic_t orig_diag_kind) final override
-  {
-    m_builder.end_diagnostic (m_context, diagnostic, orig_diag_kind);
+    m_builder.on_report_diagnostic (m_context, diagnostic, orig_diag_kind);
   }
   void on_diagram (const diagnostic_diagram &diagram) final override
   {
@@ -3017,13 +3019,6 @@ diagnostic_output_format_init_sarif (diagnostic_context &context)
 
   /* Override callbacks.  */
   context.set_ice_handler_callback (sarif_ice_handler);
-
-  /* The metadata is handled in SARIF format, rather than as text.  */
-  context.set_show_cwe (false);
-  context.set_show_rules (false);
-
-  /* The option is handled in SARIF format, rather than as text.  */
-  context.set_show_option_requested (false);
 
   /* Don't colorize the text.  */
   pp_show_color (context.printer) = false;
