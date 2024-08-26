@@ -624,13 +624,20 @@ bpf_core_get_index (const tree node, bool *valid)
 
    ALLOW_ENTRY_CAST is an input arguments and specifies if the function should
    consider as valid expressions in which NODE entry is a cast expression (or
-   tree code nop_expr).  */
+   tree code nop_expr).
+
+   EXTRA_FN is a callback function to allow extra functionality with this
+   function traversal.  Currently used for marking used type during expand
+   pass.  */
+
+typedef void (*extra_fn) (tree);
 
 static unsigned char
 compute_field_expr (tree node, unsigned int *accessors,
 		    bool *valid,
 		    tree *access_node,
-		    bool allow_entry_cast = true)
+		    bool allow_entry_cast = true,
+		    extra_fn callback = NULL)
 {
   unsigned char n = 0;
   unsigned int fake_accessors[MAX_NR_ACCESSORS];
@@ -646,6 +653,9 @@ compute_field_expr (tree node, unsigned int *accessors,
     }
 
   *access_node = node;
+
+  if (callback != NULL)
+    callback (node);
 
   switch (TREE_CODE (node))
     {
@@ -664,17 +674,19 @@ compute_field_expr (tree node, unsigned int *accessors,
     case COMPONENT_REF:
       n = compute_field_expr (TREE_OPERAND (node, 0), accessors,
 			      valid,
-			      access_node, false);
+			      access_node, false, callback);
       accessors[n] = bpf_core_get_index (TREE_OPERAND (node, 1), valid);
       return n + 1;
     case ARRAY_REF:
     case ARRAY_RANGE_REF:
-    case MEM_REF:
       n = compute_field_expr (TREE_OPERAND (node, 0), accessors,
 			      valid,
-			      access_node, false);
+			      access_node, false, callback);
       accessors[n++] = bpf_core_get_index (node, valid);
       return n;
+    case MEM_REF:
+      accessors[0] = bpf_core_get_index (node, valid);
+      return 1;
     case NOP_EXPR:
       if (allow_entry_cast == true)
 	{
@@ -683,7 +695,7 @@ compute_field_expr (tree node, unsigned int *accessors,
 	}
       n = compute_field_expr (TREE_OPERAND (node, 0), accessors,
 			      valid,
-			      access_node, false);
+			      access_node, false, callback);
       return n;
 
     case ADDR_EXPR:
@@ -795,6 +807,23 @@ process_field_expr (struct cr_builtins *data)
 static GTY(()) hash_map<tree, tree> *bpf_enum_mappings;
 tree enum_value_type = NULL_TREE;
 
+static int
+get_index_for_enum_value (tree type, tree expr)
+{
+  gcc_assert (TREE_CODE (expr) == CONST_DECL
+	      && TREE_CODE (type) == ENUMERAL_TYPE);
+
+  unsigned int index = 0;
+  for (tree l = TYPE_VALUES (type); l; l = TREE_CHAIN (l))
+    {
+      gcc_assert (index < (1 << 16));
+      if (TREE_VALUE (l) == expr)
+	return index;
+      index++;
+    }
+  return -1;
+}
+
 /* Pack helper for the __builtin_preserve_enum_value.  */
 
 static struct cr_local
@@ -846,6 +875,16 @@ pack_enum_value_fail:
 	ret.reloc_data.default_value = integer_one_node;
     }
 
+  if (ret.fail == false )
+    {
+      int index = get_index_for_enum_value (type, tmp);
+      if (index == -1 || index >= (1 << 16))
+	{
+	  bpf_error ("enum value in CO-RE builtin cannot be represented");
+	  ret.fail = true;
+	}
+    }
+
   ret.reloc_data.type = type;
   ret.reloc_data.kind = kind;
   return ret;
@@ -864,25 +903,17 @@ process_enum_value (struct cr_builtins *data)
 
   struct cr_final ret = { NULL, type, data->kind };
 
-  if (TREE_CODE (expr) == CONST_DECL
-     && TREE_CODE (type) == ENUMERAL_TYPE)
-    {
-      unsigned int index = 0;
-      for (tree l = TYPE_VALUES (type); l; l = TREE_CHAIN (l))
-	{
-	  if (TREE_VALUE (l) == expr)
-	    {
-	      char *tmp = (char *) ggc_alloc_atomic ((index / 10) + 1);
-	      sprintf (tmp, "%d", index);
-	      ret.str = (const char *) tmp;
+  gcc_assert (TREE_CODE (expr) == CONST_DECL
+	      && TREE_CODE (type) == ENUMERAL_TYPE);
 
-	      break;
-	    }
-	  index++;
-	}
-    }
-  else
-    gcc_unreachable ();
+  int index = get_index_for_enum_value (type, expr);
+  gcc_assert (index != -1 && index < (1 << 16));
+
+  /* Index can only be a value up to 2^16.  Should always fit
+     in 6 chars.  */
+  char tmp[6];
+  sprintf (tmp, "%u", index);
+  ret.str = CONST_CAST (char *, ggc_strdup(tmp));
 
   return ret;
 }
@@ -1002,7 +1033,8 @@ process_type (struct cr_builtins *data)
       && data->default_value != NULL)
   {
     ctf_container_ref ctfc = ctf_get_tu_ctfc ();
-    unsigned int btf_id = get_btf_id (ctf_lookup_tree_type (ctfc, ret.type));
+    ctf_dtdef_ref dtd = ctf_lookup_tree_type (ctfc, ret.type);
+    unsigned int btf_id = dtd ? dtd->dtd_type : BTF_VOID_TYPEID;
     data->rtx_default_value = expand_normal (build_int_cst (integer_type_node,
 							    btf_id));
   }
@@ -1529,6 +1561,51 @@ bpf_resolve_overloaded_core_builtin (location_t loc, tree fndecl,
   return construct_builtin_core_reloc (loc, fndecl, args, argsvec->length ());
 }
 
+/* Callback function for bpf_mark_field_expr_types_as_used.  */
+
+static void
+mark_component_type_as_used (tree node)
+{
+  if (TREE_CODE (node) == COMPONENT_REF)
+    btf_mark_type_used (TREE_TYPE (TREE_OPERAND (node, 0)));
+}
+
+/* Mark types needed for BPF CO-RE relocations as used.  Doing so ensures that
+   these types do not get pruned from the BTF information.  */
+
+static void
+bpf_mark_types_as_used (struct cr_builtins *data)
+{
+  tree expr = data->expr;
+  switch (data->kind)
+    {
+    case BPF_RELO_FIELD_BYTE_OFFSET:
+    case BPF_RELO_FIELD_BYTE_SIZE:
+    case BPF_RELO_FIELD_EXISTS:
+    case BPF_RELO_FIELD_SIGNED:
+    case BPF_RELO_FIELD_LSHIFT_U64:
+    case BPF_RELO_FIELD_RSHIFT_U64:
+      if (TREE_CODE (expr) == ADDR_EXPR)
+	expr = TREE_OPERAND (expr, 0);
+
+      expr = root_for_core_field_info (expr);
+      compute_field_expr (data->expr, NULL, NULL, NULL, false,
+			  mark_component_type_as_used);
+      break;
+    case BPF_RELO_TYPE_ID_LOCAL:
+    case BPF_RELO_TYPE_ID_TARGET:
+    case BPF_RELO_TYPE_EXISTS:
+    case BPF_RELO_TYPE_SIZE:
+    case BPF_RELO_ENUMVAL_EXISTS:
+    case BPF_RELO_ENUMVAL_VALUE:
+    case BPF_RELO_TYPE_MATCHES:
+      btf_mark_type_used (data->type);
+      break;
+    default:
+      gcc_unreachable ();
+    }
+}
+
 /* Used in bpf_expand_builtin.  This function is called in RTL expand stage to
    convert the internal __builtin_core_reloc in unspec:UNSPEC_CORE_RELOC RTL,
    which will contain a third argument that is the index in the vec collected
@@ -1547,6 +1624,8 @@ bpf_expand_core_builtin (tree exp, enum bpf_builtins code)
 	tree index = CALL_EXPR_ARG (exp, 0);
 	struct cr_builtins *data = get_builtin_data (TREE_INT_CST_LOW (index));
 
+	bpf_mark_types_as_used (data);
+
 	rtx v = expand_normal (data->default_value);
 	rtx i = expand_normal (index);
 	  return gen_rtx_UNSPEC (DImode,
@@ -1561,6 +1640,7 @@ bpf_expand_core_builtin (tree exp, enum bpf_builtins code)
   return NULL_RTX;
 }
 
+
 /* This function is called in the final assembly output for the
    unspec:UNSPEC_CORE_RELOC.  It recovers the vec index kept as the third
    operand and collects the data from the vec.  With that it calls the process
@@ -1568,27 +1648,63 @@ bpf_expand_core_builtin (tree exp, enum bpf_builtins code)
    Also it creates a label pointing to the unspec instruction and uses it in
    the CO-RE relocation creation.  */
 
-const char *
-bpf_add_core_reloc (rtx *operands, const char *templ)
+void
+bpf_output_core_reloc (rtx *operands, int nr_ops)
 {
-  struct cr_builtins *data = get_builtin_data (INTVAL (operands[2]));
-  builtin_helpers helper;
-  helper = core_builtin_helpers[data->orig_builtin_code];
+  /* Search for an UNSPEC_CORE_RELOC within the operands of the emitting
+     intructions.  */
+  rtx unspec_exp = NULL_RTX;
+  for (int i = 0; i < nr_ops; i++)
+    {
+      rtx op = operands[i];
 
-  rtx_code_label * tmp_label = gen_label_rtx ();
-  output_asm_label (tmp_label);
-  assemble_name (asm_out_file, ":\n");
+      /* An immediate CO-RE reloc.  */
+      if (GET_CODE (op) == UNSPEC
+	  && XINT (op, 1) == UNSPEC_CORE_RELOC)
+	unspec_exp = op;
 
-  gcc_assert (helper.process != NULL);
-  struct cr_final reloc_data = helper.process (data);
-  make_core_relo (&reloc_data, tmp_label);
+      /* In case of a MEM operation with an offset resolved in CO-RE.  */
+      if (GET_CODE (op) == MEM
+	  && (op = XEXP (op, 0)) != NULL_RTX
+	  && (GET_CODE (op) == PLUS))
+	{
+	  rtx x0 = XEXP (op, 0);
+	  rtx x1 = XEXP (op, 1);
 
-  /* Replace default value for later processing builtin types.
-     Example if the type id builtins.  */
-  if (data->rtx_default_value != NULL_RTX)
-    operands[1] = data->rtx_default_value;
+	  if (GET_CODE (x0) == UNSPEC
+	      && XINT (x0, 1) == UNSPEC_CORE_RELOC)
+	    unspec_exp = x0;
+	  if (GET_CODE (x1) == UNSPEC
+	      && XINT (x1, 1) == UNSPEC_CORE_RELOC)
+	    unspec_exp = x1;
+	}
+      if (unspec_exp != NULL_RTX)
+	break;
+    }
 
-  return templ;
+  if (unspec_exp != NULL_RTX)
+    {
+      int index = INTVAL (XVECEXP (unspec_exp, 0, 1));
+      struct cr_builtins *data = get_builtin_data (index);
+      builtin_helpers helper;
+      helper = core_builtin_helpers[data->orig_builtin_code];
+
+      rtx_code_label * tmp_label = gen_label_rtx ();
+      output_asm_label (tmp_label);
+      assemble_name (asm_out_file, ":\n");
+
+      rtx orig_default_value = data->rtx_default_value;
+
+      gcc_assert (helper.process != NULL);
+      struct cr_final reloc_data = helper.process (data);
+      make_core_relo (&reloc_data, tmp_label);
+
+      /* Replace default value for later processing builtin types.
+	 An example are the type id builtins.  */
+      if (data->rtx_default_value != NULL_RTX
+	  && orig_default_value != data->rtx_default_value)
+	XVECEXP (unspec_exp, 0, 0) = data->rtx_default_value;
+    }
 }
 
 static tree

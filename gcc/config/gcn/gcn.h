@@ -47,6 +47,8 @@
 	builtin_define ("__gfx908__");                                         \
       else if (TARGET_GFX90a)                                                  \
 	builtin_define ("__gfx90a__");                                         \
+      else if (TARGET_GFX90c)                                                  \
+	builtin_define ("__gfx90c__");                                         \
       else if (TARGET_GFX1030)                                                 \
 	builtin_define ("__gfx1030__");                                        \
       else if (TARGET_GFX1036)                                                 \
@@ -109,9 +111,6 @@
 #define INT_TYPE_SIZE		  32
 #define LONG_TYPE_SIZE		  64
 #define LONG_LONG_TYPE_SIZE	  64
-#define FLOAT_TYPE_SIZE		  32
-#define DOUBLE_TYPE_SIZE	  64
-#define LONG_DOUBLE_TYPE_SIZE	  64
 #define DEFAULT_SIGNED_CHAR	  1
 #define PCC_BITFIELD_TYPE_MATTERS 1
 
@@ -832,7 +831,7 @@ enum gcn_builtin_codes
 #define PROFILE_BEFORE_PROLOGUE 0
 
 /* Trampolines */
-#define TRAMPOLINE_SIZE 36
+#define TRAMPOLINE_SIZE 40  /* 36 + 4 padding for alignment.  */
 #define TRAMPOLINE_ALIGNMENT 64
 
 /* MD Optimization.

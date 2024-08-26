@@ -23,11 +23,28 @@ along with GNU Modula-2; see the file COPYING3.  If not see
 
 #include "../m2-tree.h"
 #include "tree-iterator.h"
+#include "opts.h"
 
 #define m2misc_c
 #include "m2block.h"
 #include "m2misc.h"
 #include "m2tree.h"
+
+/* C error entry to error.  */
+
+void
+m2misc_cerror (const char *message)
+{
+  error (message);
+}
+
+/* modula2 entry for cerror.  */
+
+void
+m2misc_error (const char *message)
+{
+  m2misc_cerror (message);
+}
 
 /* DebugTree - display the tree t.  */
 
@@ -53,4 +70,13 @@ m2misc_printStmt (void)
 {
   if (m2block_cur_stmt_list () != NULL)
     debug_tree (m2block_cur_stmt_list ());
+}
+
+/* warning_m2_dump_filter issue a warning relating to the
+   -fm2_dump_filter=rule option.  */
+
+void
+m2misc_warning_m2_dump_filter (const char *message, const char *rule)
+{
+  warning (OPT_fm2_dump_filter_, message, rule);
 }

@@ -35,7 +35,9 @@ FROM Indexing IMPORT InitIndex, InBounds, LowIndice, HighIndice,
 FROM Sets IMPORT Set, InitSet, IncludeElementIntoSet, IsElementInSet ;
 FROM m2linemap IMPORT location_t ;
 
-FROM M2Options IMPORT Pedantic, ExtendedOpaque, DebugFunctionLineNumbers, ScaffoldDynamic, DebugBuiltins ;
+FROM M2Options IMPORT Pedantic, ExtendedOpaque,
+                      GetDebugFunctionLineNumbers, ScaffoldDynamic,
+                      DebugBuiltins ;
 
 FROM M2LexBuf IMPORT UnknownTokenNo, TokenToLineNo,
                      FindFileNameFromToken, TokenToLocation ;
@@ -405,6 +407,7 @@ TYPE
                SavePriority  : BOOLEAN ;    (* Does procedure need to save   *)
                                             (* and restore interrupts?       *)
                ReturnType    : CARDINAL ;   (* Return type for function.     *)
+               ProcedureType : CARDINAL ;   (* Proc type for this procedure. *)
                Offset        : CARDINAL ;   (* Location of procedure used    *)
                                             (* in Pass 2 and if procedure    *)
                                             (* is a syscall.                 *)
@@ -507,6 +510,8 @@ TYPE
                                               (* of const.                   *)
                     Value        : PtrToValue ; (* Value of the constant     *)
                     Type         : CARDINAL ; (* TYPE of constant, char etc  *)
+                    IsConditional,            (* Is it the result of a       *)
+                                              (* boolean conditional?        *)
                     IsSet        : BOOLEAN ;  (* is the constant a set?      *)
                     IsConstructor: BOOLEAN ;  (* is the constant a set?      *)
                     FromType     : CARDINAL ; (* type is determined FromType *)
@@ -530,6 +535,7 @@ TYPE
                IsComponentRef: BOOLEAN ;      (* Is temporary referencing a  *)
                                               (* record field?               *)
                list          : Indexing.Index ;  (* the record and fields    *)
+               IsConditional,
                IsTemp        : BOOLEAN ;      (* Is variable a temporary?    *)
                IsParam       : BOOLEAN ;      (* Is variable a parameter?    *)
                IsPointerCheck: BOOLEAN ;      (* Is variable used to         *)
@@ -1375,7 +1381,7 @@ END DebugProcedureLineNumber ;
 
 PROCEDURE DebugLineNumbers (sym: CARDINAL) ;
 BEGIN
-   IF DebugFunctionLineNumbers
+   IF GetDebugFunctionLineNumbers ()
    THEN
       printf0 ('<lines>\n') ;
       ForeachProcedureDo(sym, DebugProcedureLineNumber) ;
@@ -3970,6 +3976,8 @@ BEGIN
             SavePriority := FALSE ;      (* Does procedure need to save   *)
                                          (* and restore interrupts?       *)
             ReturnType := NulSym ;       (* Not a function yet!           *)
+                                         (* The ProcType equivalent.      *)
+            ProcedureType := MakeProcType (tok, NulName) ;
             Offset := 0 ;                (* Location of procedure.        *)
             InitTree(LocalSymbols) ;
             InitList(EnumerationScopeList) ;
@@ -3991,7 +3999,7 @@ BEGIN
                        := InitValue() ;  (* size of all parameters.       *)
             Begin := 0 ;                 (* token number for BEGIN        *)
             End := 0 ;                   (* token number for END          *)
-            InitWhereDeclaredTok(tok, At) ;  (* Where symbol declared.        *)
+            InitWhereDeclaredTok(tok, At) ;  (* Where the symbol was declared.  *)
             errorScope := GetCurrentErrorScope () ; (* Title error scope. *)
          END
       END ;
@@ -4301,6 +4309,7 @@ BEGIN
             Scope := GetCurrentScope() ;  (* Procedure or Module?  *)
             AtAddress := FALSE ;
             Address := NulSym ;           (* Address at which declared.  *)
+            IsConditional := FALSE ;
             IsTemp := FALSE ;
             IsComponentRef := FALSE ;
             IsParam := FALSE ;
@@ -4327,6 +4336,52 @@ BEGIN
    END ;
    RETURN Sym
 END MakeVar ;
+
+
+(*
+   PutVarConditional - assign IsConditional to value.
+*)
+
+PROCEDURE PutVarConditional (sym: CARDINAL; value: BOOLEAN) ;
+VAR
+   pSym: PtrToSymbol ;
+BEGIN
+   pSym := GetPsym(sym) ;
+   WITH pSym^ DO
+      CASE SymbolType OF
+
+      VarSym     : Var.IsConditional := value |
+      ConstVarSym: ConstVar.IsConditional := value
+
+      ELSE
+         InternalError ('expecting Var')
+      END
+   END
+END PutVarConditional ;
+
+
+(*
+   IsVarConditional - return TRUE if the symbol is a var symbol
+                      containing the result of a boolean conditional.
+*)
+
+PROCEDURE IsVarConditional (sym: CARDINAL) : BOOLEAN ;
+VAR
+   pSym: PtrToSymbol ;
+BEGIN
+   pSym := GetPsym(sym) ;
+   WITH pSym^ DO
+      CASE SymbolType OF
+
+      VarSym     : RETURN Var.IsConditional |
+      ConstVarSym: RETURN ConstVar.IsConditional
+
+      ELSE
+         RETURN FALSE
+      END
+   END ;
+   RETURN FALSE
+END IsVarConditional ;
 
 
 (*
@@ -5038,6 +5093,7 @@ BEGIN
             Value := InitValue() ;
             Type  := NulSym ;
             IsSet := FALSE ;
+            IsConditional := FALSE ;
             IsConstructor := FALSE ;
             FromType := NulSym ;     (* type is determined FromType *)
             UnresFromType := FALSE ; (* is Type resolved?           *)
@@ -5078,27 +5134,6 @@ BEGIN
       END
    END
 END InitConstString ;
-
-
-(*
-   GetConstString - returns the contents of a string constant.
-*)
-
-PROCEDURE GetConstStringContent (sym: CARDINAL) : Name ;
-VAR
-   pSym: PtrToSymbol ;
-BEGIN
-   pSym := GetPsym (sym) ;
-   WITH pSym^ DO
-      CASE SymbolType OF
-
-      ConstStringSym:  RETURN ConstString.Contents
-
-      ELSE
-         InternalError ('expecting ConstStringSym')
-      END
-   END
-END GetConstStringContent ;
 
 
 (*
@@ -8030,34 +8065,13 @@ END CheckForHiddenType ;
 
 PROCEDURE IsReallyPointer (Sym: CARDINAL) : BOOLEAN ;
 BEGIN
-   IF IsVar(Sym)
+   IF IsVar (Sym)
    THEN
-      Sym := GetType(Sym)
+      Sym := GetType (Sym)
    END ;
-   Sym := SkipType(Sym) ;
-   RETURN( IsPointer(Sym) OR (Sym=Address) )
+   Sym := SkipType (Sym) ;
+   RETURN IsPointer (Sym) OR (Sym = Address) OR IsHiddenReallyPointer (Sym)
 END IsReallyPointer ;
-
-
-(*
-   SkipHiddenType - if sym is a TYPE foo = bar
-                    then call SkipType(bar)
-                    else return sym
-
-                    it does skip over hidden type.
-*)
-
-(*
-PROCEDURE SkipHiddenType (Sym: CARDINAL) : CARDINAL ;
-BEGIN
-   IF (Sym#NulSym) AND IsType(Sym) AND (GetType(Sym)#NulSym)
-   THEN
-      RETURN( SkipType(GetType(Sym)) )
-   ELSE
-      RETURN( Sym )
-   END
-END SkipHiddenType ;
-*)
 
 
 (*
@@ -10114,8 +10128,11 @@ BEGIN
       CASE SymbolType OF
 
       ErrorSym: |
-      ProcedureSym: CheckOptFunction(Sym, FALSE) ; Procedure.ReturnType := TypeSym |
-      ProcTypeSym : CheckOptFunction(Sym, FALSE) ; ProcType.ReturnType := TypeSym
+      ProcedureSym: CheckOptFunction(Sym, FALSE) ;
+                    Procedure.ReturnType := TypeSym ;
+                    PutFunction (Procedure.ProcedureType, TypeSym) |
+      ProcTypeSym : CheckOptFunction(Sym, FALSE) ;
+                    ProcType.ReturnType := TypeSym
 
       ELSE
          InternalError ('expecting a Procedure or ProcType symbol')
@@ -10132,13 +10149,16 @@ PROCEDURE PutOptFunction (Sym: CARDINAL; TypeSym: CARDINAL) ;
 VAR
    pSym: PtrToSymbol ;
 BEGIN
-   pSym := GetPsym(Sym) ;
+   pSym := GetPsym (Sym) ;
    WITH pSym^ DO
       CASE SymbolType OF
 
       ErrorSym: |
-      ProcedureSym: CheckOptFunction(Sym, TRUE) ; Procedure.ReturnType := TypeSym |
-      ProcTypeSym : CheckOptFunction(Sym, TRUE) ; ProcType.ReturnType := TypeSym
+      ProcedureSym: CheckOptFunction (Sym, TRUE) ;
+                    Procedure.ReturnType := TypeSym ;
+                    PutOptFunction (Procedure.ProcedureType, TypeSym) |
+      ProcTypeSym : CheckOptFunction (Sym, TRUE) ;
+                    ProcType.ReturnType := TypeSym
 
       ELSE
          InternalError ('expecting a Procedure or ProcType symbol')
@@ -10234,7 +10254,8 @@ BEGIN
             pSym := GetPsym(ParSym) ;
             pSym^.Param.ShadowVar := VariableSym
          END
-      END
+      END ;
+      AddProcedureProcTypeParam (Sym, ParamType, isUnbounded, FALSE)
    END ;
    RETURN( TRUE )
 END PutParam ;
@@ -10287,6 +10308,7 @@ BEGIN
             pSym^.VarParam.ShadowVar := VariableSym
          END
       END ;
+      AddProcedureProcTypeParam (Sym, ParamType, isUnbounded, TRUE) ;
       RETURN( TRUE )
    END
 END PutVarParam ;
@@ -10362,6 +10384,36 @@ BEGIN
       END
    END
 END AddParameter ;
+
+
+(*
+   AddProcedureProcTypeParam - adds ParamType to the parameter ProcType
+                               associated with procedure Sym.
+*)
+
+PROCEDURE AddProcedureProcTypeParam (Sym, ParamType: CARDINAL;
+                                     isUnbounded, isVarParam: BOOLEAN) ;
+VAR
+   pSym: PtrToSymbol ;
+BEGIN
+   pSym := GetPsym (Sym) ;
+   WITH pSym^ DO
+      CASE SymbolType OF
+
+      ProcedureSym: IF isVarParam
+                    THEN
+                       PutProcTypeVarParam (Procedure.ProcedureType,
+                                            ParamType, isUnbounded)
+                    ELSE
+                       PutProcTypeParam (Procedure.ProcedureType,
+                                         ParamType, isUnbounded)
+                    END
+
+      ELSE
+         InternalError ('expecting Sym to be a procedure')
+      END
+   END
+END AddProcedureProcTypeParam ;
 
 
 (*
@@ -12448,6 +12500,7 @@ BEGIN
       ConstLitSym        : RETURN( ConstLit.Scope ) |
       ConstStringSym     : RETURN( ConstString.Scope ) |
       ConstVarSym        : RETURN( ConstVar.Scope ) |
+      UndefinedSym       : RETURN( NulSym ) |
       PartialUnboundedSym: InternalError ('should not be requesting the scope of a PartialUnbounded symbol')
 
       ELSE
@@ -12640,6 +12693,27 @@ BEGIN
    END ;
    AddParameter(Sym, ParSym)
 END PutProcTypeVarParam ;
+
+
+(*
+   GetProcedureProcType - returns the proctype matching procedure sym.
+*)
+
+PROCEDURE GetProcedureProcType (sym: CARDINAL) : CARDINAL ;
+VAR
+   pSym: PtrToSymbol ;
+BEGIN
+   pSym := GetPsym(sym) ;
+   WITH pSym^ DO
+      CASE SymbolType OF
+
+      ProcedureSym: RETURN Procedure.ProcedureType
+
+      ELSE
+         InternalError ('expecting Procedure symbol')
+      END
+   END
+END GetProcedureProcType ;
 
 
 (*

@@ -1506,7 +1506,7 @@ bitint_large_huge::handle_cast (tree lhs_type, tree rhs1, tree idx)
 	  if (m_bitfld_load)
 	    {
 	      tree t4;
-	      if (!save_first)
+	      if (!save_first && !save_cast_conditional)
 		t4 = m_data[m_bitfld_load + 1];
 	      else
 		t4 = make_ssa_name (m_limb_type);
@@ -1519,6 +1519,24 @@ bitint_large_huge::handle_cast (tree lhs_type, tree rhs1, tree idx)
 	      if (edge_true_true)
 		add_phi_arg (phi, m_data[m_bitfld_load], edge_true_true,
 			     UNKNOWN_LOCATION);
+	      if (save_cast_conditional)
+		for (basic_block bb = gsi_bb (m_gsi);;)
+		  {
+		    edge e1 = single_succ_edge (bb);
+		    edge e2 = find_edge (e1->dest, m_bb), e3;
+		    tree t5 = ((e2 && !save_first) ? m_data[m_bitfld_load + 1]
+			       : make_ssa_name (m_limb_type));
+		    phi = create_phi_node (t5, e1->dest);
+		    edge_iterator ei;
+		    FOR_EACH_EDGE (e3, ei, e1->dest->preds)
+		      add_phi_arg (phi, (e3 == e1 ? t4
+					 : build_zero_cst (m_limb_type)),
+				   e3, UNKNOWN_LOCATION);
+		    t4 = t5;
+		    if (e2)
+		      break;
+		    bb = e1->dest;
+		  }
 	      m_data[m_bitfld_load] = t4;
 	      m_data[m_bitfld_load + 2] = t4;
 	      m_bitfld_load = 0;
@@ -4268,11 +4286,7 @@ bitint_large_huge::lower_addsub_overflow (tree obj, gimple *stmt)
 		  bool single_comparison
 		    = (startlimb + 2 >= fin || (startlimb & 1) != (i & 1));
 		  if (!single_comparison)
-		    {
-		      cmp_code = GE_EXPR;
-		      if (!check_zero && (start % limb_prec) == 0)
-			single_comparison = true;
-		    }
+		    cmp_code = GE_EXPR;
 		  else if ((startlimb & 1) == (i & 1))
 		    cmp_code = EQ_EXPR;
 		  else
@@ -5302,7 +5316,7 @@ bitint_large_huge::lower_call (tree obj, gimple *stmt)
 	  arg = make_ssa_name (TREE_TYPE (arg));
 	  gimple *g = gimple_build_assign (arg, v);
 	  gsi_insert_before (&gsi, g, GSI_SAME_STMT);
-	  if (returns_twice)
+	  if (returns_twice && bb_has_abnormal_pred (gimple_bb (stmt)))
 	    {
 	      m_returns_twice_calls.safe_push (stmt);
 	      returns_twice = false;
@@ -6616,7 +6630,10 @@ gimple_lower_bitint (void)
 		    continue;
 		  if (gimple_code (use_stmt) == GIMPLE_PHI
 		      || is_gimple_call (use_stmt)
-		      || gimple_code (use_stmt) == GIMPLE_ASM)
+		      || gimple_code (use_stmt) == GIMPLE_ASM
+		      || (is_gimple_assign (use_stmt)
+			  && (gimple_assign_rhs_code (use_stmt)
+			      == COMPLEX_EXPR)))
 		    {
 		      optimizable_load = false;
 		      break;
@@ -6886,7 +6903,8 @@ gimple_lower_bitint (void)
 		    if (stmt_ends_bb_p (stmt))
 		      {
 			edge e = find_fallthru_edge (gsi_bb (gsi)->succs);
-			gsi_insert_on_edge_immediate (e, g);
+			gsi_insert_on_edge (e, g);
+			edge_insertions = true;
 		      }
 		    else
 		      gsi_insert_after (&gsi, g, GSI_SAME_STMT);
@@ -7154,8 +7172,13 @@ gimple_lower_bitint (void)
 	  gimple_stmt_iterator gsi = gsi_after_labels (gimple_bb (stmt));
 	  while (gsi_stmt (gsi) != stmt)
 	    {
-	      arg_stmts.safe_push (gsi_stmt (gsi));
-	      gsi_remove (&gsi, false);
+	      if (is_gimple_debug (gsi_stmt (gsi)))
+		gsi_next (&gsi);
+	      else
+		{
+		  arg_stmts.safe_push (gsi_stmt (gsi));
+		  gsi_remove (&gsi, false);
+		}
 	    }
 	  gimple *g;
 	  basic_block bb = NULL;

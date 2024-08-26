@@ -26,7 +26,7 @@ FROM SYSTEM IMPORT WORD ;
 FROM M2Options IMPORT Statistics, OptimizeUncalledProcedures,
                       OptimizeCommonSubExpressions,
                       StyleChecking, Optimizing, WholeProgram,
-                      DumpLangDecl, DumpLangGimple ;
+                      GetDumpDecl, GetDumpGimple ;
 
 FROM M2LangDump IMPORT CreateDumpDecl, CloseDumpDecl, MakeGimpleTemplate ;
 FROM M2Error IMPORT InternalError ;
@@ -171,7 +171,7 @@ END RemoveUnreachableCode ;
 
 PROCEDURE DoModuleDeclare ;
 BEGIN
-   IF DumpLangDecl
+   IF GetDumpDecl ()
    THEN
       CreateDumpDecl ("symbol resolver of filtered symbols\n") ;
       DumpFilteredResolver
@@ -182,7 +182,7 @@ BEGIN
    ELSE
       StartDeclareScope (GetMainModule ())
    END ;
-   IF DumpLangDecl
+   IF GetDumpDecl ()
    THEN
       CloseDumpDecl ;
       CreateDumpDecl ("definitive declaration of filtered symbols\n") ;
@@ -216,7 +216,7 @@ VAR
    filename: String ;
    len     : CARDINAL ;
 BEGIN
-   IF DumpLangGimple
+   IF GetDumpGimple ()
    THEN
       filename := MakeGimpleTemplate (len) ;
       CreateDumpGimple (filename, len) ;
@@ -320,9 +320,14 @@ END InitialDeclareAndOptimize ;
 
 PROCEDURE SecondDeclareAndOptimize (scope: CARDINAL;
                                     start, end: CARDINAL) ;
+VAR
+   bb: BasicBlock ;
 BEGIN
    REPEAT
-      FoldConstants(start, end) ;
+      bb := InitBasicBlocksFromRange (scope, start, end) ;
+      ForeachBasicBlockDo (bb, FoldConstants) ;
+      FreeBasicBlocks (bb) ;
+
       DeltaConst := Count - CountQuads () ;
       Count := CountQuads () ;
 

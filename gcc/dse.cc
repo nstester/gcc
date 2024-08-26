@@ -1737,7 +1737,8 @@ find_shift_sequence (poly_int64 access_size,
   if (store_info->const_rhs
       && known_le (access_size, GET_MODE_SIZE (MAX_MODE_INT)))
     {
-      auto new_mode = smallest_int_mode_for_size (access_size * BITS_PER_UNIT);
+      auto new_mode = smallest_int_mode_for_size
+	(access_size * BITS_PER_UNIT).require ();
       auto byte = subreg_lowpart_offset (new_mode, store_mode);
       rtx ret
 	= simplify_subreg (new_mode, store_info->const_rhs, store_mode, byte);
@@ -1946,7 +1947,9 @@ get_stored_val (store_info *store_info, machine_mode read_mode,
 				 copy_rtx (store_info->const_rhs));
   else if (VECTOR_MODE_P (read_mode) && VECTOR_MODE_P (store_mode)
     && known_le (GET_MODE_BITSIZE (read_mode), GET_MODE_BITSIZE (store_mode))
-    && targetm.modes_tieable_p (read_mode, store_mode))
+    && targetm.modes_tieable_p (read_mode, store_mode)
+    && validate_subreg (read_mode, store_mode, copy_rtx (store_info->rhs),
+			subreg_lowpart_offset (read_mode, store_mode)))
     read_reg = gen_lowpart (read_mode, copy_rtx (store_info->rhs));
   else
     read_reg = extract_low_bits (read_mode, store_mode,

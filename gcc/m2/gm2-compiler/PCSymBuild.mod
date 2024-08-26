@@ -39,7 +39,7 @@ FROM M2Quads IMPORT PushT, PopT, OperandT, PopN, PopTF, PushTF, IsAutoPushOn,
 
 FROM M2Options IMPORT Iso ;
 FROM StdIO IMPORT Write ;
-FROM M2System IMPORT IsPseudoSystemFunctionConstExpression ;
+FROM M2System IMPORT Cast, IsPseudoSystemFunctionConstExpression ;
 
 FROM M2Base IMPORT MixTypes,
                    ZType, RType, Char, Boolean, Val, Max, Min, Convert,
@@ -78,7 +78,7 @@ FROM SymbolTable IMPORT NulSym, ModeOfAddr,
                         IsParameterVar, PutProcTypeParam,
                         PutProcTypeVarParam, IsParameterUnbounded,
                         PutFunction, PutProcTypeParam,
-                        GetType,
+                        GetType, IsVar,
                         IsAModula2Type, GetDeclaredMod ;
 
 FROM M2Batch IMPORT MakeDefinitionSource,
@@ -190,6 +190,22 @@ PROCEDURE GetSkippedType (sym: CARDINAL) : CARDINAL ;
 BEGIN
    RETURN( SkipType(GetType(sym)) )
 END GetSkippedType ;
+
+
+(*
+   CheckNotVar - checks to see that the top of stack is not a variable.
+*)
+
+PROCEDURE CheckNotVar (tok: CARDINAL) ;
+VAR
+   const: CARDINAL ;
+BEGIN
+   const := OperandT (1) ;
+   IF (const # NulSym) AND IsVar (const)
+   THEN
+      MetaErrorT1 (tok, 'not expecting a variable {%Aad} as a term in a constant expression', const)
+   END
+END CheckNotVar ;
 
 
 (*
@@ -1399,7 +1415,7 @@ BEGIN
       second := PopAddress (exprStack) ;
       first := PopAddress (exprStack)
    END ;
-   IF func=Val
+   IF (func=Val) OR (func=Cast)
    THEN
       InitConvert (cast, NulSym, first, second)
    ELSIF (func=Max) OR (func=Min)
@@ -1424,7 +1440,7 @@ BEGIN
       IF Iso
       THEN
          ErrorFormat0 (NewError (functok),
-                       'the only functions permissible in a constant expression are: CAP, CHR, CMPLX, FLOAT, HIGH, IM, LENGTH, MAX, MIN, ODD, ORD, RE, SIZE, TSIZE, TRUNC, VAL and gcc builtins')
+                       'the only functions permissible in a constant expression are: CAP, CAST, CHR, CMPLX, FLOAT, HIGH, IM, LENGTH, MAX, MIN, ODD, ORD, RE, SIZE, TSIZE, TRUNC, VAL and gcc builtins')
       ELSE
          ErrorFormat0 (NewError (functok),
                        'the only functions permissible in a constant expression are: CAP, CHR, FLOAT, HIGH, MAX, MIN, ODD, ORD, SIZE, TSIZE, TRUNC, VAL and gcc builtins')
@@ -1433,7 +1449,7 @@ BEGIN
       IF Iso
       THEN
          MetaErrorT1 (functok,
-                      'the only functions permissible in a constant expression are: CAP, CHR, CMPLX, FLOAT, HIGH, IM, LENGTH, MAX, MIN, ODD, ORD, RE, SIZE, TSIZE, TRUNC, VAL and gcc builtins, but not {%1Ead}',
+                      'the only functions permissible in a constant expression are: CAP, CAST, CHR, CMPLX, FLOAT, HIGH, IM, LENGTH, MAX, MIN, ODD, ORD, RE, SIZE, TSIZE, TRUNC, VAL and gcc builtins, but not {%1Ead}',
                       func)
       ELSE
          MetaErrorT1 (functok,
