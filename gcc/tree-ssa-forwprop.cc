@@ -972,7 +972,8 @@ forward_propagate_addr_expr (tree name, tree rhs, bool parent_single_use_p)
    have values outside the range of the new type.  */
 
 static void
-simplify_gimple_switch_label_vec (gswitch *stmt, tree index_type)
+simplify_gimple_switch_label_vec (gswitch *stmt, tree index_type,
+				  vec<std::pair<int, int> > &edges_to_remove)
 {
   unsigned int branch_num = gimple_switch_num_labels (stmt);
   auto_vec<tree> labels (branch_num);
@@ -1026,11 +1027,8 @@ simplify_gimple_switch_label_vec (gswitch *stmt, tree index_type)
       for (ei = ei_start (gimple_bb (stmt)->succs); (e = ei_safe_edge (ei)); )
 	{
 	  if (! bitmap_bit_p (target_blocks, e->dest->index))
-	    {
-	      remove_edge (e);
-	      cfg_changed = true;
-	      free_dominance_info (CDI_DOMINATORS);
-	    }
+	    edges_to_remove.safe_push (std::make_pair (e->src->index,
+						       e->dest->index));
 	  else
 	    ei_next (&ei);
 	} 
@@ -1042,7 +1040,8 @@ simplify_gimple_switch_label_vec (gswitch *stmt, tree index_type)
    the condition which we may be able to optimize better.  */
 
 static bool
-simplify_gimple_switch (gswitch *stmt)
+simplify_gimple_switch (gswitch *stmt,
+			vec<std::pair<int, int> > &edges_to_remove)
 {
   /* The optimization that we really care about is removing unnecessary
      casts.  That will let us do much better in propagating the inferred
@@ -1078,7 +1077,8 @@ simplify_gimple_switch (gswitch *stmt)
 		  && (!max || int_fits_type_p (max, ti)))
 		{
 		  gimple_switch_set_index (stmt, def);
-		  simplify_gimple_switch_label_vec (stmt, ti);
+		  simplify_gimple_switch_label_vec (stmt, ti,
+						    edges_to_remove);
 		  update_stmt (stmt);
 		  return true;
 		}
@@ -3498,6 +3498,8 @@ pass_forwprop::execute (function *fun)
 
   cfg_changed = false;
 
+  calculate_dominance_info (CDI_DOMINATORS);
+
   /* Combine stmts with the stmts defining their operands.  Do that
      in an order that guarantees visiting SSA defs before SSA uses.  */
   lattice.create (num_ssa_names);
@@ -3518,6 +3520,7 @@ pass_forwprop::execute (function *fun)
     |= EDGE_EXECUTABLE;
   auto_vec<gimple *, 4> to_fixup;
   auto_vec<gimple *, 32> to_remove;
+  auto_vec<std::pair<int, int>, 10> edges_to_remove;
   auto_bitmap simple_dce_worklist;
   auto_bitmap need_ab_cleanup;
   to_purge = BITMAP_ALLOC (NULL);
@@ -3536,12 +3539,11 @@ pass_forwprop::execute (function *fun)
       FOR_EACH_EDGE (e, ei, bb->preds)
 	{
 	  if ((e->flags & EDGE_EXECUTABLE)
-	      /* With dominators we could improve backedge handling
-		 when e->src is dominated by bb.  But for irreducible
-		 regions we have to take all backedges conservatively.
-		 We can handle single-block cycles as we know the
-		 dominator relationship here.  */
-	      || bb_to_rpo[e->src->index] > i)
+	      /* We can handle backedges in natural loops correctly but
+		 for irreducible regions we have to take all backedges
+		 conservatively when we did not visit the source yet.  */
+	      || (bb_to_rpo[e->src->index] > i
+		  && !dominated_by_p (CDI_DOMINATORS, e->src, e->dest)))
 	    {
 	      any = true;
 	      break;
@@ -4024,7 +4026,8 @@ pass_forwprop::execute (function *fun)
 		  }
 
 		case GIMPLE_SWITCH:
-		  changed = simplify_gimple_switch (as_a <gswitch *> (stmt));
+		  changed = simplify_gimple_switch (as_a <gswitch *> (stmt),
+						    edges_to_remove);
 		  break;
 
 		case GIMPLE_COND:
@@ -4172,6 +4175,20 @@ pass_forwprop::execute (function *fun)
   cfg_changed |= gimple_purge_all_dead_eh_edges (to_purge);
   cfg_changed |= gimple_purge_all_dead_abnormal_call_edges (need_ab_cleanup);
   BITMAP_FREE (to_purge);
+
+  /* Remove edges queued from switch stmt simplification.  */
+  for (auto ep : edges_to_remove)
+    {
+      basic_block src = BASIC_BLOCK_FOR_FN (fun, ep.first);
+      basic_block dest = BASIC_BLOCK_FOR_FN (fun, ep.second);
+      edge e;
+      if (src && dest && (e = find_edge (src, dest)))
+	{
+	  free_dominance_info (CDI_DOMINATORS);
+	  remove_edge (e);
+	  cfg_changed = true;
+	}
+    }
 
   if (get_range_query (fun) != get_global_range_query ())
     disable_ranger (fun);
