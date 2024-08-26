@@ -10601,7 +10601,9 @@ ix86_ssecom_setcc (const enum rtx_code comparison,
   rtx_code_label *label = NULL;
 
   /* NB: For ordered EQ or unordered NE, check ZF alone isn't sufficient
-     with NAN operands.  */
+     with NAN operands.
+     Under TARGET_AVX10_2_256, VCOMX/VUCOMX are generated instead of
+     COMI/UCOMI.  VCOMX/VUCOMX will not set ZF for NAN operands.  */
   if (check_unordered)
     {
       gcc_assert (comparison == EQ || comparison == NE);
@@ -10640,7 +10642,7 @@ ix86_ssecom_setcc (const enum rtx_code comparison,
 
 static rtx
 ix86_expand_sse_comi (const struct builtin_description *d, tree exp,
-		      rtx target)
+		      rtx target, bool comx_ok)
 {
   rtx pat, set_dst;
   tree arg0 = CALL_EXPR_ARG (exp, 0);
@@ -10673,11 +10675,13 @@ ix86_expand_sse_comi (const struct builtin_description *d, tree exp,
     case GE:
       break;
     case EQ:
-      check_unordered = true;
+      if (!TARGET_AVX10_2_256 || !comx_ok)
+	check_unordered = true;
       mode = CCZmode;
       break;
     case NE:
-      check_unordered = true;
+      if (!TARGET_AVX10_2_256 || !comx_ok)
+	check_unordered = true;
       mode = CCZmode;
       const_val = const1_rtx;
       break;
@@ -10696,6 +10700,28 @@ ix86_expand_sse_comi (const struct builtin_description *d, tree exp,
       || !insn_p->operand[1].predicate (op1, mode1))
     op1 = copy_to_mode_reg (mode1, op1);
 
+  if ((comparison == EQ || comparison == NE)
+      && TARGET_AVX10_2_256 && comx_ok)
+    {
+      switch (icode)
+	{
+	case CODE_FOR_sse_comi:
+	  icode = CODE_FOR_avx10_2_comxsf;
+	  break;
+	case CODE_FOR_sse_ucomi:
+	  icode = CODE_FOR_avx10_2_ucomxsf;
+	  break;
+	case CODE_FOR_sse2_comi:
+	  icode = CODE_FOR_avx10_2_comxdf;
+	  break;
+	case CODE_FOR_sse2_ucomi:
+	  icode = CODE_FOR_avx10_2_ucomxdf;
+	  break;
+
+	default:
+	  gcc_unreachable ();
+	}
+    }
   pat = GEN_FCN (icode) (op0, op1);
   if (! pat)
     return 0;
@@ -11267,6 +11293,9 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V16HI_FTYPE_V8SI_V8SI:
     case V64QI_FTYPE_V64QI_V64QI:
     case V32QI_FTYPE_V32QI_V32QI:
+    case V32BF_FTYPE_V32BF_V32BF:
+    case V16BF_FTYPE_V16BF_V16BF:
+    case V8BF_FTYPE_V8BF_V8BF:
     case V16HI_FTYPE_V32QI_V32QI:
     case V16HI_FTYPE_V16HI_V16HI:
     case V8SI_FTYPE_V4DF_V4DF:
@@ -11345,6 +11374,7 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V16BF_FTYPE_V16SF_UHI:
     case V8BF_FTYPE_V8SF_UQI:
     case V8BF_FTYPE_V4SF_UQI:
+    case V16QI_FTYPE_V16QI_V8HF:
       nargs = 2;
       break;
     case V2DI_FTYPE_V2DI_INT_CONVERT:
@@ -11429,10 +11459,14 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V16QI_FTYPE_V16QI_V16QI_UHI:
     case V16QI_FTYPE_QI_V16QI_UHI:
     case V32HI_FTYPE_V8HI_V32HI_USI:
+    case V32HI_FTYPE_V32BF_V32HI_USI:
     case V32HI_FTYPE_HI_V32HI_USI:
     case V16HI_FTYPE_V8HI_V16HI_UHI:
+    case V16HI_FTYPE_V16BF_V16HI_UHI:
     case V16HI_FTYPE_HI_V16HI_UHI:
     case V8HI_FTYPE_V8HI_V8HI_UQI:
+    case V8HI_FTYPE_V8BF_V8HI_UQI:
+    case V8BF_FTYPE_V8BF_V8BF_UQI:
     case V8HI_FTYPE_HI_V8HI_UQI:
     case V16HF_FTYPE_V16HF_V16HF_UHI:
     case V8SF_FTYPE_V8HI_V8SF_UQI:
@@ -11530,9 +11564,11 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V16HF_FTYPE_V16HF_V16HF_V16HF:
     case V16HI_FTYPE_V16HF_V16HI_UHI:
     case V16HI_FTYPE_V16HI_V16HI_UHI:
+    case V16BF_FTYPE_V16BF_V16BF_UHI:
     case V8HI_FTYPE_V16QI_V8HI_UQI:
     case V16HI_FTYPE_V16QI_V16HI_UHI:
     case V32HI_FTYPE_V32HI_V32HI_USI:
+    case V32BF_FTYPE_V32BF_V32BF_USI:
     case V32HI_FTYPE_V32QI_V32HI_USI:
     case V8DI_FTYPE_V16QI_V8DI_UQI:
     case V8DI_FTYPE_V2DI_V8DI_UQI:
@@ -11560,6 +11596,15 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V16SF_FTYPE_V16SF_V32BF_V32BF:
     case V8SF_FTYPE_V8SF_V16BF_V16BF:
     case V4SF_FTYPE_V4SF_V8BF_V8BF:
+    case V16QI_FTYPE_V16QI_V8HF_V8HF:
+    case V32QI_FTYPE_V32QI_V16HF_V16HF:
+    case V64QI_FTYPE_V64QI_V32HF_V32HF:
+    case V16QI_FTYPE_V8HF_V16QI_UQI:
+    case V16QI_FTYPE_V16HF_V16QI_UHI:
+    case V32QI_FTYPE_V32HF_V32QI_USI:
+    case V8HF_FTYPE_V16QI_V8HF_UQI:
+    case V16HF_FTYPE_V16QI_V16HF_UHI:
+    case V32HF_FTYPE_V32QI_V32HF_USI:
       nargs = 3;
       break;
     case V32QI_FTYPE_V32QI_V32QI_INT:
@@ -11633,6 +11678,9 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case QI_FTYPE_V8HF_INT_UQI:
     case HI_FTYPE_V16HF_INT_UHI:
     case SI_FTYPE_V32HF_INT_USI:
+    case QI_FTYPE_V8BF_INT_UQI:
+    case HI_FTYPE_V16BF_INT_UHI:
+    case SI_FTYPE_V32BF_INT_USI:
     case V4SI_FTYPE_V4SI_V4SI_UHI:
     case V8SI_FTYPE_V8SI_V8SI_UHI:
       nargs = 3;
@@ -11653,6 +11701,7 @@ ix86_expand_args_builtin (const struct builtin_description *d,
       break;
     case V32QI_FTYPE_V32QI_V32QI_V32QI_USI:
     case V32HI_FTYPE_V32HI_V32HI_V32HI_USI:
+    case V32BF_FTYPE_V32BF_V32BF_V32BF_USI:
     case V32HI_FTYPE_V64QI_V64QI_V32HI_USI:
     case V16SI_FTYPE_V32HI_V32HI_V16SI_UHI:
     case V64QI_FTYPE_V64QI_V64QI_V64QI_UDI:
@@ -11683,6 +11732,7 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V16SI_FTYPE_V16SI_V16SI_V16SI_UHI:
     case V16SI_FTYPE_V16SI_V4SI_V16SI_UHI:
     case V8HI_FTYPE_V8HI_V8HI_V8HI_UQI:
+    case V8BF_FTYPE_V8BF_V8BF_V8BF_UQI:
     case V8SI_FTYPE_V8SI_V8SI_V8SI_UQI:
     case V4SI_FTYPE_V4SI_V4SI_V4SI_UQI:
     case V16HF_FTYPE_V16HF_V16HF_V16HF_UQI:
@@ -11690,6 +11740,7 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V8SF_FTYPE_V8SF_V8SF_V8SF_UQI:
     case V16QI_FTYPE_V16QI_V16QI_V16QI_UHI:
     case V16HI_FTYPE_V16HI_V16HI_V16HI_UHI:
+    case V16BF_FTYPE_V16BF_V16BF_V16BF_UHI:
     case V2DI_FTYPE_V2DI_V2DI_V2DI_UQI:
     case V2DF_FTYPE_V2DF_V2DF_V2DF_UQI:
     case V4DI_FTYPE_V4DI_V4DI_V4DI_UQI:
@@ -11709,6 +11760,15 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V32BF_FTYPE_V16SF_V16SF_V32BF_USI:
     case V16BF_FTYPE_V8SF_V8SF_V16BF_UHI:
     case V8BF_FTYPE_V4SF_V4SF_V8BF_UQI:
+    case V32HF_FTYPE_V16SF_V16SF_V32HF_USI:
+    case V16HF_FTYPE_V8SF_V8SF_V16HF_UHI:
+    case V8HF_FTYPE_V4SF_V4SF_V8HF_UQI:
+    case V16QI_FTYPE_V8HF_V8HF_V16QI_UHI:
+    case V32QI_FTYPE_V16HF_V16HF_V32QI_USI:
+    case V64QI_FTYPE_V32HF_V32HF_V64QI_UDI:
+    case V16QI_FTYPE_V16QI_V8HF_V16QI_UHI:
+    case V16QI_FTYPE_V32QI_V16HF_V16QI_UHI:
+    case V32QI_FTYPE_V64QI_V32HF_V32QI_USI:
       nargs = 4;
       break;
     case V2DF_FTYPE_V2DF_V2DF_V2DI_INT:
@@ -11734,9 +11794,12 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case USI_FTYPE_V32QI_V32QI_INT_USI:
     case UHI_FTYPE_V16QI_V16QI_INT_UHI:
     case USI_FTYPE_V32HI_V32HI_INT_USI:
+    case USI_FTYPE_V32BF_V32BF_INT_USI:
     case USI_FTYPE_V32HF_V32HF_INT_USI:
     case UHI_FTYPE_V16HI_V16HI_INT_UHI:
+    case UHI_FTYPE_V16BF_V16BF_INT_UHI:
     case UQI_FTYPE_V8HI_V8HI_INT_UQI:
+    case UQI_FTYPE_V8BF_V8BF_INT_UQI:
       nargs = 4;
       mask_pos = 1;
       nargs_constant = 1;
@@ -11773,6 +11836,9 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V32HI_FTYPE_V32HI_INT_V32HI_USI:
     case V16HI_FTYPE_V16HI_INT_V16HI_UHI:
     case V8HI_FTYPE_V8HI_INT_V8HI_UQI:
+    case V32BF_FTYPE_V32BF_INT_V32BF_USI:
+    case V16BF_FTYPE_V16BF_INT_V16BF_UHI:
+    case V8BF_FTYPE_V8BF_INT_V8BF_UQI:
     case V4DI_FTYPE_V4DI_INT_V4DI_UQI:
     case V2DI_FTYPE_V2DI_INT_V2DI_UQI:
     case V8SI_FTYPE_V8SI_INT_V8SI_UQI:
@@ -11851,6 +11917,10 @@ ix86_expand_args_builtin (const struct builtin_description *d,
     case V8HI_FTYPE_V8HI_V8HI_INT_V8HI_INT:
     case V4SI_FTYPE_V4SI_V4SI_INT_V4SI_INT:
     case V2DI_FTYPE_V2DI_V2DI_INT_V2DI_INT:
+    case V8BF_FTYPE_V8BF_V8BF_INT_V8BF_UQI:
+    case V16BF_FTYPE_V16BF_V16BF_INT_V16BF_UHI:
+    case V32BF_FTYPE_V32BF_V32BF_INT_V32BF_USI:
+    case V8HF_FTYPE_V8HF_V8HF_INT_V8HF_UQI:
       nargs = 5;
       mask_pos = 1;
       nargs_constant = 2;
@@ -12146,7 +12216,7 @@ ix86_erase_embedded_rounding (rtx pat)
    with rounding.  */
 static rtx
 ix86_expand_sse_comi_round (const struct builtin_description *d,
-			    tree exp, rtx target)
+			    tree exp, rtx target, bool comx_ok)
 {
   rtx pat, set_dst;
   tree arg0 = CALL_EXPR_ARG (exp, 0);
@@ -12208,6 +12278,7 @@ ix86_expand_sse_comi_round (const struct builtin_description *d,
     op1 = safe_vector_operand (op1, mode1);
 
   enum rtx_code comparison = comparisons[INTVAL (op2)];
+  enum rtx_code orig_comp = comparison;
   bool ordered = ordereds[INTVAL (op2)];
   bool non_signaling = non_signalings[INTVAL (op2)];
   rtx const_val = const0_rtx;
@@ -12219,10 +12290,21 @@ ix86_expand_sse_comi_round (const struct builtin_description *d,
     case ORDERED:
       if (!ordered)
 	{
-	  /* NB: Use CCSmode/NE for _CMP_TRUE_UQ/_CMP_TRUE_US.  */
-	  if (!non_signaling)
-	    ordered = true;
-	  mode = CCSmode;
+	  if (TARGET_AVX10_2_256 && comx_ok)
+	    {
+	      /* Unlike VCOMI{SH,SS,SD}, VCOMX{SH,SS,SD} will set SF
+		 differently. So directly return true here.  */
+	      target = gen_reg_rtx (SImode);
+	      emit_move_insn (target, const1_rtx);
+	      return target;
+	    }
+	  else
+	    {
+	      /* NB: Use CCSmode/NE for _CMP_TRUE_UQ/_CMP_TRUE_US.  */
+	      if (!non_signaling)
+		ordered = true;
+	      mode = CCSmode;
+	    }
 	}
       else
 	{
@@ -12236,10 +12318,21 @@ ix86_expand_sse_comi_round (const struct builtin_description *d,
     case UNORDERED:
       if (ordered)
 	{
-	  /* NB: Use CCSmode/EQ for _CMP_FALSE_OQ/_CMP_FALSE_OS.  */
-	  if (non_signaling)
-	    ordered = false;
-	  mode = CCSmode;
+	  if (TARGET_AVX10_2_256 && comx_ok)
+	    {
+	      /* Unlike VCOMI{SH,SS,SD}, VCOMX{SH,SS,SD} will set SF
+		 differently. So directly return false here.  */
+	      target = gen_reg_rtx (SImode);
+	      emit_move_insn (target, const0_rtx);
+	      return target;
+	    }
+	  else
+	    {
+	      /* NB: Use CCSmode/EQ for _CMP_FALSE_OQ/_CMP_FALSE_OS.  */
+	      if (non_signaling)
+		ordered = false;
+	      mode = CCSmode;
+	    }
 	}
       else
 	{
@@ -12270,17 +12363,23 @@ ix86_expand_sse_comi_round (const struct builtin_description *d,
       if (ordered == non_signaling)
 	ordered = !ordered;
       break;
-    case EQ:
       /* NB: COMI/UCOMI will set ZF with NAN operands.  Use CCZmode for
-	 _CMP_EQ_OQ/_CMP_EQ_OS.  */
-      check_unordered = true;
+	 _CMP_EQ_OQ/_CMP_EQ_OS.
+	 Under TARGET_AVX10_2_256, VCOMX/VUCOMX are always generated instead
+	 of COMI/UCOMI, VCOMX/VUCOMX will not set ZF with NAN.  */
+    case EQ:
+      if (!TARGET_AVX10_2_256 || !comx_ok)
+	check_unordered = true;
       mode = CCZmode;
       break;
     case NE:
       /* NB: COMI/UCOMI will set ZF with NAN operands.  Use CCZmode for
-	 _CMP_NEQ_UQ/_CMP_NEQ_US.  */
+	 _CMP_NEQ_UQ/_CMP_NEQ_US.
+	 Under TARGET_AVX10_2_256, VCOMX/VUCOMX are always generated instead
+	 of COMI/UCOMI, VCOMX/VUCOMX will not set ZF with NAN.  */
       gcc_assert (!ordered);
-      check_unordered = true;
+      if (!TARGET_AVX10_2_256 || !comx_ok)
+	check_unordered = true;
       mode = CCZmode;
       const_val = const1_rtx;
       break;
@@ -12299,14 +12398,77 @@ ix86_expand_sse_comi_round (const struct builtin_description *d,
       || !insn_p->operand[1].predicate (op1, mode1))
     op1 = copy_to_mode_reg (mode1, op1);
 
+    /* Generate comx instead of comi when EQ/NE to avoid NAN checks.
+       Use orig_comp to exclude ORDERED/UNORDERED cases.  */
+  if ((orig_comp == EQ || orig_comp == NE)
+      && TARGET_AVX10_2_256 && comx_ok)
+    {
+      switch (icode)
+	{
+	case CODE_FOR_avx512fp16_comi_round:
+	  icode = CODE_FOR_avx10_2_comxhf_round;
+	  break;
+	case CODE_FOR_sse_comi_round:
+	  icode = CODE_FOR_avx10_2_comxsf_round;
+	  break;
+	case CODE_FOR_sse2_comi_round:
+	  icode = CODE_FOR_avx10_2_comxdf_round;
+	  break;
+
+	default:
+	  break;
+	}
+    }
+
+  /* Generate comi instead of comx when UNEQ/LTGT to avoid NAN checks.  */
+  if ((comparison == UNEQ || comparison == LTGT)
+       && TARGET_AVX10_2_256 && comx_ok)
+    {
+      switch (icode)
+	{
+	case CODE_FOR_avx10_2_comxhf_round:
+	  icode = CODE_FOR_avx512fp16_comi_round;
+	  break;
+	case CODE_FOR_avx10_2_comxsf_round:
+	  icode = CODE_FOR_sse_comi_round;
+	  break;
+	case CODE_FOR_avx10_2_comxdf_round:
+	  icode = CODE_FOR_sse2_comi_round;
+	  break;
+
+	default:
+	  break;
+	}
+    }
+
   /*
-     1. COMI: ordered and signaling.
-     2. UCOMI: unordered and non-signaling.
+     1. COMI/VCOMX: ordered and signaling.
+     2. UCOMI/VUCOMX: unordered and non-signaling.
    */
   if (non_signaling)
-    icode = (icode == CODE_FOR_sse_comi_round
-	     ? CODE_FOR_sse_ucomi_round
-	     : CODE_FOR_sse2_ucomi_round);
+    switch (icode)
+      {
+      case CODE_FOR_sse_comi_round:
+	icode = CODE_FOR_sse_ucomi_round;
+	break;
+      case CODE_FOR_sse2_comi_round:
+	icode = CODE_FOR_sse2_ucomi_round;
+	break;
+      case CODE_FOR_avx512fp16_comi_round:
+	icode = CODE_FOR_avx512fp16_ucomi_round;
+	break;
+      case CODE_FOR_avx10_2_comxsf_round:
+	icode = CODE_FOR_avx10_2_ucomxsf_round;
+	break;
+      case CODE_FOR_avx10_2_comxhf_round:
+	icode = CODE_FOR_avx10_2_ucomxhf_round;
+	break;
+      case CODE_FOR_avx10_2_comxdf_round:
+	icode = CODE_FOR_avx10_2_ucomxdf_round;
+	break;
+      default:
+	gcc_unreachable ();
+      }
 
   pat = GEN_FCN (icode) (op0, op1, op3);
   if (! pat)
@@ -12384,6 +12546,7 @@ ix86_expand_round_builtin (const struct builtin_description *d,
     case V8SF_FTYPE_V8DF_V8SF_QI_INT:
     case V8DF_FTYPE_V8DF_V8DF_QI_INT:
     case V32HI_FTYPE_V32HF_V32HI_USI_INT:
+    case V32HI_FTYPE_V32BF_V32HI_USI_INT:
     case V8SI_FTYPE_V8DF_V8SI_QI_INT:
     case V8DI_FTYPE_V8HF_V8DI_UQI_INT:
     case V8DI_FTYPE_V8DF_V8DI_QI_INT:
@@ -12398,6 +12561,7 @@ ix86_expand_round_builtin (const struct builtin_description *d,
     case V8DI_FTYPE_V8SF_V8DI_QI_INT:
     case V16SF_FTYPE_V16SI_V16SF_HI_INT:
     case V16SI_FTYPE_V16SF_V16SI_HI_INT:
+    case V16SI_FTYPE_V16SF_V16SI_UHI_INT:
     case V16SI_FTYPE_V16HF_V16SI_UHI_INT:
     case V16HF_FTYPE_V16HF_V16HF_V16HF_INT:
     case V16HF_FTYPE_V16SI_V16HF_UHI_INT:
@@ -12430,6 +12594,7 @@ ix86_expand_round_builtin (const struct builtin_description *d,
     case V16HF_FTYPE_V16SF_V16HF_UHI_INT:
     case V16HF_FTYPE_V16HF_V16HF_UHI_INT:
     case V16HF_FTYPE_V16HI_V16HF_UHI_INT:
+    case V16HI_FTYPE_V16BF_V16HI_UHI_INT:
     case V8HF_FTYPE_V8HF_V8HF_V8HF_INT:
       nargs = 4;
       break;
@@ -12440,7 +12605,7 @@ ix86_expand_round_builtin (const struct builtin_description *d,
       break;
     case INT_FTYPE_V4SF_V4SF_INT_INT:
     case INT_FTYPE_V2DF_V2DF_INT_INT:
-      return ix86_expand_sse_comi_round (d, exp, target);
+      return ix86_expand_sse_comi_round (d, exp, target, true);
     case V4DF_FTYPE_V4DF_V4DF_V4DF_UQI_INT:
     case V8DF_FTYPE_V8DF_V8DF_V8DF_UQI_INT:
     case V2DF_FTYPE_V2DF_V2DF_V2DF_UQI_INT:
@@ -12462,6 +12627,8 @@ ix86_expand_round_builtin (const struct builtin_description *d,
     case V8HF_FTYPE_V8HF_V8HF_V8HF_UQI_INT:
     case V8HF_FTYPE_V2DF_V8HF_V8HF_UQI_INT:
     case V8HF_FTYPE_V4SF_V8HF_V8HF_UQI_INT:
+    case V16HF_FTYPE_V8SF_V8SF_V16HF_UHI_INT:
+    case V32HF_FTYPE_V16SF_V16SF_V32HF_USI_INT:
       nargs = 5;
       break;
     case V32HF_FTYPE_V32HF_INT_V32HF_USI_INT:
@@ -12496,6 +12663,10 @@ ix86_expand_round_builtin (const struct builtin_description *d,
     case V2DF_FTYPE_V2DF_V2DF_INT_V2DF_UQI_INT:
     case V4SF_FTYPE_V4SF_V4SF_INT_V4SF_UQI_INT:
     case V8HF_FTYPE_V8HF_V8HF_INT_V8HF_UQI_INT:
+    case V8DF_FTYPE_V8DF_V8DF_INT_V8DF_UQI_INT:
+    case V32HF_FTYPE_V32HF_V32HF_INT_V32HF_USI_INT:
+    case V16HF_FTYPE_V16HF_V16HF_INT_V16HF_UHI_INT:
+    case V16SF_FTYPE_V16SF_V16SF_INT_V16SF_UHI_INT:
       nargs = 6;
       nargs_constant = 4;
       break;
@@ -13235,6 +13406,8 @@ ix86_check_builtin_isa_match (unsigned int fcode,
      (OPTION_MASK_ISA_AVX512VL | OPTION_MASK_ISA2_AVX512BF16) or
        OPTION_MASK_ISA2_AVXNECONVERT
      OPTION_MASK_ISA_AES or (OPTION_MASK_ISA_AVX512VL | OPTION_MASK_ISA2_VAES)
+     OPTION_MASK_ISA2_AVX10_2 or OPTION_MASK_ISA2_AVXVNNIINT8
+     OPTION_MASK_ISA2_AVX10_2 or OPTION_MASK_ISA2_AVXVNNIINT16
      where for each such pair it is sufficient if either of the ISAs is
      enabled, plus if it is ored with other options also those others.
      OPTION_MASK_ISA_MMX in bisa is satisfied also if TARGET_MMX_WITH_SSE.  */
@@ -13260,6 +13433,10 @@ ix86_check_builtin_isa_match (unsigned int fcode,
 		 OPTION_MASK_ISA2_AVXNECONVERT);
   SHARE_BUILTIN (OPTION_MASK_ISA_AES, 0, OPTION_MASK_ISA_AVX512VL,
 		 OPTION_MASK_ISA2_VAES);
+  SHARE_BUILTIN (0, OPTION_MASK_ISA2_AVXVNNIINT8, 0,
+		 OPTION_MASK_ISA2_AVX10_2_256);
+  SHARE_BUILTIN (0, OPTION_MASK_ISA2_AVXVNNIINT16, 0,
+		 OPTION_MASK_ISA2_AVX10_2_256);
   isa = tmp_isa;
   isa2 = tmp_isa2;
 
@@ -15563,6 +15740,13 @@ rdseed_step:
 	  case IX86_BUILTIN_RDPID:
 	    return ix86_expand_special_args_builtin (bdesc_args + i, exp,
 						     target);
+	  case IX86_BUILTIN_VCOMSBF16EQ:
+	  case IX86_BUILTIN_VCOMSBF16NE:
+	  case IX86_BUILTIN_VCOMSBF16GT:
+	  case IX86_BUILTIN_VCOMSBF16GE:
+	  case IX86_BUILTIN_VCOMSBF16LT:
+	  case IX86_BUILTIN_VCOMSBF16LE:
+	    return ix86_expand_sse_comi (bdesc_args + i, exp, target, false);
 	  case IX86_BUILTIN_FABSQ:
 	  case IX86_BUILTIN_COPYSIGNQ:
 	    if (!TARGET_SSE)
@@ -15578,7 +15762,7 @@ rdseed_step:
       && fcode <= IX86_BUILTIN__BDESC_COMI_LAST)
     {
       i = fcode - IX86_BUILTIN__BDESC_COMI_FIRST;
-      return ix86_expand_sse_comi (bdesc_comi + i, exp, target);
+      return ix86_expand_sse_comi (bdesc_comi + i, exp, target, true);
     }
 
   if (fcode >= IX86_BUILTIN__BDESC_ROUND_ARGS_FIRST
