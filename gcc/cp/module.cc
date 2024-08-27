@@ -20086,14 +20086,21 @@ canonicalize_header_name (cpp_reader *reader, location_t loc, bool unquoted,
 
 void module_state::set_filename (const Cody::Packet &packet)
 {
-  gcc_checking_assert (!filename);
   if (packet.GetCode () == Cody::Client::PC_PATHNAME)
-    filename = xstrdup (packet.GetString ().c_str ());
+    {
+      /* If we've seen this import before we better have the same CMI.  */
+      const std::string &path = packet.GetString ();
+      if (!filename)
+	filename = xstrdup (packet.GetString ().c_str ());
+      else if (filename != path)
+	error_at (loc, "mismatching compiled module interface: "
+		  "had %qs, got %qs", filename, path.c_str ());
+    }
   else
     {
       gcc_checking_assert (packet.GetCode () == Cody::Client::PC_ERROR);
-      error_at (loc, "unknown Compiled Module Interface: %s",
-		packet.GetString ().c_str ());
+      fatal_error (loc, "unknown compiled module interface: %s",
+		   packet.GetString ().c_str ());
     }
 }
 
@@ -20118,15 +20125,20 @@ maybe_translate_include (cpp_reader *reader, line_maps *lmaps, location_t loc,
   size_t len = strlen (path);
   path = canonicalize_header_name (NULL, loc, true, path, len);
   auto packet = mapper->IncludeTranslate (path, Cody::Flags::None, len);
-  int xlate = false;
+
+  enum class xlate_kind {
+    unknown, text, import,
+  } translate = xlate_kind::unknown;
+
   if (packet.GetCode () == Cody::Client::PC_BOOL)
-    xlate = -int (packet.GetInteger ());
+    translate = packet.GetInteger () ? xlate_kind::text : xlate_kind::unknown;
   else if (packet.GetCode () == Cody::Client::PC_PATHNAME)
     {
-      /* Record the CMI name for when we do the import.  */
+      /* Record the CMI name for when we do the import.
+	 We may already know about this import, but libcpp doesn't yet.  */
       module_state *import = get_module (build_string (len, path));
       import->set_filename (packet);
-      xlate = +1;
+      translate = xlate_kind::import;
     }
   else
     {
@@ -20136,9 +20148,9 @@ maybe_translate_include (cpp_reader *reader, line_maps *lmaps, location_t loc,
     }
 
   bool note = false;
-  if (note_include_translate_yes && xlate > 1)
+  if (note_include_translate_yes && translate == xlate_kind::import)
     note = true;
-  else if (note_include_translate_no && xlate == 0)
+  else if (note_include_translate_no && translate == xlate_kind::unknown)
     note = true;
   else if (note_includes)
     /* We do not expect the note_includes vector to be large, so O(N)
@@ -20148,15 +20160,16 @@ maybe_translate_include (cpp_reader *reader, line_maps *lmaps, location_t loc,
 	note = true;
 
   if (note)
-    inform (loc, xlate
+    inform (loc, translate == xlate_kind::import
 	    ? G_("include %qs translated to import")
-	    : G_("include %qs processed textually") , path);
+	    : G_("include %qs processed textually"), path);
 
-  dump () && dump (xlate ? "Translating include to import"
+  dump () && dump (translate == xlate_kind::import
+		   ? "Translating include to import"
 		   : "Keeping include as include");
   dump.pop (0);
 
-  if (!(xlate > 0))
+  if (translate != xlate_kind::import)
     return nullptr;
   
   /* Create the translation text.  */
