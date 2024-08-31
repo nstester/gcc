@@ -1009,7 +1009,7 @@ static const pass_data avr_pass_data_fuse_add =
   RTL_PASS,	    // type
   "",		    // name (will be patched)
   OPTGROUP_NONE,    // optinfo_flags
-  TV_DF_SCAN,	    // tv_id
+  TV_MACH_DEP,	    // tv_id
   0,		    // properties_required
   0,		    // properties_provided
   0,		    // properties_destroyed
@@ -1024,6 +1024,13 @@ public:
     : rtl_opt_pass (avr_pass_data_fuse_add, ctxt)
   {
     this->name = name;
+  }
+
+  // Cloning is required because we are running one instance of the pass
+  // before peephole2. and a second one after cprop_hardreg.
+  opt_pass * clone () final override
+  {
+    return make_avr_pass_fuse_add (m_ctxt);
   }
 
   bool gate (function *) final override
@@ -1503,8 +1510,8 @@ avr_pass_fuse_add::fuse_mem_add (Mem_Insn &mem, Add_Insn &add)
    - PLUS insn of that kind.
    - Indirect loads and stores.
    In almost all cases, combine opportunities arise from the preparation
-   done by `avr_split_tiny_move', but in some rare cases combinations are
-   found for the ordinary cores, too.
+   done by `avr_split_fake_addressing_move', but in some rare cases combinations
+   are found for the ordinary cores, too.
       As we consider at most one Mem insn per try, there may still be missed
    optimizations like  POST_INC + PLUS + POST_INC  might be performed
    as  PRE_DEC + PRE_DEC  for two adjacent locations.  */
@@ -1714,7 +1721,7 @@ public:
    core's capabilities.  This sets the stage for pass .avr-fuse-add.  */
 
 bool
-avr_split_tiny_move (rtx_insn * /*insn*/, rtx *xop)
+avr_split_fake_addressing_move (rtx_insn * /*insn*/, rtx *xop)
 {
   bool store_p = false;
   rtx mem, reg_or_0;
