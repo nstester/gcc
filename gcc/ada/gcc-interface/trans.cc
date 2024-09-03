@@ -4387,9 +4387,9 @@ get_atomic_access (Node_Id gnat_node, atomic_acces_t *type, bool *sync)
     gnat_node = Expression (gnat_node);
 
   /* Up to Ada 2012, for Atomic itself, only reads and updates of the object as
-     a whole require atomic access (RM C.6(15)).  But, starting with Ada 2022,
-     reads of or writes to a nonatomic subcomponent of the object also require
-     atomic access (RM C.6(19)).  */
+     a whole require atomic access (RM C.6(15)), unless the object is also VFA.
+     But, starting with Ada 2022, reads of or writes to nonatomic subcomponents
+     of the object also require atomic access (RM C.6(19)).  */
   if (node_is_atomic (gnat_node))
     {
       bool as_a_whole = true;
@@ -4398,7 +4398,9 @@ get_atomic_access (Node_Id gnat_node, atomic_acces_t *type, bool *sync)
       for (gnat_temp = gnat_node, gnat_parent = Parent (gnat_temp);
 	   node_is_component (gnat_parent) && Prefix (gnat_parent) == gnat_temp;
 	   gnat_temp = gnat_parent, gnat_parent = Parent (gnat_temp))
-	if (Ada_Version < Ada_2022 || node_is_atomic (gnat_parent))
+	if (Ada_Version < Ada_2022
+	    ? !node_is_volatile_full_access (gnat_node)
+	    : node_is_atomic (gnat_parent))
 	  goto not_atomic;
 	else
 	  as_a_whole = false;
@@ -4525,6 +4527,9 @@ storage_model_access_required_p (Node_Id gnat_node, Entity_Id *gnat_smo)
 static tree
 create_temporary (const char *prefix, tree type)
 {
+  if (CONTAINS_PLACEHOLDER_P (TYPE_SIZE (type)))
+    type = maybe_pad_type (type, max_size (TYPE_SIZE (type), true), 0,
+			   Empty, false, false, true);
   tree gnu_temp
     = create_var_decl (create_tmp_var_name (prefix), NULL_TREE,
 		      type, NULL_TREE,
@@ -10289,9 +10294,20 @@ addressable_p (tree gnu_expr, tree gnu_type)
 		   check the alignment of the containing record, as it is
 		   guaranteed to be not smaller than that of its most
 		   aligned field that is not a bit-field.  */
-		&& (!STRICT_ALIGNMENT
-		    || DECL_ALIGN (TREE_OPERAND (gnu_expr, 1))
-		       >= TYPE_ALIGN (TREE_TYPE (gnu_expr))))
+		&& (DECL_ALIGN (TREE_OPERAND (gnu_expr, 1))
+		    >= TYPE_ALIGN (TREE_TYPE (gnu_expr))
+#ifdef TARGET_ALIGN_DOUBLE
+		   /* Cope with the misalignment of doubles in records for
+		      ancient 32-bit ABIs like that of x86/Linux.  */
+		   || (DECL_ALIGN (TREE_OPERAND (gnu_expr, 1)) == 32
+		       && TYPE_ALIGN (TREE_TYPE (gnu_expr)) == 64
+		       && !TARGET_ALIGN_DOUBLE
+#ifdef TARGET_64BIT
+		       && !TARGET_64BIT
+#endif
+		      )
+#endif
+		       ))
 	       /* The field of a padding record is always addressable.  */
 	       || TYPE_IS_PADDING_P (TREE_TYPE (TREE_OPERAND (gnu_expr, 0))))
 	      && addressable_p (TREE_OPERAND (gnu_expr, 0), NULL_TREE));
