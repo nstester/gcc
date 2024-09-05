@@ -10291,23 +10291,18 @@ addressable_p (tree gnu_expr, tree gnu_type)
 		/* Even with DECL_BIT_FIELD cleared, we have to ensure that
 		   the field is sufficiently aligned, in case it is subject
 		   to a pragma Component_Alignment.  But we don't need to
-		   check the alignment of the containing record, as it is
-		   guaranteed to be not smaller than that of its most
-		   aligned field that is not a bit-field.  */
+		   check the alignment of the containing record, since it
+		   is guaranteed to be not smaller than that of its most
+		   aligned field that is not a bit-field.  However, we need
+		   to cope with quirks of ABIs that may misalign fields.  */
 		&& (DECL_ALIGN (TREE_OPERAND (gnu_expr, 1))
-		    >= TYPE_ALIGN (TREE_TYPE (gnu_expr))
-#ifdef TARGET_ALIGN_DOUBLE
-		   /* Cope with the misalignment of doubles in records for
-		      ancient 32-bit ABIs like that of x86/Linux.  */
-		   || (DECL_ALIGN (TREE_OPERAND (gnu_expr, 1)) == 32
-		       && TYPE_ALIGN (TREE_TYPE (gnu_expr)) == 64
-		       && !TARGET_ALIGN_DOUBLE
-#ifdef TARGET_64BIT
-		       && !TARGET_64BIT
-#endif
-		      )
-#endif
-		       ))
+		    >= default_field_alignment (TREE_OPERAND (gnu_expr, 1),
+						TREE_TYPE (gnu_expr))
+		    /* We do not enforce this on strict-alignment platforms for
+		       internal fields in order to keep supporting misalignment
+		       of tagged types in legacy code.  */
+		    || (!STRICT_ALIGNMENT
+			&& DECL_INTERNAL_P (TREE_OPERAND (gnu_expr, 1)))))
 	       /* The field of a padding record is always addressable.  */
 	       || TYPE_IS_PADDING_P (TREE_TYPE (TREE_OPERAND (gnu_expr, 0))))
 	      && addressable_p (TREE_OPERAND (gnu_expr, 0), NULL_TREE));
