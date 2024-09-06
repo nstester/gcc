@@ -284,6 +284,34 @@ sat_u_sub_imm##IMM##_##T##_fmt_4 (T x)  \
 #define RUN_SAT_U_SUB_IMM_FMT_4(T, x, IMM, expect) \
   if (sat_u_sub_imm##IMM##_##T##_fmt_4(x) != expect) __builtin_abort ()
 
+#define DEF_SAT_U_SUB_IMM_TYPE_CHECK_FMT_1(INDEX, T, IMM) \
+T __attribute__((noinline))                               \
+sat_u_sub_imm_type_check##_##INDEX##_##T##_fmt_1 (T y)    \
+{                                                         \
+  return IMM >= y ? IMM - y : 0;                          \
+}
+
+#define DEF_SAT_U_SUB_IMM_TYPE_CHECK_FMT_2(INDEX, T, IMM) \
+T __attribute__((noinline))                               \
+sat_u_sub_imm_type_check##_##INDEX##_##T##_fmt_2 (T y)    \
+{                                                         \
+  return IMM > y ? IMM - y : 0;                           \
+}
+
+#define DEF_SAT_U_SUB_IMM_TYPE_CHECK_FMT_3(INDEX, T, IMM) \
+T __attribute__((noinline))                               \
+sat_u_sub_imm_type_check##_##INDEX##_##T##_fmt_3 (T x)    \
+{                                                         \
+  return x >= IMM ? x - IMM : 0;                          \
+}
+
+#define DEF_SAT_U_SUB_IMM_TYPE_CHECK_FMT_4(INDEX, T, IMM) \
+T __attribute__((noinline))                               \
+sat_u_sub_imm_type_check##_##INDEX##_##T##_fmt_4 (T x)    \
+{                                                         \
+  return x > IMM ? x - IMM : 0;                           \
+}
+
 /******************************************************************************/
 /* Saturation Truncate (unsigned and signed)                                  */
 /******************************************************************************/
