@@ -1136,8 +1136,8 @@ sarif_result::on_nested_diagnostic (diagnostic_context &context,
     = builder.make_location_object (*this, *diagnostic.richloc, nullptr,
 				    diagnostic_artifact_role::result_file);
   auto message_obj
-    = builder.make_message_object (pp_formatted_text (context.printer));
-  pp_clear_output_area (context.printer);
+    = builder.make_message_object (pp_formatted_text (context.m_printer));
+  pp_clear_output_area (context.m_printer);
   location_obj->set<sarif_message> ("message", std::move (message_obj));
 
   add_related_location (std::move (location_obj));
@@ -1321,8 +1321,8 @@ sarif_ice_notification (diagnostic_context &context,
 
   /* "message" property (SARIF v2.1.0 section 3.85.5).  */
   auto message_obj
-    = builder.make_message_object (pp_formatted_text (context.printer));
-  pp_clear_output_area (context.printer);
+    = builder.make_message_object (pp_formatted_text (context.m_printer));
+  pp_clear_output_area (context.m_printer);
   set<sarif_message> ("message", std::move (message_obj));
 
   /* "level" property (SARIF v2.1.0 section 3.58.6).  */
@@ -1515,7 +1515,7 @@ sarif_builder::on_report_diagnostic (diagnostic_context &context,
 				     const diagnostic_info &diagnostic,
 				     diagnostic_t orig_diag_kind)
 {
-  pp_output_formatted_text (context.printer, context.get_urlifier ());
+  pp_output_formatted_text (context.m_printer, context.get_urlifier ());
 
   if (diagnostic.kind == DK_ICE || diagnostic.kind == DK_ICE_NOBT)
     {
@@ -1642,7 +1642,7 @@ sarif_builder::make_result_object (diagnostic_context &context,
   /* "ruleId" property (SARIF v2.1.0 section 3.27.5).  */
   /* Ideally we'd have an option_name for these.  */
   if (char *option_text
-	= context.make_option_name (diagnostic.option_index,
+	= context.make_option_name (diagnostic.option_id,
 				    orig_diag_kind, diagnostic.kind))
     {
       /* Lazily create reportingDescriptor objects for and add to m_rules_arr.
@@ -1696,8 +1696,8 @@ sarif_builder::make_result_object (diagnostic_context &context,
 
   /* "message" property (SARIF v2.1.0 section 3.27.11).  */
   auto message_obj
-    = make_message_object (pp_formatted_text (context.printer));
-  pp_clear_output_area (context.printer);
+    = make_message_object (pp_formatted_text (context.m_printer));
+  pp_clear_output_area (context.m_printer);
   result_obj->set<sarif_message> ("message", std::move (message_obj));
 
   /* "locations" property (SARIF v2.1.0 section 3.27.12).  */
@@ -1754,7 +1754,7 @@ make_reporting_descriptor_object_for_warning (diagnostic_context &context,
      it seems redundant compared to "id".  */
 
   /* "helpUri" property (SARIF v2.1.0 section 3.49.12).  */
-  if (char *option_url = context.make_option_url (diagnostic.option_index))
+  if (char *option_url = context.make_option_url (diagnostic.option_id))
     {
       reporting_desc->set_string ("helpUri", option_url);
       free (option_url);
@@ -1910,7 +1910,7 @@ sarif_builder::make_location_object (sarif_location_manager &loc_mgr,
 
       std::unique_ptr<sarif_multiformat_message_string> result
 	= builder.make_multiformat_message_string
-	    (pp_formatted_text (dc.printer));
+	    (pp_formatted_text (dc.m_printer));
 
       diagnostic_finish (&dc);
 
@@ -2221,7 +2221,10 @@ sarif_builder::get_sarif_column (expanded_location exploc) const
    or return nullptr.
 
    If COLUMN_OVERRIDE is non-zero, then use it as the column number
-   if LOC has no column information.  */
+   if LOC has no column information.
+
+   We only support text properties of regions ("text regions"),
+   not binary properties ("binary regions"); see 3.30.1.  */
 
 std::unique_ptr<sarif_region>
 sarif_builder::maybe_make_region_object (location_t loc,
@@ -2244,11 +2247,16 @@ sarif_builder::maybe_make_region_object (location_t loc,
   if (exploc_finish.file !=exploc_caret.file)
     return nullptr;
 
+  /* We can have line == 0 in the presence of "#" lines.
+     SARIF requires lines > 0, so if we hit this case we don't have a
+     way of validly representing the region as SARIF; bail out.  */
+  if (exploc_start.line <= 0)
+    return nullptr;
+
   auto region_obj = ::make_unique<sarif_region> ();
 
   /* "startLine" property (SARIF v2.1.0 section 3.30.5) */
-  if (exploc_start.line > 0)
-    region_obj->set_integer ("startLine", exploc_start.line);
+  region_obj->set_integer ("startLine", exploc_start.line);
 
   /* "startColumn" property (SARIF v2.1.0 section 3.30.6).
 
@@ -2316,11 +2324,16 @@ maybe_make_region_object_for_context (location_t loc,
   if (exploc_finish.file !=exploc_caret.file)
     return nullptr;
 
+  /* We can have line == 0 in the presence of "#" lines.
+     SARIF requires lines > 0, so if we hit this case we don't have a
+     way of validly representing the region as SARIF; bail out.  */
+  if (exploc_start.line <= 0)
+    return nullptr;
+
   auto region_obj = ::make_unique<sarif_region> ();
 
   /* "startLine" property (SARIF v2.1.0 section 3.30.5) */
-  if (exploc_start.line > 0)
-    region_obj->set_integer ("startLine", exploc_start.line);
+  region_obj->set_integer ("startLine", exploc_start.line);
 
   /* "endLine" property (SARIF v2.1.0 section 3.30.7) */
   if (exploc_finish.line != exploc_start.line
@@ -2596,19 +2609,20 @@ sarif_builder::make_message_object_for_diagram (diagnostic_context &context,
   /* "text" property (SARIF v2.1.0 section 3.11.8).  */
   message_obj->set_string ("text", diagram.get_alt_text ());
 
-  char *saved_prefix = pp_take_prefix (context.printer);
-  pp_set_prefix (context.printer, nullptr);
+  pretty_printer *const pp = context.m_printer;
+  char *saved_prefix = pp_take_prefix (pp);
+  pp_set_prefix (pp, nullptr);
 
   /* "To produce a code block in Markdown, simply indent every line of
      the block by at least 4 spaces or 1 tab."
      Here we use 4 spaces.  */
-  diagram.get_canvas ().print_to_pp (context.printer, "    ");
-  pp_set_prefix (context.printer, saved_prefix);
+  diagram.get_canvas ().print_to_pp (pp, "    ");
+  pp_set_prefix (pp, saved_prefix);
 
   /* "markdown" property (SARIF v2.1.0 section 3.11.9).  */
-  message_obj->set_string ("markdown", pp_formatted_text (context.printer));
+  message_obj->set_string ("markdown", pp_formatted_text (pp));
 
-  pp_clear_output_area (context.printer);
+  pp_clear_output_area (pp);
 
   return message_obj;
 }
@@ -2627,7 +2641,7 @@ sarif_builder::make_multiformat_message_string (const char *msg) const
   return message_obj;
 }
 
-#define SARIF_SCHEMA "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
+#define SARIF_SCHEMA "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json"
 #define SARIF_VERSION "2.1.0"
 
 /* Make a top-level "sarifLog" object (SARIF v2.1.0 section 3.13).  */
@@ -3333,10 +3347,10 @@ diagnostic_output_format_init_sarif (diagnostic_context &context,
   context.set_ice_handler_callback (sarif_ice_handler);
 
   /* Don't colorize the text.  */
-  pp_show_color (context.printer) = false;
+  pp_show_color (context.m_printer) = false;
   context.set_show_highlight_colors (false);
 
-  context.printer->set_token_printer
+  context.m_printer->set_token_printer
     (&fmt->get_builder ().get_token_printer ());
   context.set_output_format (fmt.release ());
 }

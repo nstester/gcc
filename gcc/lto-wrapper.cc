@@ -1364,7 +1364,7 @@ init_num_threads (void)
 void
 print_lto_docs_link ()
 {
-  bool print_url = global_dc->printer->supports_urls_p ();
+  bool print_url = global_dc->m_printer->supports_urls_p ();
   const char *url = global_dc->make_option_url (OPT_flto);
 
   pretty_printer pp;
@@ -2139,6 +2139,26 @@ cont:
   obstack_free (&argv_obstack, NULL);
 }
 
+/* Concrete implementation of diagnostic_option_manager for LTO.  */
+
+class lto_diagnostic_option_manager : public gcc_diagnostic_option_manager
+{
+public:
+  lto_diagnostic_option_manager ()
+  : gcc_diagnostic_option_manager (0 /* lang_mask */)
+  {
+  }
+  int option_enabled_p (diagnostic_option_id) const final override
+  {
+    return true;
+  }
+  char *make_option_name (diagnostic_option_id,
+			  diagnostic_t,
+			  diagnostic_t) const final override
+  {
+    return nullptr;
+  }
+};
 
 /* Entry point.  */
 
@@ -2161,11 +2181,7 @@ main (int argc, char *argv[])
   diagnostic_initialize (global_dc, 0);
   diagnostic_color_init (global_dc);
   diagnostic_urls_init (global_dc);
-  global_dc->set_option_hooks (nullptr,
-			       nullptr,
-			       nullptr,
-			       get_option_url,
-			       0);
+  global_dc->set_option_manager (new lto_diagnostic_option_manager (), 0);
 
   if (atexit (lto_wrapper_cleanup) != 0)
     fatal_error (input_location, "%<atexit%> failed");
