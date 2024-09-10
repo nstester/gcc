@@ -97,7 +97,7 @@ replace_phi_edge_with_variable (basic_block cond_block,
 {
   basic_block bb = gimple_bb (phi);
   gimple_stmt_iterator gsi;
-  tree phi_result = PHI_RESULT (phi);
+  tree phi_result = gimple_phi_result (phi);
   bool deleteboth = false;
 
   /* Duplicate range info if they are the only things setting the target PHI.
@@ -373,7 +373,7 @@ factor_out_conditional_operation (edge e0, edge e1, gphi *phi,
     return NULL;
 
   /* Create a new PHI stmt.  */
-  result = PHI_RESULT (phi);
+  result = gimple_phi_result (phi);
   temp = make_ssa_name (TREE_TYPE (new_arg0), NULL);
 
   gimple_match_op new_op = arg0_op;
@@ -1684,7 +1684,7 @@ minmax_replacement (basic_block cond_bb, basic_block middle_bb, basic_block alt_
   tree smaller, larger, arg_true, arg_false;
   gimple_stmt_iterator gsi, gsi_from;
 
-  tree type = TREE_TYPE (PHI_RESULT (phi));
+  tree type = TREE_TYPE (gimple_phi_result (phi));
 
   gcond *cond = as_a <gcond *> (*gsi_last_bb (cond_bb));
   enum tree_code cmp = gimple_cond_code (cond);
@@ -2022,7 +2022,7 @@ minmax_replacement (basic_block cond_bb, basic_block middle_bb, basic_block alt_
       /* Emit the statement to compute min/max.  */
       location_t locus = gimple_location (last_nondebug_stmt (cond_bb));
       gimple_seq stmts = NULL;
-      tree phi_result = PHI_RESULT (phi);
+      tree phi_result = gimple_phi_result (phi);
       result = gimple_build (&stmts, locus, minmax, TREE_TYPE (phi_result),
 			     arg0, arg1);
       result = gimple_build (&stmts, locus, ass_code, TREE_TYPE (phi_result),
@@ -2224,7 +2224,7 @@ minmax_replacement (basic_block cond_bb, basic_block middle_bb, basic_block alt_
 
   /* Emit the statement to compute min/max.  */
   gimple_seq stmts = NULL;
-  tree phi_result = PHI_RESULT (phi);
+  tree phi_result = gimple_phi_result (phi);
 
   /* When we can't use a MIN/MAX_EXPR still make sure the expression
      stays in a form to be recognized by ISA that map to IEEE x > y ? x : y
@@ -2298,7 +2298,7 @@ spaceship_replacement (basic_block cond_bb, basic_block middle_bb,
 		       edge e0, edge e1, gphi *phi,
 		       tree arg0, tree arg1)
 {
-  tree phires = PHI_RESULT (phi);
+  tree phires = gimple_phi_result (phi);
   if (!INTEGRAL_TYPE_P (TREE_TYPE (phires))
       || TYPE_UNSIGNED (TREE_TYPE (phires))
       || !tree_fits_shwi_p (arg0)
@@ -3399,7 +3399,7 @@ cond_store_replacement (basic_block middle_bb, basic_block join_bb,
   add_phi_arg (newphi, rhs, e0, locus);
   add_phi_arg (newphi, name, e1, locus);
 
-  new_stmt = gimple_build_assign (lhs, PHI_RESULT (newphi));
+  new_stmt = gimple_build_assign (lhs, gimple_phi_result (newphi));
 
   /* 4) Insert that PHI node.  */
   gsi = gsi_after_labels (join_bb);
@@ -3481,7 +3481,7 @@ cond_if_else_store_replacement_1 (basic_block then_bb, basic_block else_bb,
   add_phi_arg (newphi, then_rhs, EDGE_SUCC (then_bb, 0), then_locus);
   add_phi_arg (newphi, else_rhs, EDGE_SUCC (else_bb, 0), else_locus);
 
-  new_stmt = gimple_build_assign (lhs, PHI_RESULT (newphi));
+  new_stmt = gimple_build_assign (lhs, gimple_phi_result (newphi));
 
   /* 3) Insert that PHI node.  */
   gsi = gsi_after_labels (join_bb);
@@ -3933,6 +3933,83 @@ gate_hoist_loads (void)
 	  && HAVE_conditional_move);
 }
 
+template <class func_type>
+static void
+execute_over_cond_phis (func_type func)
+{
+  unsigned n, i;
+  basic_block *bb_order;
+  basic_block bb;
+  /* Search every basic block for COND_EXPR we may be able to optimize.
+
+     We walk the blocks in order that guarantees that a block with
+     a single predecessor is processed before the predecessor.
+     This ensures that we collapse inner ifs before visiting the
+     outer ones, and also that we do not try to visit a removed
+     block.  */
+  bb_order = single_pred_before_succ_order ();
+  n = n_basic_blocks_for_fn (cfun) - NUM_FIXED_BLOCKS;
+
+  for (i = 0; i < n; i++)
+    {
+      basic_block bb1, bb2;
+      edge e1, e2;
+      bool diamond_p = false;
+
+      bb = bb_order[i];
+
+      /* Check to see if the last statement is a GIMPLE_COND.  */
+      gcond *cond_stmt = safe_dyn_cast <gcond *> (*gsi_last_bb (bb));
+      if (!cond_stmt)
+	continue;
+
+      e1 = EDGE_SUCC (bb, 0);
+      bb1 = e1->dest;
+      e2 = EDGE_SUCC (bb, 1);
+      bb2 = e2->dest;
+
+      /* We cannot do the optimization on abnormal edges.  */
+      if ((e1->flags & EDGE_ABNORMAL) != 0
+	  || (e2->flags & EDGE_ABNORMAL) != 0)
+	continue;
+
+      /* If either bb1's succ or bb2 or bb2's succ is non NULL.  */
+      if (EDGE_COUNT (bb1->succs) == 0
+	  || EDGE_COUNT (bb2->succs) == 0)
+	continue;
+
+      /* Find the bb which is the fall through to the other.  */
+      if (EDGE_SUCC (bb1, 0)->dest == bb2)
+	;
+      else if (EDGE_SUCC (bb2, 0)->dest == bb1)
+	{
+	  std::swap (bb1, bb2);
+	  std::swap (e1, e2);
+	}
+      else if (EDGE_SUCC (bb1, 0)->dest == EDGE_SUCC (bb2, 0)->dest
+	       && single_succ_p (bb2))
+	{
+	  diamond_p = true;
+	  e2 = EDGE_SUCC (bb2, 0);
+	  /* Make sure bb2 is just a fall through. */
+	  if ((e2->flags & EDGE_FALLTHRU) == 0)
+	    continue;
+	}
+      else
+	continue;
+
+      e1 = EDGE_SUCC (bb1, 0);
+
+      /* Make sure that bb1 is just a fall through.  */
+      if (!single_succ_p (bb1)
+	  || (e1->flags & EDGE_FALLTHRU) == 0)
+	continue;
+
+      func (bb, bb1, bb2, e1, e2, diamond_p, cond_stmt);
+    }
+  free (bb_order);
+}
+
 /* This pass tries to replaces an if-then-else block with an
    assignment.  We have different kinds of transformations.
    Some of these transformations are also performed by the ifcvt
@@ -4156,88 +4233,22 @@ unsigned int
 pass_phiopt::execute (function *)
 {
   bool do_hoist_loads = !early_p ? gate_hoist_loads () : false;
-  basic_block bb;
-  basic_block *bb_order;
-  unsigned n, i;
   bool cfgchanged = false;
 
   calculate_dominance_info (CDI_DOMINATORS);
   mark_ssa_maybe_undefs ();
 
-  /* Search every basic block for COND_EXPR we may be able to optimize.
-
-     We walk the blocks in order that guarantees that a block with
-     a single predecessor is processed before the predecessor.
-     This ensures that we collapse inner ifs before visiting the
-     outer ones, and also that we do not try to visit a removed
-     block.  */
-  bb_order = single_pred_before_succ_order ();
-  n = n_basic_blocks_for_fn (cfun) - NUM_FIXED_BLOCKS;
-
-  for (i = 0; i < n; i++)
+  auto phiopt_exec = [&] (basic_block bb, basic_block bb1,
+			  basic_block bb2, edge e1, edge e2,
+			  bool diamond_p, gcond *cond_stmt)
     {
-      gphi *phi;
-      basic_block bb1, bb2;
-      edge e1, e2;
-      tree arg0, arg1;
-      bool diamond_p = false;
-
-      bb = bb_order[i];
-
-      /* Check to see if the last statement is a GIMPLE_COND.  */
-      gcond *cond_stmt = safe_dyn_cast <gcond *> (*gsi_last_bb (bb));
-      if (!cond_stmt)
-	continue;
-
-      e1 = EDGE_SUCC (bb, 0);
-      bb1 = e1->dest;
-      e2 = EDGE_SUCC (bb, 1);
-      bb2 = e2->dest;
-
-      /* We cannot do the optimization on abnormal edges.  */
-      if ((e1->flags & EDGE_ABNORMAL) != 0
-	  || (e2->flags & EDGE_ABNORMAL) != 0)
-	continue;
-
-      /* If either bb1's succ or bb2 or bb2's succ is non NULL.  */
-      if (EDGE_COUNT (bb1->succs) == 0
-	  || EDGE_COUNT (bb2->succs) == 0)
-	continue;
-
-      /* Find the bb which is the fall through to the other.  */
-      if (EDGE_SUCC (bb1, 0)->dest == bb2)
-	;
-      else if (EDGE_SUCC (bb2, 0)->dest == bb1)
-	{
-	  std::swap (bb1, bb2);
-	  std::swap (e1, e2);
-	}
-      else if (EDGE_SUCC (bb1, 0)->dest == EDGE_SUCC (bb2, 0)->dest
-	       && single_succ_p (bb2))
-	{
-	  diamond_p = true;
-	  e2 = EDGE_SUCC (bb2, 0);
-	  /* Make sure bb2 is just a fall through. */
-	  if ((e2->flags & EDGE_FALLTHRU) == 0)
-	    continue;
-	}
-      else
-	continue;
-
-      e1 = EDGE_SUCC (bb1, 0);
-
-      /* Make sure that bb1 is just a fall through.  */
-      if (!single_succ_p (bb1)
-	  || (e1->flags & EDGE_FALLTHRU) == 0)
-	continue;
-
       if (diamond_p)
 	{
 	  basic_block bb3 = e1->dest;
 
 	  if (!single_pred_p (bb1)
 	      || !single_pred_p (bb2))
-	    continue;
+	    return;
 
 	  if (do_hoist_loads
 	      && !FLOAT_TYPE_P (TREE_TYPE (gimple_cond_lhs (cond_stmt)))
@@ -4262,9 +4273,9 @@ pass_phiopt::execute (function *)
       if (!early_p && !diamond_p)
 	for (gsi = gsi_start (phis); !gsi_end_p (gsi); gsi_next (&gsi))
 	  {
-	    phi = as_a <gphi *> (gsi_stmt (gsi));
-	    arg0 = gimple_phi_arg_def (phi, e1->dest_idx);
-	    arg1 = gimple_phi_arg_def (phi, e2->dest_idx);
+	    gphi *phi = as_a <gphi *> (gsi_stmt (gsi));
+	    tree arg0 = gimple_phi_arg_def (phi, e1->dest_idx);
+	    tree arg1 = gimple_phi_arg_def (phi, e2->dest_idx);
 	    if (value_replacement (bb, bb1, e1, e2, phi, arg0, arg1) == 2)
 	      {
 		candorest = false;
@@ -4274,14 +4285,14 @@ pass_phiopt::execute (function *)
 	  }
 
       if (!candorest)
-	continue;
+	return;
 
-      phi = single_non_singleton_phi_for_edges (phis, e1, e2);
+      gphi *phi = single_non_singleton_phi_for_edges (phis, e1, e2);
       if (!phi)
-	continue;
+	return;
 
-      arg0 = gimple_phi_arg_def (phi, e1->dest_idx);
-      arg1 = gimple_phi_arg_def (phi, e2->dest_idx);
+      tree arg0 = gimple_phi_arg_def (phi, e1->dest_idx);
+      tree arg1 = gimple_phi_arg_def (phi, e2->dest_idx);
 
       /* Something is wrong if we cannot find the arguments in the PHI
 	  node.  */
@@ -4323,9 +4334,9 @@ pass_phiopt::execute (function *)
 	       && !diamond_p
 	       && spaceship_replacement (bb, bb1, e1, e2, phi, arg0, arg1))
 	cfgchanged = true;
-    }
+    };
 
-  free (bb_order);
+  execute_over_cond_phis (phiopt_exec);
 
   if (cfgchanged)
     return TODO_cleanup_cfg;
@@ -4412,9 +4423,6 @@ make_pass_cselim (gcc::context *ctxt)
 unsigned int
 pass_cselim::execute (function *)
 {
-  basic_block bb;
-  basic_block *bb_order;
-  unsigned n, i;
   bool cfgchanged = false;
   hash_set<tree> *nontrap = 0;
   unsigned todo = 0;
@@ -4430,71 +4438,10 @@ pass_cselim::execute (function *)
   /* Calculate the set of non-trapping memory accesses.  */
   nontrap = get_non_trapping ();
 
-  /* Search every basic block for COND_EXPR we may be able to optimize.
-
-     We walk the blocks in order that guarantees that a block with
-     a single predecessor is processed before the predecessor.
-     This ensures that we collapse inner ifs before visiting the
-     outer ones, and also that we do not try to visit a removed
-     block.  */
-  bb_order = single_pred_before_succ_order ();
-  n = n_basic_blocks_for_fn (cfun) - NUM_FIXED_BLOCKS;
-
-  for (i = 0; i < n; i++)
+  auto cselim_exec = [&] (basic_block bb, basic_block bb1,
+			  basic_block bb2, edge e1, edge e2,
+			  bool diamond_p, gcond *)
     {
-      basic_block bb1, bb2;
-      edge e1, e2;
-      bool diamond_p = false;
-
-      bb = bb_order[i];
-
-      /* Check to see if the last statement is a GIMPLE_COND.  */
-      gcond *cond_stmt = safe_dyn_cast <gcond *> (*gsi_last_bb (bb));
-      if (!cond_stmt)
-	continue;
-
-      e1 = EDGE_SUCC (bb, 0);
-      bb1 = e1->dest;
-      e2 = EDGE_SUCC (bb, 1);
-      bb2 = e2->dest;
-
-      /* We cannot do the optimization on abnormal edges.  */
-      if ((e1->flags & EDGE_ABNORMAL) != 0
-	  || (e2->flags & EDGE_ABNORMAL) != 0)
-	continue;
-
-      /* If either bb1's succ or bb2 or bb2's succ is non NULL.  */
-      if (EDGE_COUNT (bb1->succs) == 0
-	  || EDGE_COUNT (bb2->succs) == 0)
-	continue;
-
-      /* Find the bb which is the fall through to the other.  */
-      if (EDGE_SUCC (bb1, 0)->dest == bb2)
-	;
-      else if (EDGE_SUCC (bb2, 0)->dest == bb1)
-	{
-	  std::swap (bb1, bb2);
-	  std::swap (e1, e2);
-	}
-      else if (EDGE_SUCC (bb1, 0)->dest == EDGE_SUCC (bb2, 0)->dest
-	       && single_succ_p (bb2))
-	{
-	  diamond_p = true;
-	  e2 = EDGE_SUCC (bb2, 0);
-	  /* Make sure bb2 is just a fall through. */
-	  if ((e2->flags & EDGE_FALLTHRU) == 0)
-	    continue;
-	}
-      else
-	continue;
-
-      e1 = EDGE_SUCC (bb1, 0);
-
-      /* Make sure that bb1 is just a fall through.  */
-      if (!single_succ_p (bb1)
-	  || (e1->flags & EDGE_FALLTHRU) == 0)
-	continue;
-
       if (diamond_p)
 	{
 	  basic_block bb3 = e1->dest;
@@ -4504,28 +4451,28 @@ pass_cselim::execute (function *)
 	     if always since we are sinking rather than
 	     hoisting. */
 	  if (EDGE_COUNT (bb3->preds) != 2)
-	    continue;
+	    return;
 	  if (cond_if_else_store_replacement (bb1, bb2, bb3))
 	    cfgchanged = true;
-	  continue;
+	  return;
 	}
 
       /* Also make sure that bb1 only have one predecessor and that it
 	 is bb.  */
       if (!single_pred_p (bb1)
 	  || single_pred (bb1) != bb)
-	continue;
+	return;
 
       /* bb1 is the middle block, bb2 the join block, bb the split block,
 	 e1 the fallthrough edge from bb1 to bb2.  We can't do the
 	 optimization if the join block has more than two predecessors.  */
       if (EDGE_COUNT (bb2->preds) > 2)
-	continue;
+	return;
       if (cond_store_replacement (bb1, bb2, e1, e2, nontrap))
 	cfgchanged = true;
-    }
+    };
 
-  free (bb_order);
+  execute_over_cond_phis (cselim_exec);
 
   delete nontrap;
   /* If the CFG has changed, we should cleanup the CFG.  */
