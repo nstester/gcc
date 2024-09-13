@@ -3689,6 +3689,18 @@ s390_mem_constraint (const char *str, rtx op)
       if ((reload_completed || reload_in_progress)
 	  ? !offsettable_memref_p (op) : !offsettable_nonstrict_memref_p (op))
 	return 0;
+      /* offsettable_memref_p ensures only that any positive offset added to
+	 the address forms a valid general address.  For AQ and AR constraints
+	 we also have to verify that the resulting displacement after adding
+	 any positive offset less than the size of the object being referenced
+	 is still valid.  */
+      if (str[1] == 'Q' || str[1] == 'R')
+	{
+	  int o = GET_MODE_SIZE (GET_MODE (op)) - 1;
+	  rtx tmp = adjust_address (op, QImode, o);
+	  if (!s390_check_qrst_address (str[1], XEXP (tmp, 0), true))
+	    return 0;
+	}
       return s390_check_qrst_address (str[1], XEXP (op, 0), true);
     case 'B':
       /* Check for non-literal-pool variants of memory constraints.  */
@@ -8588,7 +8600,6 @@ print_operand_address (FILE *file, rtx addr)
     't': CONST_INT: "start" of contiguous bitmask X in SImode.
     'x': print integer X as if it's an unsigned halfword.
     'v': print register number as vector register (v1 instead of f1).
-    'V': print the second word of a TFmode operand as vector register.
 */
 
 void
@@ -8842,13 +8853,13 @@ print_operand (FILE *file, rtx x, int code)
     case REG:
       /* Print FP regs as fx instead of vx when they are accessed
 	 through non-vector mode.  */
-      if ((code == 'v' || code == 'V')
+      if (code == 'v'
 	  || VECTOR_NOFP_REG_P (x)
 	  || (FP_REG_P (x) && VECTOR_MODE_P (GET_MODE (x)))
 	  || (VECTOR_REG_P (x)
 	      && (GET_MODE_SIZE (GET_MODE (x)) /
 		  s390_class_max_nregs (FP_REGS, GET_MODE (x))) > 8))
-	fprintf (file, "%%v%s", reg_names[REGNO (x) + (code == 'V')] + 2);
+	fprintf (file, "%%v%s", reg_names[REGNO (x)] + 2);
       else
 	fprintf (file, "%s", reg_names[REGNO (x)]);
       break;
