@@ -3715,7 +3715,7 @@ vect_build_slp_instance (vec_info *vinfo,
   unsigned i;
 
   slp_tree node = NULL;
-  if (force_single_lane)
+  if (group_size > 1 && force_single_lane)
     {
       matches[0] = true;
       matches[1] = false;
@@ -9168,10 +9168,8 @@ vect_slp_region (vec<basic_block> bbs, vec<data_reference_p> datarefs,
 		dump_printf_loc (MSG_NOTE, vect_location,
 			 "------>generating invariant statements\n");
 
-	      gimple_stmt_iterator gsi;
-	      gsi = gsi_after_labels (bb_vinfo->bbs[0]);
-	      gsi_insert_seq_after (&gsi, bb_vinfo->inv_pattern_def_seq,
-				    GSI_CONTINUE_LINKING);
+	      bb_vinfo->insert_seq_on_entry (NULL,
+					     bb_vinfo->inv_pattern_def_seq);
 	    }
 	}
       else
