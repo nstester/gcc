@@ -2874,6 +2874,12 @@ supplement_binding (cxx_binding *binding, tree decl)
 		 "%<-std=c++2c%> or %<-std=gnu++2c%>");
       binding->value = name_lookup::ambiguous (decl, binding->value);
     }
+  else if (binding->scope->kind != sk_class
+	   && TREE_CODE (decl) == USING_DECL
+	   && decls_match (target_bval, target_decl))
+    /* Since P1787 (DR 36) it is OK to redeclare entities via using-decl,
+       except in class scopes.  */
+    ok = false;
   else
     {
       if (!error_operand_p (bval))
@@ -3005,6 +3011,8 @@ update_binding (cp_binding_level *level, cxx_binding *binding, tree *slot,
 
   if (old == error_mark_node)
     old = NULL_TREE;
+
+  tree old_bval = old;
   old = strip_using_decl (old);
 
   if (DECL_IMPLICIT_TYPEDEF_P (decl))
@@ -3021,7 +3029,7 @@ update_binding (cp_binding_level *level, cxx_binding *binding, tree *slot,
 	  gcc_checking_assert (!to_type);
 	  hide_type = hiding;
 	  to_type = decl;
-	  to_val = old;
+	  to_val = old_bval;
 	}
       else
 	hide_value = hiding;
@@ -3034,7 +3042,7 @@ update_binding (cp_binding_level *level, cxx_binding *binding, tree *slot,
       /* OLD is an implicit typedef.  Move it to to_type.  */
       gcc_checking_assert (!to_type);
 
-      to_type = old;
+      to_type = old_bval;
       hide_type = hide_value;
       old = NULL_TREE;
       hide_value = false;
@@ -3093,7 +3101,7 @@ update_binding (cp_binding_level *level, cxx_binding *binding, tree *slot,
 	{
 	  if (same_type_p (TREE_TYPE (old), TREE_TYPE (decl)))
 	    /* Two type decls to the same type.  Do nothing.  */
-	    return old;
+	    return old_bval;
 	  else
 	    goto conflict;
 	}
@@ -3106,7 +3114,7 @@ update_binding (cp_binding_level *level, cxx_binding *binding, tree *slot,
 
 	  /* The new one must be an alias at this point.  */
 	  gcc_assert (DECL_NAMESPACE_ALIAS (decl));
-	  return old;
+	  return old_bval;
 	}
       else if (TREE_CODE (old) == VAR_DECL)
 	{
@@ -3121,7 +3129,7 @@ update_binding (cp_binding_level *level, cxx_binding *binding, tree *slot,
       else
 	{
 	conflict:
-	  diagnose_name_conflict (decl, old);
+	  diagnose_name_conflict (decl, old_bval);
 	  to_val = NULL_TREE;
 	}
     }
@@ -5375,8 +5383,7 @@ do_nonmember_using_decl (name_lookup &lookup, bool fn_scope_p,
   else if (value
 	   /* Ignore anticipated builtins.  */
 	   && !anticipated_builtin_p (value)
-	   && (fn_scope_p
-	       || !decls_match (lookup.value, strip_using_decl (value))))
+	   && !decls_match (lookup.value, strip_using_decl (value)))
     {
       diagnose_name_conflict (lookup.value, value);
       failed = true;
@@ -6649,9 +6656,6 @@ push_using_decl_bindings (name_lookup *lookup, tree name, tree value)
       type = binding->type;
     }
 
-  /* DR 36 questions why using-decls at function scope may not be
-     duplicates.  Disallow it, as C++11 claimed and PR 20420
-     implemented.  */
   if (lookup)
     do_nonmember_using_decl (*lookup, true, true, &value, &type);
 
