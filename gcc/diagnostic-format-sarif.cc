@@ -649,6 +649,7 @@ public:
 		 const line_maps *line_maps,
 		 const char *main_input_filename_,
 		 bool formatted);
+  ~sarif_builder ();
 
   void on_report_diagnostic (const diagnostic_info &diagnostic,
 			     diagnostic_t orig_diag_kind);
@@ -1500,6 +1501,18 @@ sarif_builder::sarif_builder (diagnostic_context &context,
 			  false);
 }
 
+sarif_builder::~sarif_builder ()
+{
+  /* Normally m_filename_to_artifact_map will have been emptied as part
+     of make_run_object, but this isn't run by all the selftests.
+     Ensure the artifact objects are cleaned up for such cases.  */
+  for (auto iter : m_filename_to_artifact_map)
+    {
+      sarif_artifact *artifact_obj = iter.second;
+      delete artifact_obj;
+    }
+}
+
 /* Implementation of "on_report_diagnostic" for SARIF output.  */
 
 void
@@ -1890,8 +1903,9 @@ sarif_builder::make_location_object (sarif_location_manager &loc_mgr,
       rich_location my_rich_loc (m_richloc);
       my_rich_loc.set_escape_on_output (true);
 
+      diagnostic_source_print_policy source_policy (dc);
       dc.set_escape_format (m_escape_format);
-      diagnostic_show_locus (&dc, &my_rich_loc, DK_ERROR);
+      source_policy.print (*dc.m_printer, my_rich_loc, DK_ERROR, nullptr);
 
       std::unique_ptr<sarif_multiformat_message_string> result
 	= builder.make_multiformat_message_string
@@ -2697,6 +2711,7 @@ make_run_object (std::unique_ptr<sarif_invocation> invocation_obj,
       artifacts_arr->append (artifact_obj);
     }
   run_obj->set<json::array> ("artifacts", std::move (artifacts_arr));
+  m_filename_to_artifact_map.empty ();
 
   /* "results" property (SARIF v2.1.0 section 3.14.23).  */
   run_obj->set<json::array> ("results", std::move (results));
@@ -3335,7 +3350,7 @@ diagnostic_output_format_init_sarif (diagnostic_context &context,
   context.set_ice_handler_callback (sarif_ice_handler);
 
   /* Don't colorize the text.  */
-  pp_show_color (context.m_printer) = false;
+  pp_show_color (fmt->get_printer ()) = false;
   context.set_show_highlight_colors (false);
 
   context.m_printer->set_token_printer
