@@ -4026,10 +4026,12 @@ extern bool gimple_unsigned_integer_sat_trunc (tree, tree*, tree (*)(tree));
 
 extern bool gimple_signed_integer_sat_add (tree, tree*, tree (*)(tree));
 extern bool gimple_signed_integer_sat_sub (tree, tree*, tree (*)(tree));
+extern bool gimple_signed_integer_sat_trunc (tree, tree*, tree (*)(tree));
 
 static void
-build_saturation_binary_arith_call (gimple_stmt_iterator *gsi, internal_fn fn,
-				    tree lhs, tree op_0, tree op_1)
+build_saturation_binary_arith_call_and_replace (gimple_stmt_iterator *gsi,
+						internal_fn fn, tree lhs,
+						tree op_0, tree op_1)
 {
   if (direct_internal_fn_supported_p (fn, TREE_TYPE (lhs), OPTIMIZE_FOR_BOTH))
     {
@@ -4039,20 +4041,19 @@ build_saturation_binary_arith_call (gimple_stmt_iterator *gsi, internal_fn fn,
     }
 }
 
-static void
-build_saturation_binary_arith_call (gimple_stmt_iterator *gsi, gphi *phi,
-				    internal_fn fn, tree lhs, tree op_0,
-				    tree op_1)
+static bool
+build_saturation_binary_arith_call_and_insert (gimple_stmt_iterator *gsi,
+					       internal_fn fn, tree lhs,
+					       tree op_0, tree op_1)
 {
-  if (direct_internal_fn_supported_p (fn, TREE_TYPE (op_0), OPTIMIZE_FOR_BOTH))
-    {
-      gcall *call = gimple_build_call_internal (fn, 2, op_0, op_1);
-      gimple_call_set_lhs (call, lhs);
-      gsi_insert_before (gsi, call, GSI_SAME_STMT);
+  if (!direct_internal_fn_supported_p (fn, TREE_TYPE (op_0), OPTIMIZE_FOR_BOTH))
+    return false;
 
-      gimple_stmt_iterator psi = gsi_for_stmt (phi);
-      remove_phi_node (&psi, /* release_lhs_p */ false);
-    }
+  gcall *call = gimple_build_call_internal (fn, 2, op_0, op_1);
+  gimple_call_set_lhs (call, lhs);
+  gsi_insert_before (gsi, call, GSI_SAME_STMT);
+
+  return true;
 }
 
 /*
@@ -4072,7 +4073,8 @@ match_unsigned_saturation_add (gimple_stmt_iterator *gsi, gassign *stmt)
   tree lhs = gimple_assign_lhs (stmt);
 
   if (gimple_unsigned_integer_sat_add (lhs, ops, NULL))
-    build_saturation_binary_arith_call (gsi, IFN_SAT_ADD, lhs, ops[0], ops[1]);
+    build_saturation_binary_arith_call_and_replace (gsi, IFN_SAT_ADD, lhs,
+						    ops[0], ops[1]);
 }
 
 /*
@@ -4114,19 +4116,22 @@ match_unsigned_saturation_add (gimple_stmt_iterator *gsi, gassign *stmt)
  *   =>
  *   _6 = .SAT_ADD (x_5(D), y_6(D)); [tail call]  */
 
-static void
+static bool
 match_saturation_add (gimple_stmt_iterator *gsi, gphi *phi)
 {
   if (gimple_phi_num_args (phi) != 2)
-    return;
+    return false;
 
   tree ops[2];
   tree phi_result = gimple_phi_result (phi);
 
-  if (gimple_unsigned_integer_sat_add (phi_result, ops, NULL)
-      || gimple_signed_integer_sat_add (phi_result, ops, NULL))
-    build_saturation_binary_arith_call (gsi, phi, IFN_SAT_ADD, phi_result,
-					ops[0], ops[1]);
+  if (!gimple_unsigned_integer_sat_add (phi_result, ops, NULL)
+      && !gimple_signed_integer_sat_add (phi_result, ops, NULL))
+    return false;
+
+  return build_saturation_binary_arith_call_and_insert (gsi, IFN_SAT_ADD,
+							phi_result, ops[0],
+							ops[1]);
 }
 
 /*
@@ -4144,7 +4149,8 @@ match_unsigned_saturation_sub (gimple_stmt_iterator *gsi, gassign *stmt)
   tree lhs = gimple_assign_lhs (stmt);
 
   if (gimple_unsigned_integer_sat_sub (lhs, ops, NULL))
-    build_saturation_binary_arith_call (gsi, IFN_SAT_SUB, lhs, ops[0], ops[1]);
+    build_saturation_binary_arith_call_and_replace (gsi, IFN_SAT_SUB, lhs,
+						    ops[0], ops[1]);
 }
 
 /*
@@ -4163,19 +4169,22 @@ match_unsigned_saturation_sub (gimple_stmt_iterator *gsi, gassign *stmt)
  *  =>
  *  <bb 4> [local count: 1073741824]:
  *  _1 = .SAT_SUB (x_2(D), y_3(D));  */
-static void
+static bool
 match_saturation_sub (gimple_stmt_iterator *gsi, gphi *phi)
 {
   if (gimple_phi_num_args (phi) != 2)
-    return;
+    return false;
 
   tree ops[2];
   tree phi_result = gimple_phi_result (phi);
 
-  if (gimple_unsigned_integer_sat_sub (phi_result, ops, NULL)
-      || gimple_signed_integer_sat_sub (phi_result, ops, NULL))
-    build_saturation_binary_arith_call (gsi, phi, IFN_SAT_SUB, phi_result,
-					ops[0], ops[1]);
+  if (!gimple_unsigned_integer_sat_sub (phi_result, ops, NULL)
+      && !gimple_signed_integer_sat_sub (phi_result, ops, NULL))
+    return false;
+
+  return build_saturation_binary_arith_call_and_insert (gsi, IFN_SAT_SUB,
+							phi_result, ops[0],
+							ops[1]);
 }
 
 /*
@@ -4206,6 +4215,66 @@ match_unsigned_saturation_trunc (gimple_stmt_iterator *gsi, gassign *stmt)
       gimple_call_set_lhs (call, lhs);
       gsi_replace (gsi, call, /* update_eh_info */ true);
     }
+}
+
+/*
+ * Try to match saturation truncate.
+ * Aka:
+ *   x.0_1 = (unsigned long) x_4(D);
+ *   _2 = x.0_1 + 2147483648;
+ *   if (_2 > 4294967295)
+ *     goto <bb 4>; [50.00%]
+ *   else
+ *     goto <bb 3>; [50.00%]
+ * ;;    succ:       4
+ * ;;                3
+ *
+ * ;;   basic block 3, loop depth 0
+ * ;;    pred:       2
+ *   trunc_5 = (int32_t) x_4(D);
+ *   goto <bb 5>; [100.00%]
+ * ;;    succ:       5
+ *
+ * ;;   basic block 4, loop depth 0
+ * ;;    pred:       2
+ *   _7 = x_4(D) < 0;
+ *   _8 = (int) _7;
+ *   _9 = -_8;
+ *   _10 = _9 ^ 2147483647;
+ * ;;    succ:       5
+ *
+ * ;;   basic block 5, loop depth 0
+ * ;;    pred:       3
+ * ;;                4
+ *   # _3 = PHI <trunc_5(3), _10(4)>
+ * =>
+ * _6 = .SAT_TRUNC (x_4(D));
+ */
+
+static bool
+match_saturation_trunc (gimple_stmt_iterator *gsi, gphi *phi)
+{
+  if (gimple_phi_num_args (phi) != 2)
+    return false;
+
+  tree ops[1];
+  tree phi_result = gimple_phi_result (phi);
+  tree type = TREE_TYPE (phi_result);
+
+  if (!gimple_unsigned_integer_sat_trunc (phi_result, ops, NULL)
+      && !gimple_signed_integer_sat_trunc (phi_result, ops, NULL))
+    return false;
+
+  if (!direct_internal_fn_supported_p (IFN_SAT_TRUNC,
+				       tree_pair (type, TREE_TYPE (ops[0])),
+				       OPTIMIZE_FOR_BOTH))
+    return false;
+
+  gcall *call = gimple_build_call_internal (IFN_SAT_TRUNC, 1, ops[0]);
+  gimple_call_set_lhs (call, phi_result);
+  gsi_insert_before (gsi, call, GSI_SAME_STMT);
+
+  return true;
 }
 
 /* Recognize for unsigned x
@@ -6256,10 +6325,12 @@ math_opts_dom_walker::after_dom_children (basic_block bb)
       gsi_next (&psi_next);
 
       gimple_stmt_iterator gsi = gsi_after_labels (bb);
+      gphi *phi = psi.phi ();
 
-      /* The match_* may remove phi node.  */
-      match_saturation_add (&gsi, psi.phi ());
-      match_saturation_sub (&gsi, psi.phi ());
+      if (match_saturation_add (&gsi, phi)
+	  || match_saturation_sub (&gsi, phi)
+	  || match_saturation_trunc (&gsi, phi))
+	remove_phi_node (&psi, /* release_lhs_p */ false);
     }
 
   for (gsi = gsi_after_labels (bb); !gsi_end_p (gsi);)
