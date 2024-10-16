@@ -6221,6 +6221,25 @@ c_parser_braced_init (c_parser *parser, tree type, bool nested_p,
 	    {
 	      last_init_list_comma = c_parser_peek_token (parser)->location;
 	      c_parser_consume_token (parser);
+	      /* CPP_EMBED should be always in between two CPP_COMMA
+		 tokens.  */
+	      while (c_parser_next_token_is (parser, CPP_EMBED))
+		{
+		  c_token *embed = c_parser_peek_token (parser);
+		  c_parser_consume_token (parser);
+		  c_expr embed_val;
+		  embed_val.value = embed->value;
+		  embed_val.original_code = RAW_DATA_CST;
+		  embed_val.original_type = integer_type_node;
+		  set_c_expr_source_range (&embed_val, embed->get_range ());
+		  embed_val.m_decimal = 0;
+		  process_init_element (embed->location, embed_val, false,
+					&braced_init_obstack);
+		  gcc_checking_assert (c_parser_next_token_is (parser,
+							       CPP_COMMA));
+		  last_init_list_comma = c_parser_peek_token (parser)->location;
+		  c_parser_consume_token (parser);
+		}
 	    }
 	  else
 	    break;
@@ -6488,7 +6507,125 @@ c_parser_initval (c_parser *parser, struct c_expr *after,
 					    (init.value))))
 	init = convert_lvalue_to_rvalue (loc, init, true, true, true);
     }
+  tree val = init.value;
   process_init_element (loc, init, false, braced_init_obstack);
+
+  /* Attempt to optimize large char array initializers into RAW_DATA_CST
+     to save compile time and memory even when not using #embed.  */
+  static unsigned vals_to_ignore;
+  if (vals_to_ignore)
+    /* If earlier call determined there is certain number of CPP_COMMA
+       CPP_NUMBER tokens with 0-255 int values, but not enough for
+       RAW_DATA_CST to be beneficial, don't try to check it again until
+       they are all parsed.  */
+    --vals_to_ignore;
+  else if (val
+	   && TREE_CODE (val) == INTEGER_CST
+	   && TREE_TYPE (val) == integer_type_node
+	   && c_parser_next_token_is (parser, CPP_COMMA))
+    if (unsigned int len = c_maybe_optimize_large_byte_initializer ())
+      {
+	char buf1[64];
+	unsigned int i;
+	gcc_checking_assert (len >= 64);
+	location_t last_loc = UNKNOWN_LOCATION;
+	for (i = 0; i < 64; ++i)
+	  {
+	    c_token *tok = c_parser_peek_nth_token_raw (parser, 1 + 2 * i);
+	    if (tok->type != CPP_COMMA)
+	      break;
+	    tok = c_parser_peek_nth_token_raw (parser, 2 + 2 * i);
+	    if (tok->type != CPP_NUMBER
+		|| TREE_CODE (tok->value) != INTEGER_CST
+		|| TREE_TYPE (tok->value) != integer_type_node
+		|| wi::neg_p (wi::to_wide (tok->value))
+		|| wi::to_widest (tok->value) > UCHAR_MAX)
+	      break;
+	    buf1[i] = (char) tree_to_uhwi (tok->value);
+	    if (i == 0)
+	      loc = tok->location;
+	    last_loc = tok->location;
+	  }
+	if (i < 64)
+	  {
+	    vals_to_ignore = i;
+	    return;
+	  }
+	c_token *tok = c_parser_peek_nth_token_raw (parser, 1 + 2 * i);
+	/* If 64 CPP_COMMA CPP_NUMBER pairs are followed by CPP_CLOSE_BRACE,
+	   punt if len is INT_MAX as that can mean this is a flexible array
+	   member and in that case we need one CPP_NUMBER afterwards
+	   (as guaranteed for CPP_EMBED).  */
+	if (tok->type == CPP_CLOSE_BRACE && len != INT_MAX)
+	  len = i;
+	else if (tok->type != CPP_COMMA)
+	  {
+	    vals_to_ignore = i;
+	    return;
+	  }
+	/* Ensure the STRING_CST fits into 128K.  */
+	unsigned int max_len = 131072 - offsetof (struct tree_string, str) - 1;
+	unsigned int orig_len = len;
+	unsigned int off = 0, last = 0;
+	if (!wi::neg_p (wi::to_wide (val)) && wi::to_widest (val) <= UCHAR_MAX)
+	  off = 1;
+	len = MIN (len, max_len - off);
+	char *buf2 = XNEWVEC (char, len + off);
+	if (off)
+	  buf2[0] = (char) tree_to_uhwi (val);
+	memcpy (buf2 + off, buf1, i);
+	for (unsigned int j = 0; j < i; ++j)
+	  {
+	    c_parser_peek_token (parser);
+	    c_parser_consume_token (parser);
+	    c_parser_peek_token (parser);
+	    c_parser_consume_token (parser);
+	  }
+	for (; i < len; ++i)
+	  {
+	    if (!c_parser_next_token_is (parser, CPP_COMMA))
+	      break;
+	    tok = c_parser_peek_2nd_token (parser);
+	    if (tok->type != CPP_NUMBER
+		|| TREE_CODE (tok->value) != INTEGER_CST
+		|| TREE_TYPE (tok->value) != integer_type_node
+		|| wi::neg_p (wi::to_wide (tok->value))
+		|| wi::to_widest (tok->value) > UCHAR_MAX)
+	      break;
+	    c_token *tok2 = c_parser_peek_nth_token (parser, 3);
+	    if (tok2->type != CPP_COMMA && tok2->type != CPP_CLOSE_BRACE)
+	      break;
+	    buf2[i + off] = (char) tree_to_uhwi (tok->value);
+	    /* If orig_len is INT_MAX, this can be flexible array member and
+	       in that case we need to ensure another element which
+	       for CPP_EMBED is normally guaranteed after it.  Include
+	       that byte in the RAW_DATA_OWNER though, so it can be optimized
+	       later.  */
+	    if (tok2->type == CPP_CLOSE_BRACE && orig_len == INT_MAX)
+	      {
+		last = 1;
+		break;
+	      }
+	    last_loc = tok->location;
+	    c_parser_consume_token (parser);
+	    c_parser_consume_token (parser);
+	  }
+	val = make_node (RAW_DATA_CST);
+	TREE_TYPE (val) = integer_type_node;
+	RAW_DATA_LENGTH (val) = i;
+	tree owner = build_string (i + off + last, buf2);
+	XDELETEVEC (buf2);
+	TREE_TYPE (owner) = build_array_type_nelts (unsigned_char_type_node,
+						    i + off + last);
+	RAW_DATA_OWNER (val) = owner;
+	RAW_DATA_POINTER (val) = TREE_STRING_POINTER (owner) + off;
+	init.value = val;
+	set_c_expr_source_range (&init, loc, last_loc);
+	init.original_code = RAW_DATA_CST;
+	init.original_type = integer_type_node;
+	init.m_decimal = 0;
+	process_init_element (loc, init, false, braced_init_obstack);
+      }
 }
 
 /* Parse a compound statement (possibly a function body) (C90 6.6.2,
@@ -10428,6 +10565,25 @@ c_parser_get_builtin_args (c_parser *parser, const char *bname,
   while (c_parser_next_token_is (parser, CPP_COMMA))
     {
       c_parser_consume_token (parser);
+      if (c_parser_next_token_is (parser, CPP_EMBED))
+	{
+	  c_token *embed = c_parser_peek_token (parser);
+	  tree value = embed->value;
+	  expr.original_code = INTEGER_CST;
+	  expr.original_type = integer_type_node;
+	  expr.value = NULL_TREE;
+	  set_c_expr_source_range (&expr, embed->get_range ());
+	  expr.m_decimal = 0;
+	  for (unsigned int i = 0; i < (unsigned) RAW_DATA_LENGTH (value); i++)
+	    {
+	      expr.value = build_int_cst (integer_type_node,
+					  ((const unsigned char *)
+					   RAW_DATA_POINTER (value))[i]);
+	      vec_safe_push (cexpr_list, expr);
+	    }
+	  c_parser_consume_token (parser);
+	  continue;
+	}
       expr = c_parser_expr_no_commas (parser, NULL);
       vec_safe_push (cexpr_list, expr);
     }
@@ -13129,8 +13285,27 @@ c_parser_expression (c_parser *parser)
 	}
       if (DECL_P (lhsval) || handled_component_p (lhsval))
 	mark_exp_read (lhsval);
-      next = c_parser_expr_no_commas (parser, NULL);
-      next = convert_lvalue_to_rvalue (expr_loc, next, true, false);
+      if (c_parser_next_token_is (parser, CPP_EMBED))
+	{
+	  /* Users aren't interested in milions of -Wunused-value
+	     warnings when using #embed inside of a comma expression,
+	     and one CPP_NUMBER plus CPP_COMMA before it and one
+	     CPP_COMMA plus CPP_NUMBER after it is guaranteed by
+	     the preprocessor.  Thus, parse the whole CPP_EMBED just
+	     as a single INTEGER_CST, the last byte in it.  */
+	  c_token *embed = c_parser_peek_token (parser);
+	  tree val = embed->value;
+	  unsigned last = RAW_DATA_LENGTH (val) - 1;
+	  next.value = build_int_cst (TREE_TYPE (val),
+				      ((const unsigned char *)
+				       RAW_DATA_POINTER (val))[last]);
+	  c_parser_consume_token (parser);
+	}
+      else
+	{
+	  next = c_parser_expr_no_commas (parser, NULL);
+	  next = convert_lvalue_to_rvalue (expr_loc, next, true, false);
+	}
       expr.value = build_compound_expr (loc, expr.value, next.value);
       expr.original_code = COMPOUND_EXPR;
       expr.original_type = next.original_type;
@@ -13235,6 +13410,34 @@ c_parser_expr_list (c_parser *parser, bool convert_p, bool fold_p,
   while (c_parser_next_token_is (parser, CPP_COMMA))
     {
       c_parser_consume_token (parser);
+      if (c_parser_next_token_is (parser, CPP_EMBED))
+	{
+	  c_token *embed = c_parser_peek_token (parser);
+	  tree value = embed->value;
+	  expr.original_code = INTEGER_CST;
+	  expr.original_type = integer_type_node;
+	  expr.value = NULL_TREE;
+	  set_c_expr_source_range (&expr, embed->get_range ());
+	  expr.m_decimal = 0;
+	  for (unsigned int i = 0; i < (unsigned) RAW_DATA_LENGTH (value); i++)
+	    {
+	      if (literal_zero_mask
+		  && idx + 1 < HOST_BITS_PER_INT
+		  && RAW_DATA_POINTER (value)[i] == 0)
+		*literal_zero_mask |= 1U << (idx + 1);
+	      expr.value = build_int_cst (integer_type_node,
+					  ((const unsigned char *)
+					   RAW_DATA_POINTER (value))[i]);
+	      vec_safe_push (ret, expr.value);
+	      if (orig_types)
+		vec_safe_push (orig_types, expr.original_type);
+	      if (locations)
+		locations->safe_push (expr.get_location ());
+	      ++idx;
+	    }
+	  c_parser_consume_token (parser);
+	  continue;
+	}
       if (literal_zero_mask)
 	c_parser_check_literal_zero (parser, literal_zero_mask, idx + 1);
       expr = c_parser_expr_no_commas (parser, NULL);
