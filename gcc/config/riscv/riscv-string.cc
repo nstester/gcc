@@ -1078,7 +1078,6 @@ expand_block_move (rtx dst_in, rtx src_in, rtx length_in)
   bool need_loop = true;
   bool size_p = optimize_function_for_size_p (cfun);
   rtx src, dst;
-  rtx end = gen_reg_rtx (Pmode);
   rtx vec;
   rtx length_rtx = length_in;
 
@@ -1086,22 +1085,22 @@ expand_block_move (rtx dst_in, rtx src_in, rtx length_in)
     {
       HOST_WIDE_INT length = INTVAL (length_in);
 
-    /* By using LMUL=8, we can copy as many bytes in one go as there
-       are bits in a vector register.  If the entire block thus fits,
-       we don't need a loop.  */
-    if (length <= TARGET_MIN_VLEN)
-      {
-	need_loop = false;
+      /* By using LMUL=8, we can copy as many bytes in one go as there
+	 are bits in a vector register.  If the entire block thus fits,
+	 we don't need a loop.  */
+      if (length <= TARGET_MIN_VLEN)
+	{
+	  need_loop = false;
 
-	/* If a single scalar load / store pair can do the job, leave it
-	   to the scalar code to do that.  */
-	/* ??? If fast unaligned access is supported, the scalar code could
-	   use suitably sized scalars irrespective of alignment.  If that
-	   gets fixed, we have to adjust the test here.  */
+	  /* If a single scalar load / store pair can do the job, leave it
+	     to the scalar code to do that.  */
+	  /* ??? If fast unaligned access is supported, the scalar code could
+	     use suitably sized scalars irrespective of alignment.  If that
+	     gets fixed, we have to adjust the test here.  */
 
-	if (pow2p_hwi (length) && length <= potential_ew)
-	  return false;
-      }
+	  if (pow2p_hwi (length) && length <= potential_ew)
+	    return false;
+	}
 
       /* Find the vector mode to use.  Using the largest possible element
 	 size is likely to give smaller constants, and thus potentially
@@ -1245,7 +1244,7 @@ expand_block_move (rtx dst_in, rtx src_in, rtx length_in)
       emit_insn (gen_rtx_SET (length_rtx, gen_rtx_MINUS (Pmode, length_rtx, cnt)));
 
       /* Emit the loop condition.  */
-      rtx test = gen_rtx_NE (VOIDmode, end, const0_rtx);
+      rtx test = gen_rtx_NE (VOIDmode, length_rtx, const0_rtx);
       emit_jump_insn (gen_cbranch4 (Pmode, test, length_rtx, const0_rtx, label));
       emit_insn (gen_nop ());
     }
