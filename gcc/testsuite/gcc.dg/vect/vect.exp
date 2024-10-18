@@ -107,6 +107,22 @@ foreach flags $VECT_ADDITIONAL_FLAGS {
 	[glob -nocomplain $srcdir/$subdir/no-math-errno-*.\[cS\]]] \
 	$flags $DEFAULT_VECTCFLAGS
     et-dg-runtest dg-runtest [lsort \
+	[glob -nocomplain $srcdir/$subdir/no-vfa-*.\[cS\]]] \
+	$flags $DEFAULT_VECTCFLAGS
+    et-dg-runtest dg-runtest [lsort \
+	[glob -nocomplain $srcdir/$subdir/fast-math-\[ipsvc\]*.\[cS\]]] \
+	$flags $DEFAULT_VECTCFLAGS
+    et-dg-runtest dg-runtest [lsort \
+	[glob -nocomplain $srcdir/$subdir/wrapv-*.\[cS\]]] \
+	$flags $DEFAULT_VECTCFLAGS
+    et-dg-runtest dg-runtest [lsort \
+	[glob -nocomplain $srcdir/$subdir/trapv-*.\[cS\]]] \
+	$flags $DEFAULT_VECTCFLAGS
+
+    et-dg-runtest dg-runtest [lsort \
+	[glob -nocomplain $srcdir/$subdir/fast-math-bb-slp-*.\[cS\]]] \
+	$flags $VECT_SLP_CFLAGS
+    et-dg-runtest dg-runtest [lsort \
 	[glob -nocomplain $srcdir/$subdir/bb-slp*.\[cS\]]] \
 	$flags $VECT_SLP_CFLAGS
 }
@@ -115,41 +131,6 @@ foreach flags $VECT_ADDITIONAL_FLAGS {
 global SAVED_DEFAULT_VECTCFLAGS
 set SAVED_DEFAULT_VECTCFLAGS $DEFAULT_VECTCFLAGS
 set SAVED_VECT_SLP_CFLAGS $VECT_SLP_CFLAGS
-
-# --param vect-max-version-for-alias-checks=0 tests
-set DEFAULT_VECTCFLAGS $SAVED_DEFAULT_VECTCFLAGS
-lappend DEFAULT_VECTCFLAGS "--param" "vect-max-version-for-alias-checks=0"
-et-dg-runtest dg-runtest [lsort \
-	[glob -nocomplain $srcdir/$subdir/no-vfa-*.\[cS\]]] \
-	"" $DEFAULT_VECTCFLAGS
-
-# -ffast-math tests
-set DEFAULT_VECTCFLAGS $SAVED_DEFAULT_VECTCFLAGS
-lappend DEFAULT_VECTCFLAGS "-ffast-math"
-et-dg-runtest dg-runtest [lsort \
-	[glob -nocomplain $srcdir/$subdir/fast-math-\[ipsvc\]*.\[cS\]]] \
-	"" $DEFAULT_VECTCFLAGS
-
-# -ffast-math SLP tests
-set VECT_SLP_CFLAGS $SAVED_VECT_SLP_CFLAGS
-lappend VECT_SLP_CFLAGS "-ffast-math"
-et-dg-runtest dg-runtest [lsort \
-	[glob -nocomplain $srcdir/$subdir/fast-math-bb-slp-*.\[cS\]]] \
-	"" $VECT_SLP_CFLAGS
-
-# -fwrapv tests
-set DEFAULT_VECTCFLAGS $SAVED_DEFAULT_VECTCFLAGS
-lappend DEFAULT_VECTCFLAGS "-fwrapv"
-et-dg-runtest dg-runtest [lsort \
-	[glob -nocomplain $srcdir/$subdir/wrapv-*.\[cS\]]] \
-	"" $DEFAULT_VECTCFLAGS
-
-# -ftrapv tests
-set DEFAULT_VECTCFLAGS $SAVED_DEFAULT_VECTCFLAGS
-lappend DEFAULT_VECTCFLAGS "-ftrapv"
-et-dg-runtest dg-runtest [lsort \
-	[glob -nocomplain $srcdir/$subdir/trapv-*.\[cS\]]] \
-	"" $DEFAULT_VECTCFLAGS
 
 # -fno-tree-dce tests
 set DEFAULT_VECTCFLAGS $SAVED_DEFAULT_VECTCFLAGS
