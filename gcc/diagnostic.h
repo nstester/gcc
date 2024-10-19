@@ -220,7 +220,6 @@ public:
 };
 
 class edit_context;
-namespace json { class value; }
 class diagnostic_client_data_hooks;
 class logical_location;
 class diagnostic_diagram;
@@ -476,6 +475,9 @@ public:
   void urls_init (int value);
 
   void finish ();
+
+  void dump (FILE *out) const;
+  void DEBUG_FUNCTION dump () const { dump (stderr); }
 
   bool execution_failed_p () const;
 
