@@ -3331,7 +3331,7 @@ compare_constant (const tree t1, const tree t2)
 
       return (TREE_STRING_LENGTH (t1) == TREE_STRING_LENGTH (t2)
 	      && ! memcmp (TREE_STRING_POINTER (t1), TREE_STRING_POINTER (t2),
-			 TREE_STRING_LENGTH (t1)));
+			   TREE_STRING_LENGTH (t1)));
 
     case COMPLEX_CST:
       return (compare_constant (TREE_REALPART (t1), TREE_REALPART (t2))
@@ -3355,6 +3355,11 @@ compare_constant (const tree t1, const tree t2)
 
 	return true;
       }
+
+    case RAW_DATA_CST:
+      return (RAW_DATA_LENGTH (t1) == RAW_DATA_LENGTH (t2)
+	      && ! memcmp (RAW_DATA_POINTER (t1), RAW_DATA_POINTER (t2),
+			   RAW_DATA_LENGTH (t1)));
 
     case CONSTRUCTOR:
       {
@@ -5488,7 +5493,7 @@ array_size_for_constructor (tree val)
 	index = TREE_OPERAND (index, 1);
       if (value && TREE_CODE (value) == RAW_DATA_CST)
 	index = size_binop (PLUS_EXPR, index,
-			    size_int (RAW_DATA_LENGTH (value) - 1));
+			    bitsize_int (RAW_DATA_LENGTH (value) - 1));
       if (max_index == NULL_TREE || tree_int_cst_lt (max_index, index))
 	max_index = index;
     }
