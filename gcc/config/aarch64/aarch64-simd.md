@@ -160,7 +160,7 @@
      [?r, w ; neon_to_gp<q>      , *        , *] fmov\t%x0, %d1
      [?w, r ; f_mcr              , *        , *] fmov\t%d0, %1
      [?r, r ; mov_reg            , *        , *] mov\t%0, %1
-     [w , Dn; neon_move<q>       , simd     , *] << aarch64_output_simd_mov_immediate (operands[1], 64);
+     [w , Dn; neon_move<q>       , simd     , *] << aarch64_output_simd_mov_imm (operands[1], 64);
      [w , Dz; f_mcr              , *        , *] fmov\t%d0, xzr
      [w , Dx; neon_move          , simd     , 8] #
   }
@@ -189,7 +189,7 @@
      [?r , w ; multiple           , *   , 8] #
      [?w , r ; multiple           , *   , 8] #
      [?r , r ; multiple           , *   , 8] #
-     [w  , Dn; neon_move<q>       , simd, 4] << aarch64_output_simd_mov_immediate (operands[1], 128);
+     [w  , Dn; neon_move<q>       , simd, 4] << aarch64_output_simd_mov_imm (operands[1], 128);
      [w  , Dz; fmov               , *   , 4] fmov\t%d0, xzr
      [w  , Dx; neon_move          , simd, 8] #
   }
@@ -208,7 +208,6 @@
     else
       {
 	if (FP_REGNUM_P (REGNO (operands[0]))
-	    && <MODE>mode == V2DImode
 	    && aarch64_maybe_generate_simd_constant (operands[0], operands[1],
 						     <MODE>mode))
 	  ;
@@ -1122,11 +1121,11 @@
 (define_insn "and<mode>3<vczle><vczbe>"
   [(set (match_operand:VDQ_I 0 "register_operand")
 	(and:VDQ_I (match_operand:VDQ_I 1 "register_operand")
-		   (match_operand:VDQ_I 2 "aarch64_reg_or_bic_imm")))]
+		   (match_operand:VDQ_I 2 "aarch64_reg_or_and_imm")))]
   "TARGET_SIMD"
   {@ [ cons: =0 , 1 , 2   ]
      [ w        , w , w   ] and\t%0.<Vbtype>, %1.<Vbtype>, %2.<Vbtype>
-     [ w        , 0 , Db  ] << aarch64_output_simd_mov_immediate (operands[2], <bitsize>, AARCH64_CHECK_BIC);
+     [ w        , 0 , Db  ] << aarch64_output_simd_and_imm (operands[2], <bitsize>);
   }
   [(set_attr "type" "neon_logic<q>")]
 )
@@ -1135,24 +1134,25 @@
 (define_insn "ior<mode>3<vczle><vczbe>"
   [(set (match_operand:VDQ_I 0 "register_operand")
 	(ior:VDQ_I (match_operand:VDQ_I 1 "register_operand")
-		   (match_operand:VDQ_I 2 "aarch64_orr_imm_sve_advsimd")))]
+		   (match_operand:VDQ_I 2 "aarch64_reg_or_orr_imm")))]
   "TARGET_SIMD"
-  {@ [ cons: =0 , 1 , 2; attrs: arch ]
-     [ w        , w , w  ; simd      ] orr\t%0.<Vbtype>, %1.<Vbtype>, %2.<Vbtype>
-     [ w        , 0 , vsl; sve       ] orr\t%Z0.<Vetype>, %Z0.<Vetype>, #%2
-     [ w        , 0 , Do ; simd      ] \
-       << aarch64_output_simd_mov_immediate (operands[2], <bitsize>, \
-					     AARCH64_CHECK_ORR);
+  {@ [ cons: =0 , 1 , 2  ]
+     [ w        , w , w  ] orr\t%0.<Vbtype>, %1.<Vbtype>, %2.<Vbtype>
+     [ w        , 0 , Do ] << aarch64_output_simd_orr_imm (operands[2], <bitsize>);
   }
   [(set_attr "type" "neon_logic<q>")]
 )
 
+;; For EOR (vector, register) and SVE EOR (vector, immediate)
 (define_insn "xor<mode>3<vczle><vczbe>"
-  [(set (match_operand:VDQ_I 0 "register_operand" "=w")
-        (xor:VDQ_I (match_operand:VDQ_I 1 "register_operand" "w")
-		 (match_operand:VDQ_I 2 "register_operand" "w")))]
+  [(set (match_operand:VDQ_I 0 "register_operand")
+        (xor:VDQ_I (match_operand:VDQ_I 1 "register_operand")
+                   (match_operand:VDQ_I 2 "aarch64_reg_or_xor_imm")))]
   "TARGET_SIMD"
-  "eor\t%0.<Vbtype>, %1.<Vbtype>, %2.<Vbtype>"
+  {@ [ cons: =0 , 1 , 2  ]
+     [ w        , w , w  ] eor\t%0.<Vbtype>, %1.<Vbtype>, %2.<Vbtype>
+     [ w        , 0 , Do ] << aarch64_output_simd_xor_imm (operands[2], <bitsize>);
+  }
   [(set_attr "type" "neon_logic<q>")]
 )
 
