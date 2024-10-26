@@ -2072,8 +2072,11 @@ vect_recog_ctz_ffs_pattern (vec_info *vinfo, stmt_vec_info stmt_vinfo,
       tree ret_var = vect_recog_temp_ssa_var (lhs_type, NULL);
       rhs_oprnd = gimple_call_arg (call_stmt, 0);
       rhs_type = TREE_TYPE (rhs_oprnd);
-      tree cmp = build2_loc (loc, NE_EXPR, boolean_type_node,
-			     rhs_oprnd, build_zero_cst (rhs_type));
+      tree cmp = vect_recog_temp_ssa_var (boolean_type_node, NULL);
+      pattern_stmt = gimple_build_assign (cmp, NE_EXPR, rhs_oprnd,
+					  build_zero_cst (rhs_type));
+      append_pattern_def_seq (vinfo, stmt_vinfo, pattern_stmt,
+			      truth_type_for (vec_type), rhs_type);
       pattern_stmt = gimple_build_assign (ret_var, COND_EXPR, cmp,
 					  new_var,
 					  build_int_cst (lhs_type, val));
@@ -4933,8 +4936,11 @@ vect_recog_divmod_pattern (vec_info *vinfo,
 	  return pattern_stmt;
 	}
 
-      cond = build2 (LT_EXPR, boolean_type_node, oprnd0,
-		     build_int_cst (itype, 0));
+      cond = vect_recog_temp_ssa_var (boolean_type_node, NULL);
+      def_stmt = gimple_build_assign (cond, LT_EXPR, oprnd0,
+				      build_int_cst (itype, 0));
+      append_pattern_def_seq (vinfo, stmt_vinfo, def_stmt,
+			      truth_type_for (vectype), itype);
       if (rhs_code == TRUNC_DIV_EXPR
 	  || rhs_code == EXACT_DIV_EXPR)
 	{
