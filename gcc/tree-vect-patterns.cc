@@ -313,55 +313,6 @@ vect_get_internal_def (vec_info *vinfo, tree op)
   return NULL;
 }
 
-/* Check whether NAME, an ssa-name used in STMT_VINFO,
-   is a result of a type promotion, such that:
-     DEF_STMT: NAME = NOP (name0)
-   If CHECK_SIGN is TRUE, check that either both types are signed or both are
-   unsigned.  */
-
-static bool
-type_conversion_p (vec_info *vinfo, tree name, bool check_sign,
-		   tree *orig_type, gimple **def_stmt, bool *promotion)
-{
-  tree type = TREE_TYPE (name);
-  tree oprnd0;
-  enum vect_def_type dt;
-
-  stmt_vec_info def_stmt_info;
-  if (!vect_is_simple_use (name, vinfo, &dt, &def_stmt_info, def_stmt))
-    return false;
-
-  if (dt != vect_internal_def
-      && dt != vect_external_def && dt != vect_constant_def)
-    return false;
-
-  if (!*def_stmt)
-    return false;
-
-  if (!is_gimple_assign (*def_stmt))
-    return false;
-
-  if (!CONVERT_EXPR_CODE_P (gimple_assign_rhs_code (*def_stmt)))
-    return false;
-
-  oprnd0 = gimple_assign_rhs1 (*def_stmt);
-
-  *orig_type = TREE_TYPE (oprnd0);
-  if (!INTEGRAL_TYPE_P (type) || !INTEGRAL_TYPE_P (*orig_type)
-      || ((TYPE_UNSIGNED (type) != TYPE_UNSIGNED (*orig_type)) && check_sign))
-    return false;
-
-  if (TYPE_PRECISION (type) >= (TYPE_PRECISION (*orig_type) * 2))
-    *promotion = true;
-  else
-    *promotion = false;
-
-  if (!vect_is_simple_use (oprnd0, vinfo, &dt))
-    return false;
-
-  return true;
-}
-
 /* Holds information about an input operand after some sign changes
    and type promotions have been peeled away.  */
 class vect_unpromoted_value {
@@ -5408,154 +5359,6 @@ vect_recog_mod_var_pattern (vec_info *vinfo,
   return pattern_stmt;
 }
 
-/* Function vect_recog_mixed_size_cond_pattern
-
-   Try to find the following pattern:
-
-     type x_t, y_t;
-     TYPE a_T, b_T, c_T;
-   loop:
-     S1  a_T = x_t CMP y_t ? b_T : c_T;
-
-   where type 'TYPE' is an integral type which has different size
-   from 'type'.  b_T and c_T are either constants (and if 'TYPE' is wider
-   than 'type', the constants need to fit into an integer type
-   with the same width as 'type') or results of conversion from 'type'.
-
-   Input:
-
-   * STMT_VINFO: The stmt from which the pattern search begins.
-
-   Output:
-
-   * TYPE_OUT: The type of the output of this pattern.
-
-   * Return value: A new stmt that will be used to replace the pattern.
-	Additionally a def_stmt is added.
-
-	a_it = x_t CMP y_t ? b_it : c_it;
-	a_T = (TYPE) a_it;  */
-
-static gimple *
-vect_recog_mixed_size_cond_pattern (vec_info *vinfo,
-				    stmt_vec_info stmt_vinfo, tree *type_out)
-{
-  gimple *last_stmt = stmt_vinfo->stmt;
-  tree cond_expr, then_clause, else_clause;
-  tree type, vectype, comp_vectype, itype = NULL_TREE, vecitype;
-  gimple *pattern_stmt, *def_stmt;
-  tree orig_type0 = NULL_TREE, orig_type1 = NULL_TREE;
-  gimple *def_stmt0 = NULL, *def_stmt1 = NULL;
-  bool promotion;
-  tree comp_scalar_type;
-
-  if (!is_gimple_assign (last_stmt)
-      || gimple_assign_rhs_code (last_stmt) != COND_EXPR
-      || STMT_VINFO_DEF_TYPE (stmt_vinfo) != vect_internal_def)
-    return NULL;
-
-  cond_expr = gimple_assign_rhs1 (last_stmt);
-  then_clause = gimple_assign_rhs2 (last_stmt);
-  else_clause = gimple_assign_rhs3 (last_stmt);
-
-  if (!COMPARISON_CLASS_P (cond_expr))
-    return NULL;
-
-  comp_scalar_type = TREE_TYPE (TREE_OPERAND (cond_expr, 0));
-  comp_vectype = get_vectype_for_scalar_type (vinfo, comp_scalar_type);
-  if (comp_vectype == NULL_TREE)
-    return NULL;
-
-  type = TREE_TYPE (gimple_assign_lhs (last_stmt));
-  if (types_compatible_p (type, comp_scalar_type)
-      || ((TREE_CODE (then_clause) != INTEGER_CST
-	   || TREE_CODE (else_clause) != INTEGER_CST)
-	  && !INTEGRAL_TYPE_P (comp_scalar_type))
-      || !INTEGRAL_TYPE_P (type))
-    return NULL;
-
-  if ((TREE_CODE (then_clause) != INTEGER_CST
-       && !type_conversion_p (vinfo, then_clause, false,
-			      &orig_type0, &def_stmt0, &promotion))
-      || (TREE_CODE (else_clause) != INTEGER_CST
-	  && !type_conversion_p (vinfo, else_clause, false,
-				 &orig_type1, &def_stmt1, &promotion)))
-    return NULL;
-
-  if (orig_type0 && orig_type1
-      && !types_compatible_p (orig_type0, orig_type1))
-    return NULL;
-
-  if (orig_type0)
-    {
-      if (!types_compatible_p (orig_type0, comp_scalar_type))
-	return NULL;
-      then_clause = gimple_assign_rhs1 (def_stmt0);
-      itype = orig_type0;
-    }
-
-  if (orig_type1)
-    {
-      if (!types_compatible_p (orig_type1, comp_scalar_type))
-	return NULL;
-      else_clause = gimple_assign_rhs1 (def_stmt1);
-      itype = orig_type1;
-    }
-
-
-  HOST_WIDE_INT cmp_mode_size
-    = GET_MODE_UNIT_BITSIZE (TYPE_MODE (comp_vectype));
-
-  scalar_int_mode type_mode = SCALAR_INT_TYPE_MODE (type);
-  if (GET_MODE_BITSIZE (type_mode) == cmp_mode_size)
-    return NULL;
-
-  vectype = get_vectype_for_scalar_type (vinfo, type);
-  if (vectype == NULL_TREE)
-    return NULL;
-
-  if (expand_vec_cond_expr_p (vectype, comp_vectype, TREE_CODE (cond_expr)))
-    return NULL;
-
-  if (itype == NULL_TREE)
-    itype = build_nonstandard_integer_type (cmp_mode_size,
-  					    TYPE_UNSIGNED (type));
-
-  if (itype == NULL_TREE
-      || GET_MODE_BITSIZE (SCALAR_TYPE_MODE (itype)) != cmp_mode_size)
-    return NULL;
-
-  vecitype = get_vectype_for_scalar_type (vinfo, itype);
-  if (vecitype == NULL_TREE)
-    return NULL;
-
-  if (!expand_vec_cond_expr_p (vecitype, comp_vectype, TREE_CODE (cond_expr)))
-    return NULL;
-
-  if (GET_MODE_BITSIZE (type_mode) > cmp_mode_size)
-    {
-      if ((TREE_CODE (then_clause) == INTEGER_CST
-	   && !int_fits_type_p (then_clause, itype))
-	  || (TREE_CODE (else_clause) == INTEGER_CST
-	      && !int_fits_type_p (else_clause, itype)))
-	return NULL;
-    }
-
-  def_stmt = gimple_build_assign (vect_recog_temp_ssa_var (itype, NULL),
-				  COND_EXPR, unshare_expr (cond_expr),
-				  fold_convert (itype, then_clause),
-				  fold_convert (itype, else_clause));
-  pattern_stmt = gimple_build_assign (vect_recog_temp_ssa_var (type, NULL),
-				      NOP_EXPR, gimple_assign_lhs (def_stmt));
-
-  append_pattern_def_seq (vinfo, stmt_vinfo, def_stmt, vecitype);
-  *type_out = vectype;
-
-  vect_pattern_detected ("vect_recog_mixed_size_cond_pattern", last_stmt);
-
-  return pattern_stmt;
-}
-
 
 /* Helper function of vect_recog_bool_pattern.  Called recursively, return
    true if bool VAR can and should be optimized that way.  Assume it shouldn't
@@ -6240,8 +6043,6 @@ vect_recog_mask_conversion_pattern (vec_info *vinfo,
   tree lhs = NULL_TREE, rhs1, rhs2, tmp, rhs1_type, rhs2_type;
   tree vectype1, vectype2;
   stmt_vec_info pattern_stmt_info;
-  tree rhs1_op0 = NULL_TREE, rhs1_op1 = NULL_TREE;
-  tree rhs1_op0_type = NULL_TREE, rhs1_op1_type = NULL_TREE;
 
   /* Check for MASK_LOAD and MASK_STORE as well as COND_OP calls requiring mask
      conversion.  */
@@ -6331,59 +6132,12 @@ vect_recog_mask_conversion_pattern (vec_info *vinfo,
     {
       vectype1 = get_vectype_for_scalar_type (vinfo, TREE_TYPE (lhs));
 
+      gcc_assert (! COMPARISON_CLASS_P (rhs1));
       if (TREE_CODE (rhs1) == SSA_NAME)
 	{
 	  rhs1_type = integer_type_for_mask (rhs1, vinfo);
 	  if (!rhs1_type)
 	    return NULL;
-	}
-      else if (COMPARISON_CLASS_P (rhs1))
-	{
-	  /* Check whether we're comparing scalar booleans and (if so)
-	     whether a better mask type exists than the mask associated
-	     with boolean-sized elements.  This avoids unnecessary packs
-	     and unpacks if the booleans are set from comparisons of
-	     wider types.  E.g. in:
-
-	       int x1, x2, x3, x4, y1, y1;
-	       ...
-	       bool b1 = (x1 == x2);
-	       bool b2 = (x3 == x4);
-	       ... = b1 == b2 ? y1 : y2;
-
-	     it is better for b1 and b2 to use the mask type associated
-	     with int elements rather bool (byte) elements.  */
-	  rhs1_op0 = TREE_OPERAND (rhs1, 0);
-	  rhs1_op1 = TREE_OPERAND (rhs1, 1);
-	  if (!rhs1_op0 || !rhs1_op1)
-	    return NULL;
-	  rhs1_op0_type = integer_type_for_mask (rhs1_op0, vinfo);
-	  rhs1_op1_type = integer_type_for_mask (rhs1_op1, vinfo);
-
-	  if (!rhs1_op0_type)
-	    rhs1_type = TREE_TYPE (rhs1_op0);
-	  else if (!rhs1_op1_type)
-	    rhs1_type = TREE_TYPE (rhs1_op1);
-	  else if (TYPE_PRECISION (rhs1_op0_type)
-		   != TYPE_PRECISION (rhs1_op1_type))
-	    {
-	      int tmp0 = (int) TYPE_PRECISION (rhs1_op0_type)
-			 - (int) TYPE_PRECISION (TREE_TYPE (lhs));
-	      int tmp1 = (int) TYPE_PRECISION (rhs1_op1_type)
-			 - (int) TYPE_PRECISION (TREE_TYPE (lhs));
-	      if ((tmp0 > 0 && tmp1 > 0) || (tmp0 < 0 && tmp1 < 0))
-		{
-		  if (abs (tmp0) > abs (tmp1))
-		    rhs1_type = rhs1_op1_type;
-		  else
-		    rhs1_type = rhs1_op0_type;
-		}
-	      else
-		rhs1_type = build_nonstandard_integer_type
-		  (TYPE_PRECISION (TREE_TYPE (lhs)), 1);
-	    }
-	  else
-	    rhs1_type = rhs1_op0_type;
 	}
       else
 	return NULL;
@@ -6400,54 +6154,8 @@ vect_recog_mask_conversion_pattern (vec_info *vinfo,
 	 its vector type) and behave as though the comparison was an SSA
 	 name from the outset.  */
       if (known_eq (TYPE_VECTOR_SUBPARTS (vectype1),
-		    TYPE_VECTOR_SUBPARTS (vectype2))
-	  && !rhs1_op0_type
-	  && !rhs1_op1_type)
+		    TYPE_VECTOR_SUBPARTS (vectype2)))
 	return NULL;
-
-      /* If rhs1 is invariant and we can promote it leave the COND_EXPR
-         in place, we can handle it in vectorizable_condition.  This avoids
-	 unnecessary promotion stmts and increased vectorization factor.  */
-      if (COMPARISON_CLASS_P (rhs1)
-	  && INTEGRAL_TYPE_P (rhs1_type)
-	  && known_le (TYPE_VECTOR_SUBPARTS (vectype1),
-		       TYPE_VECTOR_SUBPARTS (vectype2)))
-	{
-	  enum vect_def_type dt;
-	  if (vect_is_simple_use (TREE_OPERAND (rhs1, 0), vinfo, &dt)
-	      && dt == vect_external_def
-	      && vect_is_simple_use (TREE_OPERAND (rhs1, 1), vinfo, &dt)
-	      && (dt == vect_external_def
-		  || dt == vect_constant_def))
-	    {
-	      tree wide_scalar_type = build_nonstandard_integer_type
-		(vector_element_bits (vectype1), TYPE_UNSIGNED (rhs1_type));
-	      tree vectype3 = get_vectype_for_scalar_type (vinfo,
-							   wide_scalar_type);
-	      if (expand_vec_cond_expr_p (vectype1, vectype3, TREE_CODE (rhs1)))
-		return NULL;
-	    }
-	}
-
-      /* If rhs1 is a comparison we need to move it into a
-	 separate statement.  */
-      if (TREE_CODE (rhs1) != SSA_NAME)
-	{
-	  tmp = vect_recog_temp_ssa_var (TREE_TYPE (rhs1), NULL);
-	  if (rhs1_op0_type
-	      && TYPE_PRECISION (rhs1_op0_type) != TYPE_PRECISION (rhs1_type))
-	    rhs1_op0 = build_mask_conversion (vinfo, rhs1_op0,
-					      vectype2, stmt_vinfo);
-	  if (rhs1_op1_type
-	      && TYPE_PRECISION (rhs1_op1_type) != TYPE_PRECISION (rhs1_type))
-	    rhs1_op1 = build_mask_conversion (vinfo, rhs1_op1,
-				      vectype2, stmt_vinfo);
-	  pattern_stmt = gimple_build_assign (tmp, TREE_CODE (rhs1),
-					      rhs1_op0, rhs1_op1);
-	  rhs1 = tmp;
-	  append_pattern_def_seq (vinfo, stmt_vinfo, pattern_stmt, vectype2,
-				  rhs1_type);
-	}
 
       if (maybe_ne (TYPE_VECTOR_SUBPARTS (vectype1),
 		    TYPE_VECTOR_SUBPARTS (vectype2)))
@@ -7493,7 +7201,6 @@ static vect_recog_func vect_vect_recog_func_ptrs[] = {
   { vect_recog_sat_add_pattern, "sat_add" },
   { vect_recog_sat_sub_pattern, "sat_sub" },
   { vect_recog_sat_trunc_pattern, "sat_trunc" },
-  { vect_recog_mixed_size_cond_pattern, "mixed_size_cond" },
   { vect_recog_gcond_pattern, "gcond" },
   { vect_recog_bool_pattern, "bool" },
   /* This must come before mask conversion, and includes the parts
