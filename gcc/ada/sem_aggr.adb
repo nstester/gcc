@@ -1646,10 +1646,11 @@ package body Sem_Aggr is
       --  node as Expr, since there is no Expression and we need a Sloc for the
       --  error message.
 
-      procedure Resolve_Iterated_Component_Association
+      function Resolve_Iterated_Component_Association
         (N         : Node_Id;
-         Index_Typ : Entity_Id);
-      --  For AI12-061
+         Index_Typ : Entity_Id) return Boolean;
+      --  For AI12-061: resolves iterated component association N of Index_Typ.
+      --  Returns False if resolution fails.
 
       function Subtract (Val : Uint; To : Node_Id) return Node_Id;
       --  Creates a new expression node where Val is subtracted to expression
@@ -2110,12 +2111,13 @@ package body Sem_Aggr is
       -- Resolve_Iterated_Component_Association --
       --------------------------------------------
 
-      procedure Resolve_Iterated_Component_Association
+      function Resolve_Iterated_Component_Association
         (N         : Node_Id;
-         Index_Typ : Entity_Id)
+         Index_Typ : Entity_Id) return Boolean
       is
-         Loc : constant Source_Ptr := Sloc (N);
-         Id  : constant Entity_Id  := Defining_Identifier (N);
+         Loc  : constant Source_Ptr := Sloc (N);
+         Id   : constant Entity_Id  := Defining_Identifier (N);
+         Expr : constant Node_Id    := Expression (N);
 
          -----------------------
          -- Remove_References --
@@ -2145,7 +2147,6 @@ package body Sem_Aggr is
          Choice         : Node_Id;
          Resolution_OK  : Boolean;
          Scop           : Entity_Id;
-         Expr           : constant Node_Id := Expression (N);
 
       --  Start of processing for Resolve_Iterated_Component_Association
 
@@ -2217,10 +2218,6 @@ package body Sem_Aggr is
 
          Resolution_OK := Resolve_Aggr_Expr (Expr, Single_Elmt => False);
 
-         if not Resolution_OK then
-            return;
-         end if;
-
          if Operating_Mode /= Check_Semantics then
             Remove_References (Expr);
             declare
@@ -2234,17 +2231,9 @@ package body Sem_Aggr is
             end;
          end if;
 
-         --  An iterated_component_association may appear in a nested
-         --  aggregate for a multidimensional structure: preserve the bounds
-         --  computed for the expression, as well as the anonymous array
-         --  type generated for it; both are needed during array expansion.
-
-         if Nkind (Expr) = N_Aggregate then
-            Set_Aggregate_Bounds (Expression (N), Aggregate_Bounds (Expr));
-            Set_Etype (Expression (N), Etype (Expr));
-         end if;
-
          End_Scope;
+
+         return Resolution_OK;
       end Resolve_Iterated_Component_Association;
 
       --------------
@@ -2669,7 +2658,11 @@ package body Sem_Aggr is
          Assoc := First (Component_Associations (N));
          while Present (Assoc) loop
             if Nkind (Assoc) = N_Iterated_Component_Association then
-               Resolve_Iterated_Component_Association (Assoc, Index_Typ);
+               if not Resolve_Iterated_Component_Association
+                        (Assoc, Index_Typ)
+               then
+                  return Failure;
+               end if;
 
             elsif Nkind (Assoc) /= N_Component_Association then
                Error_Msg_N

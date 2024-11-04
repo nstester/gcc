@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                 GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                 --
+--                         GNAT COMPILER COMPONENTS                         --
 --                                                                          --
---                       S Y S T E M . O S _ L O C K S                      --
+--            I N T E R F A C E S . C H E R I . E X C E P T I O N S         --
 --                                                                          --
---                                 S p e c                                  --
+--                                  S p e c                                 --
 --                                                                          --
---            Copyright (C) 2024, Free Software Foundation, Inc.            --
+--                        Copyright (C) 2024, AdaCore                       --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -24,39 +24,27 @@
 -- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
 -- <http://www.gnu.org/licenses/>.                                          --
 --                                                                          --
--- GNARL was developed by the GNARL team at Florida State University.       --
--- Extensive contributions were provided by Ada Core Technologies, Inc.     --
+-- GNAT was originally developed  by the GNAT team at  New York University. --
+-- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This is a POSIX-like version of this package
+--  This package defines exception types for CHERI-related errors
 
-with Interfaces.C;
-with System.OS_Constants;
+package Interfaces.CHERI.Exceptions with
+  Preelaborate
+is
 
-package System.OS_Locks is
-   pragma Preelaborate;
+   Capability_Bound_Error : exception;
+   --  An out-of-bounds access was attempted
 
-   type pthread_mutex_t is limited private;
+   Capability_Permission_Error : exception;
+   --  An attempted access exceeded the permissions granted by a capability
 
-   subtype RTS_Lock is pthread_mutex_t;
-   --  Should be used inside the runtime system. The difference between Lock
-   --  and the RTS_Lock is that the latter serves only as a semaphore so that
-   --  we do not check for ceiling violations.
+   Capability_Sealed_Error : exception;
+   --  A sealed capability was dereferenced
 
-private
+   Capability_Tag_Error : exception;
+   --  An invalid capability was dereferenced
 
-   subtype char_array is Interfaces.C.char_array;
-
-   type pthread_mutex_t is record
-      Data : char_array (1 .. OS_Constants.PTHREAD_MUTEX_SIZE);
-   end record;
-   pragma Convention (C, pthread_mutex_t);
-   for pthread_mutex_t'Alignment use
-     Integer'Max (Interfaces.C.unsigned_long'Alignment,
-                  System.Address'Alignment);
-   --  On some targets (e.g. CHERI), pointers have larger alignment than
-   --  unsigned_long. On other targets (e.g. some 16-bit targets) long is
-   --  larger than a pointer. Choose the largest to err on the side of caution.
-
-end System.OS_Locks;
+end Interfaces.CHERI.Exceptions;

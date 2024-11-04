@@ -5006,7 +5006,7 @@ package body Exp_Util is
       --  declarations of the package spec.
 
       if Nkind (U) = N_Package_Body then
-         U := Unit (Library_Unit (Cunit (Current_Sem_Unit)));
+         U := Unit (Spec_Lib_Unit (Cunit (Current_Sem_Unit)));
       end if;
 
       if Nkind (U) = N_Package_Declaration then
@@ -9192,6 +9192,16 @@ package body Exp_Util is
    begin
       return Is_Tagged_Type (Typ) and then Is_Library_Level_Entity (Typ);
    end Is_Library_Level_Tagged_Type;
+
+   --------------------
+   -- Is_LSP_Wrapper --
+   --------------------
+
+   function Is_LSP_Wrapper (E : Entity_Id) return Boolean is
+   begin
+      return Is_Dispatch_Table_Wrapper (E)
+        and then Present (LSP_Subprogram (E));
+   end Is_LSP_Wrapper;
 
    --------------------------
    -- Is_Non_BIP_Func_Call --

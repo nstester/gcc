@@ -1589,7 +1589,7 @@ package body Sem_Res is
       --  expanded name, verify that the operand has an interpretation with a
       --  type defined in the given scope of the operator.
 
-      function Type_In_P (Test : Kind_Test) return Entity_Id;
+      function Type_In_P (Test : not null Kind_Test) return Entity_Id;
       --  Find a type of the given class in package Pack that contains the
       --  operator.
 
@@ -1624,7 +1624,7 @@ package body Sem_Res is
       -- Type_In_P --
       ---------------
 
-      function Type_In_P (Test : Kind_Test) return Entity_Id is
+      function Type_In_P (Test : not null Kind_Test) return Entity_Id is
          E : Entity_Id;
 
          function In_Decl return Boolean;
@@ -1637,11 +1637,9 @@ package body Sem_Res is
 
          function In_Decl return Boolean is
             Decl_Node : constant Node_Id := Parent (E);
-            N2        : Node_Id;
+            Context   : Node_Id;
 
          begin
-            N2 := N;
-
             if Etype (E) = Any_Type then
                return True;
 
@@ -1649,13 +1647,15 @@ package body Sem_Res is
                return False;
 
             else
-               while Present (N2)
-                 and then Nkind (N2) /= N_Compilation_Unit
+               Context := N;
+
+               while Present (Context)
+                 and then Nkind (Context) /= N_Compilation_Unit
                loop
-                  if N2 = Decl_Node then
+                  if Context = Decl_Node then
                      return True;
                   else
-                     N2 := Parent (N2);
+                     Context := Parent (Context);
                   end if;
                end loop;
 
@@ -1912,7 +1912,7 @@ package body Sem_Res is
          end if;
       end if;
 
-      Set_Chars  (Op_Node, Op_Name);
+      Set_Chars (Op_Node, Op_Name);
 
       if not Is_Private_Type (Etype (N)) then
          Set_Etype (Op_Node, Base_Type (Etype (N)));
@@ -9885,11 +9885,30 @@ package body Sem_Res is
          return;
       end if;
 
-      Op := Entity (N);
-      while Scope (Op) /= Standard_Standard loop
-         Op := Homonym (Op);
-         pragma Assert (Present (Op));
-      end loop;
+      case N_Binary_Op'(Nkind (N)) is
+         when N_Op_Add =>
+            Op := Standard_Op_Add;
+         when N_Op_Expon =>
+            Op := Standard_Op_Expon;
+         when N_Op_Subtract =>
+            Op := Standard_Op_Subtract;
+         when N_Op_Divide =>
+            Op := Standard_Op_Divide;
+         when N_Op_Mod =>
+            Op := Standard_Op_Mod;
+         when N_Op_Multiply =>
+            Op := Standard_Op_Multiply;
+         when N_Op_Rem =>
+            Op := Standard_Op_Rem;
+
+         --  Non-arithmetic operators are handled elsewhere
+
+         when N_Op_Boolean
+            | N_Op_Concat
+            | N_Op_Shift
+         =>
+            raise Program_Error;
+      end case;
 
       Set_Entity (N, Op);
       Set_Is_Overloaded (N, False);
@@ -9972,11 +9991,26 @@ package body Sem_Res is
       Arg2 : Node_Id;
 
    begin
-      Op := Entity (N);
-      while Scope (Op) /= Standard_Standard loop
-         Op := Homonym (Op);
-         pragma Assert (Present (Op));
-      end loop;
+      --  We must preserve the original entity in a generic setting, so that
+      --  the legality of the operation can be verified in an instance.
+
+      if not Expander_Active then
+         return;
+      end if;
+
+      case N_Unary_Op'(Nkind (N)) is
+         when N_Op_Abs =>
+            Op := Standard_Op_Abs;
+         when N_Op_Minus =>
+            Op := Standard_Op_Minus;
+         when N_Op_Plus =>
+            Op := Standard_Op_Plus;
+
+         --  Non-arithmetic operators are handled elsewhere
+
+         when N_Op_Not =>
+            raise Program_Error;
+      end case;
 
       Set_Entity (N, Op);
 
@@ -14394,6 +14428,37 @@ package body Sem_Res is
             return False;
          end if;
 
+         declare
+            Extended_Opnd : constant Boolean :=
+              Is_Extended_Access_Type (Opnd_Type);
+            Extended_Target : constant Boolean :=
+              Is_Extended_Access_Type (Target_Type);
+         begin
+            --  An extended access value may designate objects that are
+            --  impossible to reference using a non-extended type, so
+            --  prohibit conversions that would require being able to
+            --  do the impossible.
+
+            if Extended_Opnd then
+               if not Extended_Target then
+                  Conversion_Error_N
+                    ("cannot convert extended access value"
+                     & " to non-extended access type",
+                     Operand);
+                  return False;
+               end if;
+
+            --  Detect bad conversion on copy back for a view conversion
+
+            elsif Extended_Target and then Is_View_Conversion (N) then
+               Conversion_Error_N
+                 ("cannot convert non-extended value"
+                  & " to extended access type in view conversion",
+                  Operand);
+               return False;
+            end if;
+         end;
+
          --  Check the static accessibility rule of 4.6(17). Note that the
          --  check is not enforced when within an instance body, since the RM
          --  requires such cases to be caught at run time.
@@ -14442,6 +14507,7 @@ package body Sem_Res is
                      then
                         Conversion_Error_N
                           ("operand has deeper level than target", Operand);
+                        return False;
                      end if;
 
                   --  Implicit conversions aren't allowed for objects of an
