@@ -16018,6 +16018,44 @@ aarch64_emit_approx_div (rtx quo, rtx num, rtx den)
   return true;
 }
 
+/* Emit an optimized sequence to perform a vector rotate
+   of REG by the vector constant amount AMNT_VEC and place the result
+   in DST.  Return true iff successful.  */
+
+bool
+aarch64_emit_opt_vec_rotate (rtx dst, rtx reg, rtx amnt_vec)
+{
+  rtx amnt = unwrap_const_vec_duplicate (amnt_vec);
+  gcc_assert (CONST_INT_P (amnt));
+  HOST_WIDE_INT rotamnt = UINTVAL (amnt);
+  machine_mode mode = GET_MODE (reg);
+  /* Rotates by half the element width map down to REV* instructions and should
+     always be preferred when possible.  */
+  if (rotamnt == GET_MODE_UNIT_BITSIZE (mode) / 2
+      && expand_rotate_as_vec_perm (mode, dst, reg, amnt))
+    return true;
+  /* 64 and 128-bit vector modes can use the XAR instruction
+     when available.  */
+  else if (can_create_pseudo_p ()
+	   && ((TARGET_SHA3 && mode == V2DImode)
+	       || (TARGET_SVE2
+		   && (known_eq (GET_MODE_SIZE (mode), 8)
+		       || known_eq (GET_MODE_SIZE (mode), 16)))))
+    {
+      rtx zeroes = aarch64_gen_shareable_zero (mode);
+      rtx xar_op
+	= gen_rtx_ROTATE (mode, gen_rtx_XOR (mode, reg, zeroes),
+						amnt_vec);
+      emit_set_insn (dst, xar_op);
+      return true;
+    }
+  /* If none of the above, try to expand rotates by any byte amount as
+     permutes.  */
+  else if (expand_rotate_as_vec_perm (mode, dst, reg, amnt))
+    return true;
+  return false;
+}
+
 /* Return the number of instructions that can be issued per cycle.  */
 static int
 aarch64_sched_issue_rate (void)
