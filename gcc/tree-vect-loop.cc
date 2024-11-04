@@ -3691,7 +3691,6 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
     return first_loop_vinfo;
 
   /* Now analyze first_loop_vinfo for epilogue vectorization.  */
-  poly_uint64 lowest_th = LOOP_VINFO_VERSIONING_THRESHOLD (first_loop_vinfo);
 
   /* For epilogues start the analysis from the first mode.  The motivation
      behind starting from the beginning comes from cases where the VECTOR_MODES
@@ -3750,16 +3749,7 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
 	    }
 	  /* For now only allow one epilogue loop.  */
 	  if (first_loop_vinfo->epilogue_vinfos.is_empty ())
-	    {
-	      first_loop_vinfo->epilogue_vinfos.safe_push (loop_vinfo);
-	      poly_uint64 th = LOOP_VINFO_VERSIONING_THRESHOLD (loop_vinfo);
-	      gcc_assert (!LOOP_REQUIRES_VERSIONING (loop_vinfo)
-			  || maybe_ne (lowest_th, 0U));
-	      /* Keep track of the known smallest versioning
-		 threshold.  */
-	      if (ordered_p (lowest_th, th))
-		lowest_th = ordered_min (lowest_th, th);
-	    }
+	    first_loop_vinfo->epilogue_vinfos.safe_push (loop_vinfo);
 	  else
 	    {
 	      delete loop_vinfo;
@@ -3780,6 +3770,17 @@ vect_analyze_loop (class loop *loop, gimple *loop_vectorized_call,
 
   if (!first_loop_vinfo->epilogue_vinfos.is_empty ())
     {
+      poly_uint64 lowest_th
+	= LOOP_VINFO_VERSIONING_THRESHOLD (first_loop_vinfo);
+      for (auto epilog_vinfo : first_loop_vinfo->epilogue_vinfos)
+	{
+	  poly_uint64 th = LOOP_VINFO_VERSIONING_THRESHOLD (epilog_vinfo);
+	  gcc_assert (!LOOP_REQUIRES_VERSIONING (epilog_vinfo)
+		      || maybe_ne (lowest_th, 0U));
+	  /* Keep track of the known smallest versioning threshold.  */
+	  if (ordered_p (lowest_th, th))
+	    lowest_th = ordered_min (lowest_th, th);
+	}
       LOOP_VINFO_VERSIONING_THRESHOLD (first_loop_vinfo) = lowest_th;
       if (dump_enabled_p ())
 	dump_printf_loc (MSG_NOTE, vect_location,
@@ -12165,11 +12166,6 @@ update_epilogue_loop_vinfo (class loop *epilogue, tree advance)
   LOOP_VINFO_BBS (epilogue_vinfo) = epilogue_bbs;
   LOOP_VINFO_NBBS (epilogue_vinfo) = epilogue->num_nodes;
 
-  /* Advance data_reference's with the number of iterations of the previous
-     loop and its prologue.  */
-  vect_update_inits_of_drs (epilogue_vinfo, advance, PLUS_EXPR);
-
-
   /* The EPILOGUE loop is a copy of the original loop so they share the same
      gimple UIDs.  In this loop we update the loop_vec_info of the EPILOGUE to
      point to the copied statements.  We also create a mapping of all LHS' in
@@ -12290,8 +12286,11 @@ update_epilogue_loop_vinfo (class loop *epilogue, tree advance)
 				     &find_in_mapping, &mapping);
 	}
       DR_STMT (dr) = STMT_VINFO_STMT (stmt_vinfo);
-      stmt_vinfo->dr_aux.stmt = stmt_vinfo;
     }
+
+  /* Advance data_reference's with the number of iterations of the previous
+     loop and its prologue.  */
+  vect_update_inits_of_drs (epilogue_vinfo, advance, PLUS_EXPR);
 
   epilogue_vinfo->shared->datarefs_copy.release ();
   epilogue_vinfo->shared->save_datarefs ();
