@@ -539,6 +539,9 @@
 (define_mode_iterator VF1_AVX512VL
   [(V16SF "TARGET_EVEX512") (V8SF "TARGET_AVX512VL") (V4SF "TARGET_AVX512VL")])
 
+(define_mode_iterator VF1_AVX512BW
+  [(V16SF "TARGET_EVEX512 && TARGET_EVEX512") (V8SF "TARGET_AVX2") V4SF])
+
 (define_mode_iterator VF1_AVX10_2
   [(V16SF "TARGET_AVX10_2_512") V8SF V4SF])
 
@@ -30957,7 +30960,11 @@
   [(V32BF  "V16SF") (V16BF  "V8SF") (V8BF  "V4SF")])
 ;; Converting from SF to BF
 (define_mode_attr sf_cvt_bf16
-  [(V8SF  "V8BF") (V16SF  "V16BF")])
+  [(V4SF "V4BF") (V8SF  "V8BF") (V16SF  "V16BF")])
+
+(define_mode_attr sf_cvt_bf16_lower
+  [(V4SF "v4bf") (V8SF  "v8bf") (V16SF  "v16bf")])
+
 ;; Mapping from BF to SF
 (define_mode_attr sf_bf16
   [(V4SF  "V8BF") (V8SF  "V16BF") (V16SF  "V32BF")])
@@ -30983,6 +30990,24 @@
 	    (match_operand:<bf16_cvt_2sf> 1 "register_operand" "v"))))]
   "TARGET_AVX512BF16"
   "vcvtne2ps2bf16\t{%2, %1, %0<mask_operand3>|%0<mask_operand3>, %1, %2}")
+
+(define_expand "truncv4sfv4bf2"
+  [(set (match_operand:V4BF 0 "register_operand")
+	  (float_truncate:V4BF
+	    (match_operand:V4SF 1 "nonimmediate_operand")))]
+  "TARGET_SSSE3"
+{
+  if (!TARGET_AVXNECONVERT
+      && !(TARGET_AVX512BF16 && TARGET_AVX512VL))
+    ix86_expand_vector_sf2bf_with_vec_perm (operands[0], operands[1]);
+  else
+    {
+      rtx dest = gen_reg_rtx (V8BFmode);
+      emit_insn (gen_vcvtneps2bf16_v4sf (dest, operands[1]));
+      emit_move_insn (operands[0], lowpart_subreg (V4BFmode, dest, V8BFmode));
+    }
+  DONE;
+})
 
 (define_expand "vcvtneps2bf16_v4sf"
   [(set (match_operand:V8BF 0 "register_operand")
@@ -31059,6 +31084,20 @@
   DONE;
 })
 
+(define_expand "truncv8sfv8bf2"
+  [(set (match_operand:V8BF 0 "register_operand")
+	(float_truncate:V8BF
+	  (match_operand:V8SF 1 "nonimmediate_operand")))]
+  "TARGET_AVX2"
+{
+  if (!TARGET_AVXNECONVERT
+      && !(TARGET_AVX512BF16 && TARGET_AVX512VL))
+    {
+      ix86_expand_vector_sf2bf_with_vec_perm (operands[0], operands[1]);
+      DONE;
+    }
+})
+
 (define_insn "vcvtneps2bf16_v8sf"
   [(set (match_operand:V8BF 0 "register_operand" "=x,v")
 	(float_truncate:V8BF
@@ -31070,6 +31109,29 @@
   [(set_attr "isa" "avxneconvert,avx512bf16vl")
    (set_attr "addr" "gpr16,*")
    (set_attr "prefix" "vex,evex")])
+
+(define_expand "truncv16sfv16bf2"
+  [(set (match_operand:V16BF 0 "register_operand")
+	(float_truncate:V16BF
+	  (match_operand:V16SF 1 "nonimmediate_operand")))]
+  "TARGET_AVX512BW && TARGET_EVEX512"
+{
+  if (!TARGET_AVX512BF16)
+    {
+      ix86_expand_vector_sf2bf_with_vec_perm (operands[0], operands[1]);
+      DONE;
+    }
+})
+
+(define_expand "extend<sf_cvt_bf16_lower><mode>2"
+  [(set (match_operand:VF1_AVX512BW 0 "register_operand")
+	(float_extend:VF1_AVX512BW
+	  (match_operand:<sf_cvt_bf16> 1 "nonimmediate_operand")))]
+  "TARGET_SSE2"
+{
+  ix86_expand_vector_bf2sf_with_vec_perm (operands[0], operands[1]);
+  DONE;
+})
 
 
 (define_insn "avx512f_cvtneps2bf16_<mode><mask_name>"
