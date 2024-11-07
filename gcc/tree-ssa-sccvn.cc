@@ -7895,6 +7895,92 @@ insert_related_predicates_on_edge (enum tree_code code, tree *ops, edge pred_e)
     }
 }
 
+/* Insert on the TRUE_E true and FALSE_E false predicates
+   derived from LHS CODE RHS.  */
+static void
+insert_predicates_for_cond (tree_code code, tree lhs, tree rhs,
+			    edge true_e, edge false_e)
+{
+  /* If both edges are null, then there is nothing to be done. */
+  if (!true_e && !false_e)
+    return;
+
+  /* Canonicalize the comparison so the rhs are constants.  */
+  if (CONSTANT_CLASS_P (lhs))
+    {
+      std::swap (lhs, rhs);
+      code = swap_tree_comparison (code);
+    }
+
+  /* If the lhs is not a ssa name, don't record anything. */
+  if (TREE_CODE (lhs) != SSA_NAME)
+    return;
+
+  tree_code icode = invert_tree_comparison (code, HONOR_NANS (lhs));
+  tree ops[2];
+  ops[0] = lhs;
+  ops[1] = rhs;
+  if (true_e)
+    vn_nary_op_insert_pieces_predicated (2, code, boolean_type_node, ops,
+					 boolean_true_node, 0, true_e);
+  if (false_e)
+    vn_nary_op_insert_pieces_predicated (2, code, boolean_type_node, ops,
+					 boolean_false_node, 0, false_e);
+  if (icode != ERROR_MARK)
+    {
+      if (true_e)
+	vn_nary_op_insert_pieces_predicated (2, icode, boolean_type_node, ops,
+					     boolean_false_node, 0, true_e);
+      if (false_e)
+	vn_nary_op_insert_pieces_predicated (2, icode, boolean_type_node, ops,
+					     boolean_true_node, 0, false_e);
+    }
+  /* Relax for non-integers, inverted condition handled
+     above.  */
+  if (INTEGRAL_TYPE_P (TREE_TYPE (lhs)))
+    {
+      if (true_e)
+	insert_related_predicates_on_edge (code, ops, true_e);
+      if (false_e)
+	insert_related_predicates_on_edge (icode, ops, false_e);
+  }
+  if (integer_zerop (rhs)
+      && (code == NE_EXPR || code == EQ_EXPR))
+    {
+      gimple *def_stmt = SSA_NAME_DEF_STMT (lhs);
+      /* (A CMP B) != 0 is the same as (A CMP B).
+	 (A CMP B) == 0 is just (A CMP B) with the edges swapped.  */
+      if (is_gimple_assign (def_stmt)
+	  && TREE_CODE_CLASS (gimple_assign_rhs_code (def_stmt)) == tcc_comparison)
+	  {
+	    tree_code nc = gimple_assign_rhs_code (def_stmt);
+	    tree nlhs = vn_valueize (gimple_assign_rhs1 (def_stmt));
+	    tree nrhs = vn_valueize (gimple_assign_rhs2 (def_stmt));
+	    edge nt = true_e;
+	    edge nf = false_e;
+	    if (code == EQ_EXPR)
+	      std::swap (nt, nf);
+	    insert_predicates_for_cond (nc, nlhs, nrhs, nt, nf);
+	  }
+      /* (a | b) == 0 ->
+	    on true edge assert: a == 0 & b == 0. */
+      /* (a | b) != 0 ->
+	    on false edge assert: a == 0 & b == 0. */
+      if (is_gimple_assign (def_stmt)
+	  && gimple_assign_rhs_code (def_stmt) == BIT_IOR_EXPR)
+	{
+	  edge e = code == EQ_EXPR ? true_e : false_e;
+	  tree nlhs;
+
+	  nlhs = vn_valueize (gimple_assign_rhs1 (def_stmt));
+	  insert_predicates_for_cond (EQ_EXPR, nlhs, rhs, e, nullptr);
+
+	  nlhs = vn_valueize (gimple_assign_rhs2 (def_stmt));
+	  insert_predicates_for_cond (EQ_EXPR, nlhs, rhs, e, nullptr);
+	}
+    }
+}
+
 /* Main stmt worker for RPO VN, process BB.  */
 
 static unsigned
@@ -8073,6 +8159,16 @@ process_bb (rpo_elim &avail, basic_block bb,
 		val = vn_nary_op_lookup_pieces (2, gimple_cond_code (last),
 						boolean_type_node, ops,
 						&vnresult);
+		/* Got back a ssa name, then try looking up `val != 0`
+		   as it might have been recorded that way.  */
+		if (val && TREE_CODE (val) == SSA_NAME)
+		  {
+		    ops[0] = val;
+		    ops[1] = build_zero_cst (TREE_TYPE (val));
+		    val = vn_nary_op_lookup_pieces (2, NE_EXPR,
+						    boolean_type_node, ops,
+						    &vnresult);
+		  }
 		/* Did we get a predicated value?  */
 		if (! val && vnresult && vnresult->predicated_values)
 		  {
@@ -8098,45 +8194,13 @@ process_bb (rpo_elim &avail, basic_block bb,
 		edge true_e, false_e;
 		extract_true_false_edges_from_block (bb, &true_e, &false_e);
 		enum tree_code code = gimple_cond_code (last);
-		enum tree_code icode
-		  = invert_tree_comparison (code, HONOR_NANS (lhs));
-		tree ops[2];
-		ops[0] = lhs;
-		ops[1] = rhs;
 		if ((do_region && bitmap_bit_p (exit_bbs, true_e->dest->index))
 		    || !can_track_predicate_on_edge (true_e))
 		  true_e = NULL;
 		if ((do_region && bitmap_bit_p (exit_bbs, false_e->dest->index))
 		    || !can_track_predicate_on_edge (false_e))
 		  false_e = NULL;
-		if (true_e)
-		  vn_nary_op_insert_pieces_predicated
-		    (2, code, boolean_type_node, ops,
-		     boolean_true_node, 0, true_e);
-		if (false_e)
-		  vn_nary_op_insert_pieces_predicated
-		    (2, code, boolean_type_node, ops,
-		     boolean_false_node, 0, false_e);
-		if (icode != ERROR_MARK)
-		  {
-		    if (true_e)
-		      vn_nary_op_insert_pieces_predicated
-			(2, icode, boolean_type_node, ops,
-			 boolean_false_node, 0, true_e);
-		    if (false_e)
-		      vn_nary_op_insert_pieces_predicated
-			(2, icode, boolean_type_node, ops,
-			 boolean_true_node, 0, false_e);
-		  }
-		/* Relax for non-integers, inverted condition handled
-		   above.  */
-		if (INTEGRAL_TYPE_P (TREE_TYPE (lhs)))
-		  {
-		    if (true_e)
-		      insert_related_predicates_on_edge (code, ops, true_e);
-		    if (false_e)
-		      insert_related_predicates_on_edge (icode, ops, false_e);
-		  }
+		insert_predicates_for_cond (code, lhs, rhs, true_e, false_e);
 	      }
 	    break;
 	  }
