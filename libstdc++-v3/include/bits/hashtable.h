@@ -353,7 +353,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 		    "Functor used to map hash code to bucket index must be"
 		    " noexcept");
 
-      // To compute bucket index we also need _ExtractKey be non-throwing.
+      // To compute bucket index we also need _ExtractKey to be non-throwing.
       static_assert(is_nothrow_default_constructible<_ExtractKey>::value,
 		    "_ExtractKey must be nothrow default constructible");
       static_assert(noexcept(
@@ -893,9 +893,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       pair<__node_ptr, __hash_code>
       _M_compute_hash_code(__node_ptr __hint, const key_type& __k) const;
 
-      // Insert node __n with hash code __code, in bucket __bkt if no
-      // rehash (assumes no element with same key already present).
+      // Insert node __n with hash code __code, in bucket __bkt (or another
+      // bucket if rehashing is needed).
+      // Assumes no element with equivalent key is already present.
       // Takes ownership of __n if insertion succeeds, throws otherwise.
+      // __n_elt is an estimated number of elements we expect to insert,
+      // used as a hint for rehashing when inserting a range.
       iterator
       _M_insert_unique_node(size_type __bkt, __hash_code,
 			    __node_ptr __n, size_type __n_elt = 1);
@@ -929,25 +932,16 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	std::pair<iterator, bool>
 	_M_insert_unique(_Kt&&, _Arg&&, _NodeGenerator&);
 
-      template<typename _Kt>
-	key_type
-	_S_forward_key(_Kt&& __k)
-	{ return std::forward<_Kt>(__k); }
-
-      static const key_type&
-      _S_forward_key(const key_type& __k)
-      { return __k; }
-
-      static key_type&&
-      _S_forward_key(key_type&& __k)
-      { return std::move(__k); }
-
       template<typename _Arg, typename _NodeGenerator>
 	std::pair<iterator, bool>
 	_M_insert_unique_aux(_Arg&& __arg, _NodeGenerator& __node_gen)
 	{
+	  using _Kt = decltype(_ExtractKey{}(std::forward<_Arg>(__arg)));
+	  constexpr bool __is_key_type
+	    = is_same<__remove_cvref_t<_Kt>, key_type>::value;
+	  using _Fwd_key = __conditional_t<__is_key_type, _Kt&&, key_type>;
 	  return _M_insert_unique(
-	    _S_forward_key(_ExtractKey{}(std::forward<_Arg>(__arg))),
+	    static_cast<_Fwd_key>(_ExtractKey{}(std::forward<_Arg>(__arg))),
 	    std::forward<_Arg>(__arg), __node_gen);
 	}
 
@@ -956,10 +950,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	_M_insert(_Arg&& __arg, _NodeGenerator& __node_gen,
 		  true_type /* __uks */)
 	{
-	  using __to_value
-	    = __detail::_ConvertToValueType<_ExtractKey, value_type>;
+	  using __detail::_Identity;
+	  using _Vt = __conditional_t<is_same<_ExtractKey, _Identity>::value
+					|| __is_pair<__remove_cvref_t<_Arg>>,
+				      _Arg&&, value_type>;
 	  return _M_insert_unique_aux(
-	    __to_value{}(std::forward<_Arg>(__arg)), __node_gen);
+		   static_cast<_Vt>(std::forward<_Arg>(__arg)), __node_gen);
 	}
 
       template<typename _Arg, typename _NodeGenerator>
@@ -967,10 +963,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	_M_insert(_Arg&& __arg, _NodeGenerator& __node_gen,
 		  false_type __uks)
 	{
-	  using __to_value
-	    = __detail::_ConvertToValueType<_ExtractKey, value_type>;
-	  return _M_insert(cend(),
-	    __to_value{}(std::forward<_Arg>(__arg)), __node_gen, __uks);
+	  return _M_insert(cend(), std::forward<_Arg>(__arg),
+			   __node_gen, __uks);
 	}
 
       // Insert with hint, not used when keys are unique.
