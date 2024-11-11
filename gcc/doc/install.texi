@@ -3147,6 +3147,12 @@ Compiles GCC itself using HWAddress Sanitization in order to catch invalid
 memory accesses within the GCC code.  This option is only available on AArch64
 systems that are running Linux kernel version 5.4 or later.
 
+@item @samp{bootstrap-ubsan}
+Compiles GCC itself using Undefined Behavior Sanitization in order to catch
+undefined behavior within the GCC code.  Note that it does not abort on errors
+by default.  @code{UBSAN_OPTIONS} can be set to change this, like
+@samp{UBSAN_OPTIONS='abort_on_error=1:halt_on_error=1:print_summary=1:print_stacktrace=1'}.
+
 @end table
 
 @section Building a cross compiler
