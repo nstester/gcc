@@ -481,7 +481,7 @@
 	   (match_operand:<VPRED> 2 "register_operand" "Upl")
 	   (match_operand:SME_ZA_I 3 "aarch64_sve_ldff1_operand" "Utf")]
 	  SME_LD1))]
-  "TARGET_STREAMING_SME"
+  "TARGET_STREAMING"
   "ld1<Vesize>\t{ za%0<hv>.<Vetype>[%w1, 0] }, %2/z, %3"
 )
 
@@ -496,7 +496,7 @@
 	   (match_operand:<VPRED> 3 "register_operand" "Upl")
 	   (match_operand:SME_ZA_I 4 "aarch64_sve_ldff1_operand" "Utf")]
 	  SME_LD1))]
-  "TARGET_STREAMING_SME
+  "TARGET_STREAMING
    && UINTVAL (operands[2]) < 128 / <elem_bits>"
   "ld1<Vesize>\t{ za%0<hv>.<Vetype>[%w1, %2] }, %3/z, %4"
 )
@@ -583,7 +583,7 @@
 	   (match_operand:SI 2 "register_operand" "Ucj")
 	   (match_operand:<VPRED> 3 "register_operand" "Upl")]
 	  SME_ST1))]
-  "TARGET_STREAMING_SME"
+  "TARGET_STREAMING"
   "st1<Vesize>\t{ za%1<hv>.<Vetype>[%w2, 0] }, %3, %0"
 )
 
@@ -598,7 +598,7 @@
 		    (match_operand:SI 3 "const_int_operand"))
 	   (match_operand:<VPRED> 4 "register_operand" "Upl")]
 	  SME_ST1))]
-  "TARGET_STREAMING_SME
+  "TARGET_STREAMING
    && UINTVAL (operands[3]) < 128 / <elem_bits>"
   "st1<Vesize>\t{ za%1<hv>.<Vetype>[%w2, %3] }, %4, %0"
 )
@@ -663,7 +663,7 @@
 	   (match_operand:DI 3 "const_int_operand")
 	   (match_operand:SI 4 "register_operand" "Ucj")]
 	  SME_READ))]
-  "TARGET_STREAMING_SME"
+  "TARGET_STREAMING"
   "mova\t%0.<Vetype>, %2/m, za%3<hv>.<Vetype>[%w4, 0]"
 )
 
@@ -678,7 +678,7 @@
 	   (plus:SI (match_operand:SI 4 "register_operand" "Ucj")
 		    (match_operand:SI 5 "const_int_operand"))]
 	  SME_READ))]
-  "TARGET_STREAMING_SME
+  "TARGET_STREAMING
    && UINTVAL (operands[5]) < 128 / <elem_bits>"
   "mova\t%0.<Vetype>, %2/m, za%3<hv>.<Vetype>[%w4, %5]"
 )
@@ -693,7 +693,7 @@
 	   (match_operand:DI 3 "const_int_operand")
 	   (match_operand:SI 4 "register_operand" "Ucj")]
 	  SME_READ))]
-  "TARGET_STREAMING_SME"
+  "TARGET_STREAMING"
   "mova\t%0.q, %2/m, za%3<hv>.q[%w4, 0]"
 )
 
@@ -707,7 +707,7 @@
 	   (match_operand:<VPRED> 2 "register_operand" "Upl")
 	   (match_operand:SVE_FULL 3 "register_operand" "w")]
 	  SME_WRITE))]
-  "TARGET_STREAMING_SME"
+  "TARGET_STREAMING"
   "mova\tza%0<hv>.<Vetype>[%w1, 0], %2/m, %3.<Vetype>"
 )
 
@@ -722,7 +722,7 @@
 	   (match_operand:<VPRED> 3 "register_operand" "Upl")
 	   (match_operand:SVE_FULL 4 "register_operand" "w")]
 	  SME_WRITE))]
-  "TARGET_STREAMING_SME
+  "TARGET_STREAMING
    && UINTVAL (operands[2]) < 128 / <elem_bits>"
   "mova\tza%0<hv>.<Vetype>[%w1, %2], %3/m, %4.<Vetype>"
 )
@@ -737,7 +737,7 @@
 	   (match_operand:VNx2BI 2 "register_operand" "Upl")
 	   (match_operand:SVE_FULL 3 "register_operand" "w")]
 	  SME_WRITE))]
-  "TARGET_STREAMING_SME"
+  "TARGET_STREAMING"
   "mova\tza%0<hv>.q[%w1, 0], %2/m, %3.q"
 )
 
@@ -917,7 +917,7 @@
 	   (match_operand:<VPRED> 2 "register_operand" "Upl")
 	   (match_operand:SME_ZA_SDI 3 "register_operand" "w")]
 	  SME_BINARY_SDI))]
-  "TARGET_STREAMING_SME"
+  "TARGET_STREAMING"
   "<optab>\tza%0.<Vetype>, %1/m, %2/m, %3.<Vetype>"
 )
 
@@ -1334,7 +1334,7 @@
 	   (match_operand:VNx8HI_ONLY 1 "register_operand" "w")
 	   (match_operand:VNx8HI_ONLY 2 "register_operand" "x")]
 	  SME_INT_TERNARY_SLICE))]
-  "TARGET_SME2 && TARGET_SME_I16I64 && TARGET_STREAMING_SME"
+  "TARGET_STREAMING_SME2 && TARGET_SME_I16I64"
   "<optab>ll\tza.d[%w0, 0:3], %1.h, %2.h"
 )
 
@@ -1348,7 +1348,7 @@
 	   (match_operand:VNx8HI_ONLY 2 "register_operand" "w")
 	   (match_operand:VNx8HI_ONLY 3 "register_operand" "x")]
 	  SME_INT_TERNARY_SLICE))]
-  "TARGET_SME2 && TARGET_SME_I16I64 && TARGET_STREAMING_SME"
+  "TARGET_STREAMING_SME2 && TARGET_SME_I16I64"
   {
     operands[4] = GEN_INT (INTVAL (operands[1]) + 3);
     return "<optab>ll\tza.d[%w0, %1:%4], %2.h, %3.h";
@@ -1364,7 +1364,7 @@
 	   (match_operand:SME_ZA_HIx24 1 "aligned_register_operand" "Uw<vector_count>")
 	   (match_operand:SME_ZA_HIx24 2 "aligned_register_operand" "Uw<vector_count>")]
 	  SME_INT_TERNARY_SLICE))]
-  "TARGET_SME2 && TARGET_SME_I16I64 && TARGET_STREAMING_SME"
+  "TARGET_STREAMING_SME2 && TARGET_SME_I16I64"
   "<optab>ll\tza.d[%w0, 0:3, vgx<vector_count>], %1, %2"
 )
 
@@ -1378,7 +1378,7 @@
 	   (match_operand:SME_ZA_HIx24 2 "aligned_register_operand" "Uw<vector_count>")
 	   (match_operand:SME_ZA_HIx24 3 "aligned_register_operand" "Uw<vector_count>")]
 	  SME_INT_TERNARY_SLICE))]
-  "TARGET_SME2 && TARGET_SME_I16I64 && TARGET_STREAMING_SME"
+  "TARGET_STREAMING_SME2 && TARGET_SME_I16I64"
   {
     operands[4] = GEN_INT (INTVAL (operands[1]) + 3);
     return "<optab>ll\tza.d[%w0, %1:%4, vgx<vector_count>], %2, %3";
@@ -1395,7 +1395,7 @@
 	   (vec_duplicate:SME_ZA_HIx24
 	     (match_operand:<SME_ZA_HIx24:VSINGLE> 2 "register_operand" "x"))]
 	  SME_INT_TERNARY_SLICE))]
-  "TARGET_SME2 && TARGET_SME_I16I64 && TARGET_STREAMING_SME"
+  "TARGET_STREAMING_SME2 && TARGET_SME_I16I64"
   "<optab>ll\tza.d[%w0, 0:3, vgx<vector_count>], %1, %2.h"
 )
 
@@ -1410,7 +1410,7 @@
 	   (vec_duplicate:SME_ZA_HIx24
 	     (match_operand:<SME_ZA_HIx24:VSINGLE> 3 "register_operand" "x"))]
 	  SME_INT_TERNARY_SLICE))]
-  "TARGET_SME2 && TARGET_SME_I16I64 && TARGET_STREAMING_SME"
+  "TARGET_STREAMING_SME2 && TARGET_SME_I16I64"
   {
     operands[4] = GEN_INT (INTVAL (operands[1]) + 3);
     return "<optab>ll\tza.d[%w0, %1:%4, vgx<vector_count>], %2, %3.h";
@@ -1429,7 +1429,7 @@
 	      (match_operand:SI 3 "const_int_operand")]
 	     UNSPEC_SVE_LANE_SELECT)]
 	  SME_INT_TERNARY_SLICE))]
-  "TARGET_SME2 && TARGET_SME_I16I64 && TARGET_STREAMING_SME"
+  "TARGET_STREAMING_SME2 && TARGET_SME_I16I64"
   "<optab>ll\tza.d[%w0, 0:3<vg_modifier>], %1<z_suffix>, %2.h[%3]"
 )
 
@@ -1446,7 +1446,7 @@
 	      (match_operand:SI 4 "const_int_operand")]
 	     UNSPEC_SVE_LANE_SELECT)]
 	  SME_INT_TERNARY_SLICE))]
-  "TARGET_SME2 && TARGET_SME_I16I64 && TARGET_STREAMING_SME"
+  "TARGET_STREAMING_SME2 && TARGET_SME_I16I64"
   {
     operands[5] = GEN_INT (INTVAL (operands[1]) + 3);
     return "<optab>ll\tza.d[%w0, %1:%5<vg_modifier>], %2<z_suffix>, %3.h[%4]";
@@ -1479,7 +1479,7 @@
 	   (match_operand:VNx16QI_ONLY 3 "register_operand" "w")
 	   (match_operand:VNx16QI_ONLY 4 "register_operand" "w")]
 	  SME_INT_MOP))]
-  "TARGET_STREAMING_SME"
+  "TARGET_STREAMING"
   "<optab>\tza%0.s, %1/m, %2/m, %3.b, %4.b"
 )
 
@@ -1494,7 +1494,7 @@
 	   (match_operand:VNx8HI_ONLY 3 "register_operand" "w")
 	   (match_operand:VNx8HI_ONLY 4 "register_operand" "w")]
 	  SME_INT_MOP))]
-  "TARGET_STREAMING_SME && TARGET_SME_I16I64"
+  "TARGET_STREAMING && TARGET_SME_I16I64"
   "<optab>\tza%0.d, %1/m, %2/m, %3.h, %4.h"
 )
 
@@ -1642,8 +1642,7 @@
 	   (match_operand:SME_ZA_SDFx24 1 "aligned_register_operand" "Uw<vector_count>")
 	   (match_operand:SME_ZA_SDFx24 2 "aligned_register_operand" "Uw<vector_count>")]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_SME2
-   && TARGET_STREAMING_SME
+  "TARGET_STREAMING_SME2
    && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
   "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, 0, vgx<vector_count>], %1, %2"
 )
@@ -1658,8 +1657,7 @@
 	   (match_operand:SME_ZA_SDFx24 2 "aligned_register_operand" "Uw<vector_count>")
 	   (match_operand:SME_ZA_SDFx24 3 "aligned_register_operand" "Uw<vector_count>")]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_SME2
-   && TARGET_STREAMING_SME
+  "TARGET_STREAMING_SME2
    && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
   "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, %1, vgx<vector_count>], %2, %3"
 )
@@ -1674,8 +1672,7 @@
 	   (vec_duplicate:SME_ZA_SDFx24
 	     (match_operand:<VSINGLE> 2 "register_operand" "x"))]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_SME2
-   && TARGET_STREAMING_SME
+  "TARGET_STREAMING_SME2
    && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
   "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, 0, vgx<vector_count>], %1, %2.<SME_ZA_SDFx24:Vetype>"
 )
@@ -1691,8 +1688,7 @@
 	   (vec_duplicate:SME_ZA_SDFx24
 	     (match_operand:<VSINGLE> 3 "register_operand" "x"))]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_SME2
-   && TARGET_STREAMING_SME
+  "TARGET_STREAMING_SME2
    && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
   "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, %1, vgx<vector_count>], %2, %3.<SME_ZA_SDFx24:Vetype>"
 )
@@ -1709,8 +1705,7 @@
 	      (match_operand:SI 3 "const_int_operand")]
 	     UNSPEC_SVE_LANE_SELECT)]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_SME2
-   && TARGET_STREAMING_SME
+  "TARGET_STREAMING_SME2
    && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
   "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, 0, vgx<vector_count>], %1, %2.<SME_ZA_SDFx24:Vetype>[%3]"
 )
@@ -1728,8 +1723,7 @@
 	      (match_operand:SI 4 "const_int_operand")]
 	     UNSPEC_SVE_LANE_SELECT)]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_SME2
-   && TARGET_STREAMING_SME
+  "TARGET_STREAMING_SME2
    && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
   "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, %1, vgx<vector_count>], %2, %3.<SME_ZA_SDFx24:Vetype>[%4]"
 )
@@ -1893,7 +1887,7 @@
 	   (match_operand:SME_MOP_HSDF 3 "register_operand" "w")
 	   (match_operand:SME_MOP_HSDF 4 "register_operand" "w")]
 	  SME_FP_MOP))]
-  "TARGET_STREAMING_SME
+  "TARGET_STREAMING
    && (<SME_ZA_SDF_I:elem_bits> == 32) == (<SME_MOP_HSDF:elem_bits> <= 32)"
   "<b><optab>\tza%0.<SME_ZA_SDF_I:Vetype>, %1/m, %2/m, %3.<SME_MOP_HSDF:Vetype>, %4.<SME_MOP_HSDF:Vetype>"
 )

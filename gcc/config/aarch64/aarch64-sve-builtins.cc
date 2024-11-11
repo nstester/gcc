@@ -231,12 +231,11 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
 #define TYPES_all_arith(S, D) \
   TYPES_all_float (S, D), TYPES_all_integer (S, D)
 
-/*     _bf16
-	_f16 _f32 _f64
-   _s8  _s16 _s32 _s64
-   _u8  _u16 _u32 _u64.  */
 #define TYPES_all_data(S, D) \
-  S (bf16), TYPES_all_arith (S, D)
+  TYPES_b_data (S, D), \
+  TYPES_h_data (S, D), \
+  TYPES_s_data (S, D), \
+  TYPES_d_data (S, D)
 
 /* _b only.  */
 #define TYPES_b(S, D) \
@@ -254,6 +253,11 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
    _u8.  */
 #define TYPES_b_integer(S, D) \
   S (s8), TYPES_b_unsigned (S, D)
+
+/* _s8
+   _u8.  */
+#define TYPES_b_data(S, D) \
+  TYPES_b_integer (S, D)
 
 /* _s8 _s16
    _u8 _u16.  */
@@ -277,12 +281,10 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
 #define TYPES_bhs_integer(S, D) \
   TYPES_bhs_signed (S, D), TYPES_bhs_unsigned (S, D)
 
-/*      _bf16
-	 _f16  _f32
-    _s8  _s16  _s32
-    _u8  _u16  _u32.  */
 #define TYPES_bhs_data(S, D) \
-  S (bf16), S (f16), S (f32), TYPES_bhs_integer (S, D)
+  TYPES_b_data (S, D), \
+  TYPES_h_data (S, D), \
+  TYPES_s_data (S, D)
 
 /* _s16_s8  _s32_s16  _s64_s32
    _u16_u8  _u32_u16  _u64_u32.  */
@@ -294,6 +296,13 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
    _u16.  */
 #define TYPES_h_integer(S, D) \
   S (s16), S (u16)
+
+/* _bf16
+   _f16
+   _s16
+   _u16.  */
+#define TYPES_h_data(S, D) \
+  S (bf16), S (f16), TYPES_h_integer (S, D)
 
 /* _s16 _s32.  */
 #define TYPES_hs_signed(S, D) \
@@ -308,12 +317,9 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
 #define TYPES_hs_float(S, D) \
   S (f16), S (f32)
 
-/* _bf16
-    _f16  _f32
-    _s16  _s32
-    _u16  _u32.  */
 #define TYPES_hs_data(S, D) \
-  S (bf16), S (f16), S (f32), TYPES_hs_integer (S, D)
+  TYPES_h_data (S, D), \
+  TYPES_s_data (S, D)
 
 /* _u16 _u64.  */
 #define TYPES_hd_unsigned(S, D) \
@@ -327,6 +333,11 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
    _u16 _u32 _u64.  */
 #define TYPES_hsd_integer(S, D) \
   TYPES_hsd_signed (S, D), S (u16), S (u32), S (u64)
+
+#define TYPES_hsd_data(S, D) \
+  TYPES_h_data (S, D), \
+  TYPES_s_data (S, D), \
+  TYPES_d_data (S, D)
 
 /* _f32.  */
 #define TYPES_s_float(S, D) \
@@ -352,9 +363,16 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
 #define TYPES_s_unsigned(S, D) \
   S (u32)
 
-/* _s32 _u32.  */
+/* _s32
+   _u32.  */
 #define TYPES_s_integer(S, D) \
   TYPES_s_signed (S, D), TYPES_s_unsigned (S, D)
+
+/* _f32
+   _s32
+   _u32.  */
+#define TYPES_s_data(S, D) \
+  TYPES_s_float (S, D), TYPES_s_integer (S, D)
 
 /* _s32 _s64.  */
 #define TYPES_sd_signed(S, D) \
@@ -369,11 +387,9 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
 #define TYPES_sd_integer(S, D) \
   TYPES_sd_signed (S, D), TYPES_sd_unsigned (S, D)
 
-/* _f32 _f64
-   _s32 _s64
-   _u32 _u64.  */
 #define TYPES_sd_data(S, D) \
-  S (f32), S (f64), TYPES_sd_integer (S, D)
+  TYPES_s_data (S, D), \
+  TYPES_d_data (S, D)
 
 /* _f16 _f32 _f64
 	_s32 _s64
@@ -731,12 +747,14 @@ DEF_SVE_TYPES_ARRAY (hs_data);
 DEF_SVE_TYPES_ARRAY (hd_unsigned);
 DEF_SVE_TYPES_ARRAY (hsd_signed);
 DEF_SVE_TYPES_ARRAY (hsd_integer);
+DEF_SVE_TYPES_ARRAY (hsd_data);
 DEF_SVE_TYPES_ARRAY (s_float);
 DEF_SVE_TYPES_ARRAY (s_float_hsd_integer);
 DEF_SVE_TYPES_ARRAY (s_float_sd_integer);
 DEF_SVE_TYPES_ARRAY (s_signed);
 DEF_SVE_TYPES_ARRAY (s_unsigned);
 DEF_SVE_TYPES_ARRAY (s_integer);
+DEF_SVE_TYPES_ARRAY (s_data);
 DEF_SVE_TYPES_ARRAY (sd_signed);
 DEF_SVE_TYPES_ARRAY (sd_unsigned);
 DEF_SVE_TYPES_ARRAY (sd_integer);
@@ -1163,6 +1181,21 @@ aarch64_const_binop (enum tree_code code, tree arg1, tree arg2)
 			     TREE_OVERFLOW (arg1) | TREE_OVERFLOW (arg2));
     }
   return NULL_TREE;
+}
+
+/* Return the type that a vector base should have in a gather load or
+   scatter store involving vectors of type TYPE.  In an extending load,
+   TYPE is the result of the extension; in a truncating store, it is the
+   input to the truncation.
+
+   Index vectors have the same width as base vectors, but can be either
+   signed or unsigned.  */
+type_suffix_index
+function_shape::vector_base_type (type_suffix_index type) const
+{
+  unsigned int required_bits = type_suffixes[type].element_bits;
+  gcc_assert (required_bits == 32 || required_bits == 64);
+  return required_bits == 32 ? TYPE_SUFFIX_u32 : TYPE_SUFFIX_u64;
 }
 
 /* Return a hash code for a function_instance.  */
@@ -1972,10 +2005,12 @@ function_resolver::infer_64bit_scalar_integer_pair (unsigned int argno)
    corresponding type suffix.  Return that type suffix on success,
    otherwise report an error and return NUM_TYPE_SUFFIXES.
    GATHER_SCATTER_P is true if the function is a gather/scatter
-   operation, and so requires a pointer to 32-bit or 64-bit data.  */
+   operation.  RESTRICTIONS describes any additional restrictions
+   on the target type.  */
 type_suffix_index
 function_resolver::infer_pointer_type (unsigned int argno,
-				       bool gather_scatter_p)
+				       bool gather_scatter_p,
+				       target_type_restrictions restrictions)
 {
   tree actual = get_argument_type (argno);
   if (actual == error_mark_node)
@@ -2001,11 +2036,20 @@ function_resolver::infer_pointer_type (unsigned int argno,
       return NUM_TYPE_SUFFIXES;
     }
   unsigned int bits = type_suffixes[type].element_bits;
-  if (gather_scatter_p && bits != 32 && bits != 64)
+  if (restrictions == TARGET_32_64 && bits != 32 && bits != 64)
     {
       error_at (location, "passing %qT to argument %d of %qE, which"
 		" expects a pointer to 32-bit or 64-bit elements",
 		actual, argno + 1, fndecl);
+      return NUM_TYPE_SUFFIXES;
+    }
+  if (displacement_units () == UNITS_elements && bits == 8)
+    {
+      error_at (location, "passing %qT to argument %d of %qE, which"
+		" expects the data to be 16 bits or wider",
+		actual, argno + 1, fndecl);
+      inform (location, "use the %<offset%> rather than %<index%> form"
+	      " for 8-bit data");
       return NUM_TYPE_SUFFIXES;
     }
 
@@ -2739,7 +2783,8 @@ function_resolver::resolve_sv_displacement (unsigned int argno,
       return mode;
     }
 
-  unsigned int required_bits = type_suffixes[type].element_bits;
+  auto base_type = shape->vector_base_type (type);
+  unsigned int required_bits = type_suffixes[base_type].element_bits;
   if (required_bits == 32
       && displacement_units () == UNITS_elements
       && !lookup_form (MODE_s32index, type)
@@ -2798,7 +2843,8 @@ function_resolver::resolve_sv_displacement (unsigned int argno,
 	}
     }
 
-  if (type_suffix_ids[0] == NUM_TYPE_SUFFIXES)
+  if (type_suffix_ids[0] == NUM_TYPE_SUFFIXES
+      && shape->vector_base_type (TYPE_SUFFIX_u32) == TYPE_SUFFIX_u32)
     {
       /* TYPE has been inferred rather than specified by the user,
 	 so mention it in the error messages.  */
@@ -2889,11 +2935,7 @@ function_resolver::resolve_gather_address (unsigned int argno,
 	return MODE_none;
 
       /* Check whether the type is the right one.  */
-      unsigned int required_bits = type_suffixes[type].element_bits;
-      gcc_assert (required_bits == 32 || required_bits == 64);
-      type_suffix_index required_type = (required_bits == 32
-					 ? TYPE_SUFFIX_u32
-					 : TYPE_SUFFIX_u64);
+      auto required_type = shape->vector_base_type (type);
       if (required_type != base_type)
 	{
 	  error_at (location, "passing %qT to argument %d of %qE,"
@@ -4672,7 +4714,7 @@ handle_arm_sve_h (bool function_nulls_p)
       register_vector_type (type);
       if (type != VECTOR_TYPE_svcount_t)
 	for (unsigned int count = 2; count <= MAX_TUPLE_SIZE; ++count)
-	  if (type != VECTOR_TYPE_svbool_t || count == 2)
+	  if (type != VECTOR_TYPE_svbool_t || count == 2 || count == 4)
 	    register_tuple_type (count, type);
     }
 

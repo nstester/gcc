@@ -1074,9 +1074,9 @@
 ;; ---- Moves of multiple predicates
 ;; -------------------------------------------------------------------------
 
-(define_insn_and_split "movvnx32bi"
-  [(set (match_operand:VNx32BI 0 "nonimmediate_operand")
-	(match_operand:VNx32BI 1 "aarch64_mov_operand"))]
+(define_insn_and_split "mov<mode>"
+  [(set (match_operand:SVE_STRUCT_BI 0 "nonimmediate_operand")
+	(match_operand:SVE_STRUCT_BI 1 "aarch64_mov_operand"))]
   "TARGET_SVE"
   {@ [ cons: =0 , 1   ]
      [ Upa      , Upa ] #
@@ -1086,7 +1086,7 @@
   "&& reload_completed"
   [(const_int 0)]
   {
-    aarch64_split_double_move (operands[0], operands[1], VNx16BImode);
+    aarch64_split_move (operands[0], operands[1], VNx16BImode);
     DONE;
   }
 )
@@ -7222,7 +7222,7 @@
 	  (match_operand:SVE_FULL_SDI 4 "register_operand")))]
   "TARGET_SVE
    && (<SVE_FULL_SDI:elem_bits> == <SVE_FULL_BHI:elem_bits> * 4
-       || (TARGET_STREAMING_SME2
+       || (TARGET_SVE2p1_OR_SME2
 	   && <SVE_FULL_SDI:elem_bits> == 32
 	   && <SVE_FULL_BHI:elem_bits> == 16))"
   {@ [ cons: =0 , 1 , 2                           , 4 ; attrs: movprfx ]
@@ -7839,8 +7839,8 @@
 ;; - BFDOT (BF16)
 ;; - BFMLALB (BF16)
 ;; - BFMLALT (BF16)
-;; - BFMLSLB (SME2)
-;; - BFMLSLT (SME2)
+;; - BFMLSLB (SVE2p1, SME2)
+;; - BFMLSLT (SVE2p1, SME2)
 ;; - BFMMLA (BF16)
 ;; -------------------------------------------------------------------------
 
@@ -7851,7 +7851,7 @@
 	   (match_operand:VNx8BF 2 "register_operand")
 	   (match_operand:VNx8BF 3 "register_operand")]
 	  SVE_BFLOAT_TERNARY_LONG))]
-  "TARGET_SVE_BF16"
+  ""
   {@ [ cons: =0 , 1 , 2 , 3 ; attrs: movprfx ]
      [ w        , 0 , w , w ; *              ] <sve_fp_op>\t%0.s, %2.h, %3.h
      [ ?&w      , w , w , w ; yes            ] movprfx\t%0, %1\;<sve_fp_op>\t%0.s, %2.h, %3.h
@@ -7867,7 +7867,7 @@
 	   (match_operand:VNx8BF 3 "register_operand")
 	   (match_operand:SI 4 "const_int_operand")]
 	  SVE_BFLOAT_TERNARY_LONG_LANE))]
-  "TARGET_SVE_BF16"
+  ""
   {@ [ cons: =0 , 1 , 2 , 3 ; attrs: movprfx ]
      [ w        , 0 , w , y ; *              ] <sve_fp_op>\t%0.s, %2.h, %3.h[%4]
      [ ?&w      , w , w , y ; yes            ] movprfx\t%0, %1\;<sve_fp_op>\t%0.s, %2.h, %3.h[%4]
@@ -9018,6 +9018,7 @@
 ;; -------------------------------------------------------------------------
 ;; Includes:
 ;; - TBL
+;; - TBLQ (SVE2p1)
 ;; -------------------------------------------------------------------------
 
 (define_expand "vec_perm<mode>"
@@ -9033,14 +9034,14 @@
   }
 )
 
-(define_insn "@aarch64_sve_tbl<mode>"
+(define_insn "@aarch64_sve_<perm_insn><mode>"
   [(set (match_operand:SVE_FULL 0 "register_operand" "=w")
 	(unspec:SVE_FULL
 	  [(match_operand:SVE_FULL 1 "register_operand" "w")
 	   (match_operand:<V_INT_EQUIV> 2 "register_operand" "w")]
-	  UNSPEC_TBL))]
+	  SVE_TBL))]
   "TARGET_SVE"
-  "tbl\t%0.<Vetype>, %1.<Vetype>, %2.<Vetype>"
+  "<perm_insn>\t%0.<Vetype>, {%1.<Vetype>}, %2.<Vetype>"
 )
 
 ;; -------------------------------------------------------------------------
@@ -9129,9 +9130,13 @@
 ;; - TRN1
 ;; - TRN2
 ;; - UZP1
+;; - UZPQ1 (SVE2p1)
 ;; - UZP2
+;; - UZPQ2 (SVE2p1)
 ;; - ZIP1
+;; - ZIPQ1 (SVE2p1)
 ;; - ZIP2
+;; - ZIPQ2 (SVE2p1)
 ;; -------------------------------------------------------------------------
 
 ;; Like EXT, but start at the first active element.
@@ -9156,7 +9161,7 @@
 	(unspec:SVE_ALL
 	  [(match_operand:SVE_ALL 1 "register_operand" "w")
 	   (match_operand:SVE_ALL 2 "register_operand" "w")]
-	  PERMUTE))]
+	  SVE_PERMUTE))]
   "TARGET_SVE"
   "<perm_insn>\t%0.<Vctype>, %1.<Vctype>, %2.<Vctype>"
 )
