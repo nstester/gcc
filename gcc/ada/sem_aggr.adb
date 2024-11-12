@@ -253,6 +253,7 @@ package body Sem_Aggr is
       Index          : Node_Id;
       Index_Constr   : Node_Id;
       Component_Typ  : Entity_Id;
+      Iterated       : Boolean;
       Others_Allowed : Boolean) return Boolean;
    --  This procedure performs the semantic checks for an array aggregate.
    --  True is returned if the aggregate resolution succeeds.
@@ -277,6 +278,9 @@ package body Sem_Aggr is
    --    there is no applicable index constraint and this node is set to Index.
    --
    --    Component_Typ is the array component type.
+   --
+   --    Iterated indicates whether the aggregate appears in the context of an
+   --    iterated association for a parent aggregate.
    --
    --    Others_Allowed indicates whether an others choice is allowed
    --    in the context where the top-level aggregate appeared.
@@ -1063,7 +1067,7 @@ package body Sem_Aggr is
 
    function Is_Null_Aggregate (N : Node_Id) return Boolean is
    begin
-      return Ada_Version >= Ada_2022
+      return Nkind (N) = N_Aggregate
         and then Is_Homogeneous_Aggregate (N)
         and then Is_Empty_List (Expressions (N))
         and then Is_Empty_List (Component_Associations (N));
@@ -1499,6 +1503,7 @@ package body Sem_Aggr is
                     Index          => First_Index (Aggr_Typ),
                     Index_Constr   => First_Index (Typ),
                     Component_Typ  => Component_Type (Typ),
+                    Iterated       => False,
                     Others_Allowed => True);
             else
                Aggr_Resolved :=
@@ -1507,6 +1512,7 @@ package body Sem_Aggr is
                     Index          => First_Index (Aggr_Typ),
                     Index_Constr   => First_Index (Aggr_Typ),
                     Component_Typ  => Component_Type (Typ),
+                    Iterated       => False,
                     Others_Allowed => False);
             end if;
 
@@ -1575,6 +1581,7 @@ package body Sem_Aggr is
       Index          : Node_Id;
       Index_Constr   : Node_Id;
       Component_Typ  : Entity_Id;
+      Iterated       : Boolean;
       Others_Allowed : Boolean) return Boolean
    is
       Loc : constant Source_Ptr := Sloc (N);
@@ -1633,18 +1640,15 @@ package body Sem_Aggr is
       --  cause raising CE at runtime.
 
       function Resolve_Aggr_Expr
-        (Expr        : Node_Id;
-         Single_Elmt : Boolean) return Boolean;
+        (Expr          : Node_Id;
+         Iterated_Elmt : Boolean := False;
+         Single_Elmt   : Boolean := True) return Boolean;
       --  Resolves aggregate expression Expr. Returns False if resolution
       --  fails. If Single_Elmt is set to False, the expression Expr may be
       --  used to initialize several array aggregate elements (this can happen
       --  for discrete choices such as "L .. H => Expr" or the OTHERS choice).
       --  In this event we do not resolve Expr unless expansion is disabled.
       --  To know why, see the DELAYED COMPONENT RESOLUTION note above.
-      --
-      --  NOTE: In the case of "... => <>", we pass the N_Component_Association
-      --  node as Expr, since there is no Expression and we need a Sloc for the
-      --  error message.
 
       function Resolve_Iterated_Component_Association
         (N         : Node_Id;
@@ -1966,9 +1970,13 @@ package body Sem_Aggr is
       -----------------------
 
       function Resolve_Aggr_Expr
-        (Expr        : Node_Id;
-         Single_Elmt : Boolean) return Boolean
+        (Expr          : Node_Id;
+         Iterated_Elmt : Boolean := False;
+         Single_Elmt   : Boolean := True) return Boolean
       is
+         Iterated_Expr  : constant Boolean := Iterated_Elmt or else Iterated;
+         --  True if the Expr is in an iteration context, possibly nested
+
          Nxt_Ind        : constant Node_Id := Next_Index (Index);
          Nxt_Ind_Constr : constant Node_Id := Next_Index (Index_Constr);
          --  Index is the current index corresponding to the expression
@@ -2027,43 +2035,32 @@ package body Sem_Aggr is
                end if;
             end if;
 
-            --  If it's "... => <>", nothing to resolve
-
-            if Nkind (Expr) = N_Component_Association then
-               pragma Assert (Box_Present (Expr));
-               return Success;
-            end if;
-
             --  Ada 2005 (AI-231): Propagate the type to the nested aggregate.
             --  Required to check the null-exclusion attribute (if present).
             --  This value may be overridden later on.
 
             Set_Etype (Expr, Etype (N));
 
-            Resolution_OK := Resolve_Array_Aggregate
-              (Expr, Nxt_Ind, Nxt_Ind_Constr, Component_Typ, Others_Allowed);
+            Resolution_OK :=
+              Resolve_Array_Aggregate
+                (Expr, Nxt_Ind, Nxt_Ind_Constr, Component_Typ,
+                 Iterated => Iterated_Expr, Others_Allowed => Others_Allowed);
 
             if Resolution_OK = Failure then
                return Failure;
             end if;
+
          else
-            --  If it's "... => <>", nothing to resolve
-
-            if Nkind (Expr) = N_Component_Association then
-               pragma Assert (Box_Present (Expr));
-               return Success;
-            end if;
-
             --  Do not resolve the expressions of discrete or others choices
-            --  unless the expression covers a single component, or the
-            --  expander is inactive.
+            --  unless the expression covers a single component, or else the
+            --  expander is inactive or this is a spec expression.
 
             --  In SPARK mode, expressions that can perform side effects will
             --  be recognized by the gnat2why back-end, and the whole
             --  subprogram will be ignored. So semantic analysis can be
             --  performed safely.
 
-            if Single_Elmt
+            if (Single_Elmt and then not Iterated_Expr)
               or else not Expander_Active
               or else In_Spec_Expression
             then
@@ -2072,6 +2069,20 @@ package body Sem_Aggr is
                Check_Non_Static_Context (Expr);
                Aggregate_Constraint_Checks (Expr, Component_Typ);
                Check_Unset_Reference (Expr);
+
+            --  Analyze a copy of the expression, to verify legality. We use
+            --  a copy because the expression will be analyzed anew when the
+            --  enclosing aggregate is expanded, and the construct is rewritten
+            --  as a loop with a new index variable.
+
+            elsif Iterated_Expr then
+               declare
+                  New_Expr : constant Node_Id := Copy_Separate_Tree (Expr);
+
+               begin
+                  Set_Parent (New_Expr, Parent (Expr));
+                  Preanalyze_And_Resolve (New_Expr, Component_Typ);
+               end;
             end if;
          end if;
 
@@ -2212,23 +2223,15 @@ package body Sem_Aggr is
 
          --  Analyze expression without expansion, to verify legality.
          --  When generating code, we then remove references to the index
-         --  variable, because the expression will be analyzed anew after
-         --  rewritting as a loop with a new index variable; when not
-         --  generating code we leave the analyzed expression as it is.
+         --  variable, because the expression will be analyzed anew when the
+         --  enclosing aggregate is expanded, and the construct is rewritten
+         --  as a loop with a new index variable; when not generating code we
+         --  leave the analyzed expression as it is.
 
-         Resolution_OK := Resolve_Aggr_Expr (Expr, Single_Elmt => False);
+         Resolution_OK := Resolve_Aggr_Expr (Expr, Iterated_Elmt => True);
 
          if Operating_Mode /= Check_Semantics then
             Remove_References (Expr);
-            declare
-               Loop_Action : Node_Id;
-            begin
-               Loop_Action := First (Loop_Actions (N));
-               while Present (Loop_Action) loop
-                  Remove_References (Loop_Action);
-                  Next (Loop_Action);
-               end loop;
-            end;
          end if;
 
          End_Scope;
@@ -3074,15 +3077,13 @@ package body Sem_Aggr is
 
                if Box_Present (Assoc) then
 
-                  --  Ada 2005 (AI-287): In case of default initialization of a
-                  --  component the expander will generate calls to the
-                  --  corresponding initialization subprogram. We need to call
-                  --  Resolve_Aggr_Expr to check the rules about
-                  --  dimensionality.
+                  --  Ada 2005 (AI-287): In case of default initialization of
+                  --  a component, the expander will generate calls to the
+                  --  corresponding initialization subprogram. Check that we
+                  --  have a single dimension.
 
-                  if not Resolve_Aggr_Expr
-                           (Assoc, Single_Elmt => Single_Choice)
-                  then
+                  if Present (Next_Index (Index)) then
+                     Error_Msg_N ("nested array aggregate expected", Assoc);
                      return Failure;
                   end if;
 
@@ -3582,17 +3583,19 @@ package body Sem_Aggr is
                Check_Can_Never_Be_Null (Etype (N), Expr);
             end if;
 
-            if not Resolve_Aggr_Expr (Expr, Single_Elmt => True) then
+            if not Resolve_Aggr_Expr (Expr) then
                return Failure;
             end if;
 
             --  Check incorrect use of dynamically tagged expression
 
-            if Is_Tagged_Type (Etype (Expr)) then
-               Check_Dynamically_Tagged_Expression
-                 (Expr => Expr,
-                  Typ  => Component_Type (Etype (N)),
-                  Related_Nod => N);
+            if not Iterated then
+               if Is_Tagged_Type (Etype (Expr)) then
+                  Check_Dynamically_Tagged_Expression
+                    (Expr => Expr,
+                     Typ  => Component_Type (Etype (N)),
+                     Related_Nod => N);
+               end if;
             end if;
 
             Next (Expr);
@@ -3612,13 +3615,13 @@ package body Sem_Aggr is
 
             if Box_Present (Assoc) then
 
-               --  Ada 2005 (AI-287): In case of default initialization of a
-               --  component the expander will generate calls to the
-               --  corresponding initialization subprogram. We need to call
-               --  Resolve_Aggr_Expr to check the rules about
-               --  dimensionality.
+               --  Ada 2005 (AI-287): In case of default initialization of
+               --  a component, the expander will generate calls to the
+               --  corresponding initialization subprogram. Check that we
+               --  have a single dimension.
 
-               if not Resolve_Aggr_Expr (Assoc, Single_Elmt => False) then
+               if Present (Next_Index (Index)) then
+                  Error_Msg_N ("nested array aggregate expected", Assoc);
                   return Failure;
                end if;
 
@@ -4030,10 +4033,10 @@ package body Sem_Aggr is
          --  enclosing aggregate is expanded, and the construct is rewritten
          --  as a loop with a new index variable.
 
-         Expr := New_Copy_Tree (Expression (Comp));
+         Expr := Copy_Separate_Tree (Expression (Comp));
+         Set_Parent (Expr, Comp);
          Preanalyze_And_Resolve (Expr, Elmt_Type);
          End_Scope;
-
       end Resolve_Iterated_Association;
 
    --  Start of processing for Resolve_Container_Aggregate
@@ -4468,14 +4471,17 @@ package body Sem_Aggr is
                   Set_Is_Not_Self_Hidden (Id);
                   Set_Scope (Id, Ent);
                end if;
+
                Enter_Name (Id);
 
-               --  Resolve a copy of the expression, after setting
-               --  its parent properly to preserve its context.
+               --  Analyze a copy of the expression, to verify legality. We use
+               --  a copy because the expression will be analyzed anew when the
+               --  enclosing aggregate is expanded, and the construct is
+               --  rewritten as a loop with a new index variable.
 
-               Expr := New_Copy_Tree (Expression (Assoc));
+               Expr := Copy_Separate_Tree (Expression (Assoc));
                Set_Parent (Expr, Assoc);
-               Analyze_And_Resolve (Expr, Component_Type (Typ));
+               Preanalyze_And_Resolve (Expr, Component_Type (Typ));
                End_Scope;
             end;
 

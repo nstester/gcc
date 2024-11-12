@@ -19773,16 +19773,24 @@ package body Sem_Prag is
 
             --  An invariant must apply to a private type, or appear in the
             --  private part of a package spec and apply to a completion.
-            --  a class-wide invariant can only appear on a private declaration
+            --  A class-wide invariant can only appear on a private declaration
             --  or private extension, not a completion.
 
-            --  A [class-wide] invariant may be associated a [limited] private
-            --  type or a private extension.
+            --  A [class-wide] invariant may be associated with a [limited]
+            --  private type. We need to explicitly exclude types that are
+            --  derived from formal private types here.
 
             elsif Ekind (Typ) in E_Limited_Private_Type
                                | E_Private_Type
-                               | E_Record_Type_With_Private
+              and then not (Is_Derived_Type (Typ)
+                             and then Is_Generic_Type (Etype (Typ)))
             then
+               null;
+
+            --  A [class-wide] invariant may be associated with a private
+            --  extension.
+
+            elsif Ekind (Typ) = E_Record_Type_With_Private then
                null;
 
             --  A non-class-wide invariant may be associated with the full view
@@ -20498,6 +20506,9 @@ package body Sem_Prag is
                    or else
                  Is_RTE (Base_Type (Etype (Expression (Variant))),
                          RO_GH_Big_Integer)
+                   or else
+                 Is_RTE (Base_Type (Etype (Expression (Variant))),
+                         RO_SP_Big_Integer)
                then
                   if Chars (Variant) = Name_Increases then
                      Error_Msg_N
@@ -30966,6 +30977,8 @@ package body Sem_Prag is
            Is_RTE (Base_Type (Etype (Expr)), RE_Big_Integer)
              or else
            Is_RTE (Base_Type (Etype (Expr)), RO_GH_Big_Integer)
+             or else
+           Is_RTE (Base_Type (Etype (Expr)), RO_SP_Big_Integer)
          then
             if Chars (Direction) = Name_Increases then
                Error_Msg_N

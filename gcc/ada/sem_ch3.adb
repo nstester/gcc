@@ -5213,18 +5213,6 @@ package body Sem_Ch3 is
          Rewrite (Object_Definition (N), New_Occurrence_Of (Act_T, Loc));
          Freeze_Before (N, Act_T);
 
-      elsif Nkind (E) = N_Function_Call
-        and then Constant_Present (N)
-        and then Has_Unconstrained_Elements (Etype (E))
-      then
-         --  The back-end has problems with constants of a discriminated type
-         --  with defaults, if the initial value is a function call. We
-         --  generate an intermediate temporary that will receive a reference
-         --  to the result of the call. The initialization expression then
-         --  becomes a dereference of that temporary.
-
-         Remove_Side_Effects (E);
-
       --  If this is a constant declaration of an unconstrained type and
       --  the initialization is an aggregate, we can use the subtype of the
       --  aggregate for the declared entity because it is immutable.
@@ -23091,22 +23079,7 @@ package body Sem_Ch3 is
          Set_Direct_Primitive_Operations (T, New_Elmt_List);
       end if;
 
-      --  We must suppress range checks when processing record components in
-      --  the presence of discriminants, since we don't want spurious checks to
-      --  be generated during their analysis, but Suppress_Range_Checks flags
-      --  must be reset the after processing the record definition.
-
-      --  Note: this is the only use of Kill_Range_Checks, and is a bit odd,
-      --  couldn't we just use the normal range check suppression method here.
-      --  That would seem cleaner ???
-
-      if Has_Discriminants (T) and then not Range_Checks_Suppressed (T) then
-         Set_Kill_Range_Checks (T, True);
-         Record_Type_Definition (Def, Prev);
-         Set_Kill_Range_Checks (T, False);
-      else
-         Record_Type_Definition (Def, Prev);
-      end if;
+      Record_Type_Definition (Def, Prev);
 
       --  Exit from record scope
 

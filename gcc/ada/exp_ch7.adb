@@ -986,6 +986,11 @@ package body Exp_Ch7 is
 
       Set_Finalize_Address_For_Node (Master_Node, Fin_Id);
 
+      --  Propagate the Ghost policy from the procedure to the node
+
+      Set_Is_Ignored_Ghost_Entity
+        (Master_Node, Is_Ignored_Ghost_Entity (Fin_Id));
+
       Insert_After_And_Analyze
         (Master_Node_Ins, Master_Node_Attach, Suppress => All_Checks);
    end Attach_Object_To_Master_Node;
@@ -1300,6 +1305,19 @@ package body Exp_Ch7 is
       Scop := Enclosing_Dynamic_Scope (Desig_Typ);
       if Scop /= Standard_Standard
         and then Scope_Depth (Scop) > Scope_Depth (Unit_Id)
+      then
+         return;
+      end if;
+
+      --  For the access result type of a function that is a library unit,
+      --  we cannot create a finalization collection attached to the unit as
+      --  this would cause premature finalization of objects created through
+      --  the access result type, which may be returned from the function.
+
+      if Is_Local_Anonymous_Access (Ptr_Typ)
+        and then Ekind (Unit_Id) = E_Function
+        and then Parent (Ptr_Typ) =
+                   Result_Definition (Subprogram_Specification (Unit_Id))
       then
          return;
       end if;
@@ -2516,6 +2534,12 @@ package body Exp_Ch7 is
                elsif Is_Ignored_For_Finalization (Obj_Id) then
                   null;
 
+               --  Ignored Ghost objects do not need any cleanup actions
+               --  because they will not appear in the final tree.
+
+               elsif Is_Ignored_Ghost_Entity (Obj_Id) then
+                  null;
+
                --  Conversely, if one of the above cases created a Master_Node,
                --  finalization actions are required for the associated object.
 
@@ -2523,12 +2547,6 @@ package body Exp_Ch7 is
                  and then Is_RTE (Obj_Typ, RE_Master_Node)
                then
                   Processing_Actions (Decl);
-
-               --  Ignored Ghost objects do not need any cleanup actions
-               --  because they will not appear in the final tree.
-
-               elsif Is_Ignored_Ghost_Entity (Obj_Id) then
-                  null;
 
                --  The object is of the form:
                --    Obj : [constant] Typ [:= Expr];
@@ -2781,17 +2799,17 @@ package body Exp_Ch7 is
 
          if Ekind (Obj_Id) in E_Constant | E_Variable then
 
-            --  The object is initialized by a build-in-place function call.
-            --  The Master_Node insertion point is after the function call.
-
-            if Present (BIP_Initialization_Call (Obj_Id)) then
-               Master_Node_Ins := BIP_Initialization_Call (Obj_Id);
-
             --  The object is initialized by an aggregate. The Master_Node
             --  insertion point is after the last aggregate assignment.
 
-            elsif Present (Last_Aggregate_Assignment (Obj_Id)) then
+            if Present (Last_Aggregate_Assignment (Obj_Id)) then
                Master_Node_Ins := Last_Aggregate_Assignment (Obj_Id);
+
+            --  The object is initialized by a build-in-place function call.
+            --  The Master_Node insertion point is after the function call.
+
+            elsif Present (BIP_Initialization_Call (Obj_Id)) then
+               Master_Node_Ins := BIP_Initialization_Call (Obj_Id);
 
             --  In other cases the Master_Node is inserted after the last call
             --  to either [Deep_]Initialize or the type-specific init proc.

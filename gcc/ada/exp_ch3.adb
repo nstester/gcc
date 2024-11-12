@@ -2692,11 +2692,23 @@ package body Exp_Ch3 is
            and then Tagged_Type_Expansion
            and then Nkind (Exp_Q) /= N_Raise_Expression
          then
-            Append_To (Res,
-              Make_Tag_Assignment_From_Type
-                (Default_Loc,
-                 New_Copy_Tree (Lhs, New_Scope => Proc_Id),
-                 Underlying_Type (Typ)));
+            --  Get the relevant type for the call to
+            --  Make_Tag_Assignment_From_Type, which, for concurrent types is
+            --  their corresponding record.
+
+            declare
+               T : Entity_Id := Underlying_Type (Typ);
+            begin
+               if Ekind (T) in E_Protected_Type | E_Task_Type then
+                  T := Corresponding_Record_Type (T);
+               end if;
+
+               Append_To (Res,
+                 Make_Tag_Assignment_From_Type
+                   (Default_Loc,
+                    New_Copy_Tree (Lhs, New_Scope => Proc_Id),
+                    T));
+            end;
          end if;
 
          --  Adjust the component if controlled except if it is an aggregate
@@ -7351,8 +7363,9 @@ package body Exp_Ch3 is
 
          --  However, there are exceptions in the latter case for interfaces
          --  (see Analyze_Object_Declaration), as well as class-wide types and
-         --  types with unknown discriminants if they are additionally limited
-         --  (see Expand_Subtype_From_Expr), so we must cope with them.
+         --  types with unknown discriminants if they have no underlying record
+         --  view or are inherently limited (see Expand_Subtype_From_Expr), so
+         --  we must cope with them.
 
          elsif Is_Interface (Typ) then
             pragma Assert (Is_Class_Wide_Type (Typ));
@@ -7384,7 +7397,8 @@ package body Exp_Ch3 is
 
          else pragma Assert (Is_Definite_Subtype (Typ)
            or else (Has_Unknown_Discriminants (Typ)
-                     and then Is_Inherently_Limited_Type (Typ)));
+                     and then (No (Underlying_Record_View (Typ))
+                                or else Is_Inherently_Limited_Type (Typ))));
 
             Alloc_Typ := Typ;
          end if;
