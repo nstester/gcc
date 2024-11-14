@@ -112,7 +112,7 @@ is
    pragma Export (C, Multiply_With_Ovflo_Check64, "__gnat_mulv64");
    --  Raises Constraint_Error if product of operands overflows 64
    --  bits, otherwise returns the 64-bit signed integer product.
-   --  GIGI may also call this routine directly.
+   --  The code generator may also generate direct calls to this routine.
    --
    --  The multiplication is done using pencil and paper algorithm using base
    --  2**32. The multiplication is done on unsigned values, then the correct
@@ -125,15 +125,15 @@ is
         or else (X < Big (Int64'(0))) = (Y < Big (Int64'(0))))
    with Ghost;
 
-   function Round_Quotient (X, Y, Q, R : Big_Integer) return Big_Integer is
-     (if abs R > (abs Y - Big (Int64'(1))) / Big (Int64'(2)) then
-       (if Same_Sign (X, Y) then Q + Big (Int64'(1))
-        else Q - Big (Int64'(1)))
-      else
-        Q)
-   with
+   function Round_Quotient (X, Y, Q, R : Big_Integer) return Big_Integer with
      Ghost,
-     Pre => Y /= 0 and then Q = X / Y and then R = X rem Y;
+     Pre  => Y /= 0 and then Q = X / Y and then R = X rem Y,
+     Post => Round_Quotient'Result =
+       (if abs R > (abs Y - Big (Int64'(1))) / Big (Int64'(2)) then
+         (if Same_Sign (X, Y) then Q + Big (Int64'(1))
+          else Q - Big (Int64'(1)))
+        else
+          Q);
 
    procedure Scaled_Divide64
      (X, Y, Z : Int64;
