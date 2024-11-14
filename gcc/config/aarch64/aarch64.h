@@ -1142,6 +1142,7 @@ typedef struct
 {
   enum arm_pcs pcs_variant;
   aarch64_isa_mode isa_mode;
+  bool indirect_return;		/* Whether function is marked with indirect_return attribute.  */
   int aapcs_arg_processed;	/* No need to lay out this argument again.  */
   int aapcs_ncrn;		/* Next Core register number.  */
   int aapcs_nextncrn;		/* Next next core register number.  */
@@ -1307,6 +1308,13 @@ typedef struct
   ((VALUE) = GET_MODE_UNIT_BITSIZE (MODE), 2)
 #define CTZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) \
   ((VALUE) = GET_MODE_UNIT_BITSIZE (MODE), 2)
+
+/* Have space for both SP and GCSPR in the NONLOCAL case in
+   emit_stack_save as well as in __builtin_setjmp, __builtin_longjmp
+   and __builtin_nonlocal_goto.
+   Note: On ILP32 the documented buf size is not enough PR84150.  */
+#define STACK_SAVEAREA_MODE(LEVEL)			\
+  ((LEVEL) == SAVE_NONLOCAL ? E_CDImode : Pmode)
 
 #define INCOMING_RETURN_ADDR_RTX gen_rtx_REG (Pmode, LR_REGNUM)
 
