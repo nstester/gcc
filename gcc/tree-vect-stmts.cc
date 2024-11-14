@@ -2093,7 +2093,6 @@ get_group_load_store_type (vec_info *vinfo, stmt_vec_info stmt_info,
 	      if (SLP_TREE_LANES (slp_node) == 1)
 		{
 		  *memory_access_type = VMAT_ELEMENTWISE;
-		  overrun_p = false;
 		  if (dump_enabled_p ())
 		    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
 				     "single-element interleaving not supported "
@@ -2110,7 +2109,8 @@ get_group_load_store_type (vec_info *vinfo, stmt_vec_info stmt_info,
 		}
 	    }
 
-	  overrun_p = loop_vinfo && gap != 0;
+	  overrun_p = (loop_vinfo && gap != 0
+		       && *memory_access_type != VMAT_ELEMENTWISE);
 	  if (overrun_p && vls_type != VLS_LOAD)
 	    {
 	      dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -2277,6 +2277,7 @@ get_group_load_store_type (vec_info *vinfo, stmt_vec_info stmt_info,
   if ((*memory_access_type == VMAT_ELEMENTWISE
        || *memory_access_type == VMAT_STRIDED_SLP)
       && single_element_p
+      && (!slp_node || SLP_TREE_LANES (slp_node) == 1)
       && loop_vinfo
       && vect_use_strided_gather_scatters_p (stmt_info, loop_vinfo,
 					     masked_p, gs_info))
@@ -13594,6 +13595,7 @@ vect_analyze_stmt (vec_info *vinfo,
   if (!bb_vinfo
       && STMT_VINFO_TYPE (stmt_info) != reduc_vec_info_type
       && STMT_VINFO_TYPE (stmt_info) != lc_phi_info_type
+      && (!node || !node->ldst_lanes || SLP_TREE_CODE (node) == VEC_PERM_EXPR)
       && !can_vectorize_live_stmts (as_a <loop_vec_info> (vinfo),
 				    stmt_info, node, node_instance,
 				    false, cost_vec))
@@ -13756,7 +13758,10 @@ vect_transform_stmt (vec_info *vinfo,
   if (!slp_node && vec_stmt)
     gcc_assert (STMT_VINFO_VEC_STMTS (stmt_info).exists ());
 
-  if (STMT_VINFO_TYPE (stmt_info) != store_vec_info_type)
+  if (STMT_VINFO_TYPE (stmt_info) != store_vec_info_type
+      && (!slp_node
+	  || !slp_node->ldst_lanes
+	  || SLP_TREE_CODE (slp_node) == VEC_PERM_EXPR))
     {
       /* Handle stmts whose DEF is used outside the loop-nest that is
 	 being vectorized.  */
