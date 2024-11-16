@@ -2082,12 +2082,14 @@ get_group_load_store_type (vec_info *vinfo, stmt_vec_info stmt_info,
 	    *memory_access_type = VMAT_CONTIGUOUS;
 
 	  /* If this is single-element interleaving with an element
-	     distance that leaves unused vector loads around punt - we
-	     at least create very sub-optimal code in that case (and
+	     distance that leaves unused vector loads around fall back
+	     to elementwise access if possible - we otherwise least
+	     create very sub-optimal code in that case (and
 	     blow up memory, see PR65518).  */
 	  if (loop_vinfo
-	      && *memory_access_type == VMAT_CONTIGUOUS
 	      && single_element_p
+	      && (*memory_access_type == VMAT_CONTIGUOUS
+		  || *memory_access_type == VMAT_CONTIGUOUS_REVERSE)
 	      && maybe_gt (group_size, TYPE_VECTOR_SUBPARTS (vectype)))
 	    {
 	      if (SLP_TREE_LANES (slp_node) == 1)
@@ -2107,6 +2109,28 @@ get_group_load_store_type (vec_info *vinfo, stmt_vec_info stmt_info,
 				     "for not adjacent vector loads\n");
 		  return false;
 		}
+	    }
+
+	  /* For single-element interleaving also fall back to elementwise
+	     access in case we did not lower a permutation and cannot
+	     code generate it.  */
+	  auto_vec<tree> temv;
+	  unsigned n_perms;
+	  if (loop_vinfo
+	      && single_element_p
+	      && SLP_TREE_LANES (slp_node) == 1
+	      && (*memory_access_type == VMAT_CONTIGUOUS
+		  || *memory_access_type == VMAT_CONTIGUOUS_REVERSE)
+	      && SLP_TREE_LOAD_PERMUTATION (slp_node).exists ()
+	      && !vect_transform_slp_perm_load
+		    (loop_vinfo, slp_node, temv, NULL,
+		     LOOP_VINFO_VECT_FACTOR (loop_vinfo), true, &n_perms))
+	    {
+	      *memory_access_type = VMAT_ELEMENTWISE;
+	      if (dump_enabled_p ())
+		dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+				 "single-element interleaving permutation not "
+				 "supported, using elementwise access\n");
 	    }
 
 	  overrun_p = (loop_vinfo && gap != 0
@@ -2202,11 +2226,25 @@ get_group_load_store_type (vec_info *vinfo, stmt_vec_info stmt_info,
 			       (vectype, cnunits / cpart_size,
 				&half_vtype) == NULL_TREE)))
 		{
-		  if (dump_enabled_p ())
-		    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
-				     "peeling for gaps insufficient for "
-				     "access\n");
-		  return false;
+		  /* If all fails we can still resort to niter masking, so
+		     enforce the use of partial vectors.  */
+		  if (LOOP_VINFO_CAN_USE_PARTIAL_VECTORS_P (loop_vinfo))
+		    {
+		      if (dump_enabled_p ())
+			dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+					 "peeling for gaps insufficient for "
+					 "access unless using partial "
+					 "vectors\n");
+		      LOOP_VINFO_MUST_USE_PARTIAL_VECTORS_P (loop_vinfo) = true;
+		    }
+		  else
+		    {
+		      if (dump_enabled_p ())
+			dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+					 "peeling for gaps insufficient for "
+					 "access\n");
+		      return false;
+		    }
 		}
 	    }
 	}
