@@ -21224,7 +21224,10 @@ module_preprocess_options (cpp_reader *reader)
 	}
       auto *opt = cpp_get_options (reader);
       opt->module_directives = true;
-      opt->main_search = cpp_main_search (flag_header_unit);
+      if (flag_no_output)
+	opt->directives_only = true;
+      if (opt->main_search == CMS_none)
+	opt->main_search = cpp_main_search (flag_header_unit);
     }
 }
 
