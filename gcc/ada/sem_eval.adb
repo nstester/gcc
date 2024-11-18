@@ -2629,6 +2629,9 @@ package body Sem_Eval is
       Expr := First (Expressions (N));
       while Present (Expr) loop
          Check_Non_Static_Context (Expr);
+         if Kill_Range_Check (N) then
+            Set_Do_Range_Check (Expr, False);
+         end if;
          Next (Expr);
       end loop;
 
@@ -2644,6 +2647,14 @@ package body Sem_Eval is
       --  some cases of attributes we need the identify (e.g. Access, Size).
 
       elsif Nkind (Parent (N)) = N_Attribute_Reference then
+         return;
+
+      --  Similarly if the indexed component appears as the name of an
+      --  assignment statement, we don't want to evaluate it,
+
+      elsif Nkind (Parent (N)) = N_Assignment_Statement
+        and then N = Name (Parent (N))
+      then
          return;
       end if;
 
