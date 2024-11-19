@@ -111,6 +111,7 @@ enum cv_leaf_type {
   LF_MEMBER = 0x150d,
   LF_STMEMBER = 0x150e,
   LF_METHOD = 0x150f,
+  LF_NESTTYPE = 0x1510,
   LF_ONEMETHOD = 0x1511,
   LF_FUNC_ID = 0x1601,
   LF_MFUNC_ID = 0x1602,
@@ -1249,6 +1250,11 @@ struct codeview_subtype
       uint32_t base_class_type;
       codeview_integer offset;
     } lf_bclass;
+    struct
+    {
+      uint32_t type;
+      char *name;
+    } lf_nesttype;
   };
 };
 
@@ -1432,6 +1438,7 @@ static uint32_t get_type_num_subroutine_type (dw_die_ref type, bool in_struct,
 					      uint32_t this_type,
 					      int32_t this_adjustment);
 static void write_cv_padding (size_t padding);
+static void flush_deferred_types (void);
 
 /* Record new line number against the current function.  */
 
@@ -3904,6 +3911,40 @@ write_lf_fieldlist (codeview_custom_type *t)
 	  write_cv_padding (4 - (leaf_len % 4));
 	  break;
 
+	case LF_NESTTYPE:
+	  /* This is lf_nest_type in binutils and lfNestType in Microsoft's
+	     cvinfo.h:
+
+	    struct lf_nest_type
+	    {
+	      uint16_t kind;
+	      uint16_t padding;
+	      uint32_t type;
+	      char name[];
+	    } ATTRIBUTE_PACKED;
+	  */
+
+	  fputs (integer_asm_op (2, false), asm_out_file);
+	  fprint_whex (asm_out_file, LF_NESTTYPE);
+	  putc ('\n', asm_out_file);
+
+	  fputs (integer_asm_op (2, false), asm_out_file);
+	  fprint_whex (asm_out_file, 0);
+	  putc ('\n', asm_out_file);
+
+	  fputs (integer_asm_op (4, false), asm_out_file);
+	  fprint_whex (asm_out_file, v->lf_nesttype.type);
+	  putc ('\n', asm_out_file);
+
+	  name_len = strlen (v->lf_nesttype.name) + 1;
+	  ASM_OUTPUT_ASCII (asm_out_file, v->lf_nesttype.name, name_len);
+
+	  leaf_len = 8 + name_len;
+	  write_cv_padding (4 - (leaf_len % 4));
+
+	  free (v->lf_nesttype.name);
+	  break;
+
 	default:
 	  break;
 	}
@@ -4673,6 +4714,12 @@ codeview_debug_finish (void)
   write_line_numbers ();
   write_codeview_symbols ();
 
+  /* If we reference a nested struct but not its parent, add_deferred_type
+     gets called if we create a forward reference for this, even though we've
+     already flushed this in codeview_debug_early_finish.  In this case we will
+     need to flush this list again.  */
+  flush_deferred_types ();
+
   if (custom_types)
     write_custom_types ();
 
@@ -5357,6 +5404,52 @@ add_struct_forward_def (dw_die_ref type)
   return ct->num;
 }
 
+/* Add a new subtype to an LF_FIELDLIST type, and handle overflows if
+   necessary.  */
+
+static void
+add_to_fieldlist (codeview_custom_type **ct, uint16_t *num_members,
+		  codeview_subtype *el, size_t el_len)
+{
+  /* Add an LF_INDEX subtype if everything's too big for one
+     LF_FIELDLIST.  */
+
+  if ((*ct)->lf_fieldlist.length + el_len > MAX_FIELDLIST_SIZE)
+    {
+      codeview_subtype *idx;
+      codeview_custom_type *ct2;
+
+      idx = (codeview_subtype *) xmalloc (sizeof (*idx));
+      idx->next = NULL;
+      idx->kind = LF_INDEX;
+      idx->lf_index.type_num = 0;
+
+      (*ct)->lf_fieldlist.last_subtype->next = idx;
+      (*ct)->lf_fieldlist.last_subtype = idx;
+
+      ct2 = (codeview_custom_type *)
+	xmalloc (sizeof (codeview_custom_type));
+
+      ct2->next = *ct;
+      ct2->kind = LF_FIELDLIST;
+      ct2->lf_fieldlist.length = 0;
+      ct2->lf_fieldlist.subtypes = NULL;
+      ct2->lf_fieldlist.last_subtype = NULL;
+
+      *ct = ct2;
+    }
+
+  (*ct)->lf_fieldlist.length += el_len;
+
+  if ((*ct)->lf_fieldlist.last_subtype)
+    (*ct)->lf_fieldlist.last_subtype->next = el;
+  else
+    (*ct)->lf_fieldlist.subtypes = el;
+
+  (*ct)->lf_fieldlist.last_subtype = el;
+  (*num_members)++;
+}
+
 /* Add an LF_BITFIELD type, returning its number.  DWARF represents bitfields
    as members in a struct with a DW_AT_data_bit_offset attribute, whereas in
    CodeView they're a distinct type.  */
@@ -5389,36 +5482,69 @@ create_bitfield (dw_die_ref c)
 
 static void
 add_struct_member (dw_die_ref c, uint16_t accessibility,
-		   codeview_subtype **el, size_t *el_len)
+		   codeview_custom_type **ct, uint16_t *num_members,
+		   unsigned int base_offset)
 {
-  *el = (codeview_subtype *) xmalloc (sizeof (**el));
-  (*el)->next = NULL;
-  (*el)->kind = LF_MEMBER;
-  (*el)->lf_member.attributes = accessibility;
+  codeview_subtype *el;
+  size_t el_len;
+  dw_die_ref type = get_AT_ref (c, DW_AT_type);
+  unsigned int offset;
+
+  offset = base_offset + get_AT_unsigned (c, DW_AT_data_member_location);
+
+  /* If the data member is actually an anonymous struct, class, or union,
+     follow MSVC by flattening this into its parent.  */
+  if (!get_AT_string (c, DW_AT_name) && type
+      && (dw_get_die_tag (type) == DW_TAG_structure_type
+	  || dw_get_die_tag (type) == DW_TAG_class_type
+	  || dw_get_die_tag (type) == DW_TAG_union_type))
+    {
+      dw_die_ref c2, first_child;
+
+      first_child = dw_get_die_child (type);
+      c2 = first_child;
+
+      do
+	{
+	  c2 = dw_get_die_sib (c2);
+
+	  if (dw_get_die_tag (c2) == DW_TAG_member)
+	      add_struct_member (c2, accessibility, ct, num_members, offset);
+	}
+      while (c2 != first_child);
+
+      return;
+    }
+
+  el = (codeview_subtype *) xmalloc (sizeof (*el));
+  el->next = NULL;
+  el->kind = LF_MEMBER;
+  el->lf_member.attributes = accessibility;
 
   if (get_AT (c, DW_AT_data_bit_offset))
-    (*el)->lf_member.type = create_bitfield (c);
+    el->lf_member.type = create_bitfield (c);
   else
-    (*el)->lf_member.type = get_type_num (get_AT_ref (c, DW_AT_type),
-					  true, false);
+    el->lf_member.type = get_type_num (type, true, false);
 
-  (*el)->lf_member.offset.neg = false;
-  (*el)->lf_member.offset.num = get_AT_unsigned (c, DW_AT_data_member_location);
+  el->lf_member.offset.neg = false;
+  el->lf_member.offset.num = offset;
 
-  *el_len = 11 + cv_integer_len (&(*el)->lf_member.offset);
+  el_len = 11 + cv_integer_len (&el->lf_member.offset);
 
   if (get_AT_string (c, DW_AT_name))
     {
-      (*el)->lf_member.name = xstrdup (get_AT_string (c, DW_AT_name));
-      *el_len += strlen ((*el)->lf_member.name);
+      el->lf_member.name = xstrdup (get_AT_string (c, DW_AT_name));
+      el_len += strlen (el->lf_member.name);
     }
   else
     {
-      (*el)->lf_member.name = NULL;
+      el->lf_member.name = NULL;
     }
 
-  if (*el_len % 4)
-    *el_len += 4 - (*el_len % 4);
+  if (el_len % 4)
+    el_len += 4 - (el_len % 4);
+
+  add_to_fieldlist (ct, num_members, el, el_len);
 }
 
 /* Create an LF_STMEMBER field list subtype for a static struct member,
@@ -5426,20 +5552,25 @@ add_struct_member (dw_die_ref c, uint16_t accessibility,
 
 static void
 add_struct_static_member (dw_die_ref c, uint16_t accessibility,
-			  codeview_subtype **el, size_t *el_len)
+			  codeview_custom_type **ct, uint16_t *num_members)
 {
-  *el = (codeview_subtype *) xmalloc (sizeof (**el));
-  (*el)->next = NULL;
-  (*el)->kind = LF_STMEMBER;
-  (*el)->lf_static_member.attributes = accessibility;
-  (*el)->lf_static_member.type = get_type_num (get_AT_ref (c, DW_AT_type),
-					       true, false);
-  (*el)->lf_static_member.name = xstrdup (get_AT_string (c, DW_AT_name));
+  codeview_subtype *el;
+  size_t el_len;
 
-  *el_len = 9 + strlen ((*el)->lf_static_member.name);
+  el = (codeview_subtype *) xmalloc (sizeof (*el));
+  el->next = NULL;
+  el->kind = LF_STMEMBER;
+  el->lf_static_member.attributes = accessibility;
+  el->lf_static_member.type = get_type_num (get_AT_ref (c, DW_AT_type),
+					    true, false);
+  el->lf_static_member.name = xstrdup (get_AT_string (c, DW_AT_name));
 
-  if (*el_len % 4)
-    *el_len += 4 - (*el_len % 4);
+  el_len = 9 + strlen (el->lf_static_member.name);
+
+  if (el_len % 4)
+    el_len += 4 - (el_len % 4);
+
+  add_to_fieldlist (ct, num_members, el, el_len);
 }
 
 /* Create a field list subtype for a struct function, returning its pointer in
@@ -5450,10 +5581,12 @@ add_struct_static_member (dw_die_ref c, uint16_t accessibility,
 
 static void
 add_struct_function (dw_die_ref c, hash_table<method_hasher> *method_htab,
-		     codeview_subtype **el, size_t *el_len)
+		     codeview_custom_type **ct, uint16_t *num_members)
 {
   const char *name = get_AT_string (c, DW_AT_name);
   codeview_method **slot, *meth;
+  codeview_subtype *el;
+  size_t el_len;
 
   slot = method_htab->find_slot_with_hash (name, htab_hash_string (name),
 					   NO_INSERT);
@@ -5462,17 +5595,17 @@ add_struct_function (dw_die_ref c, hash_table<method_hasher> *method_htab,
 
   meth = *slot;
 
-  *el = (codeview_subtype *) xmalloc (sizeof (**el));
-  (*el)->next = NULL;
+  el = (codeview_subtype *) xmalloc (sizeof (*el));
+  el->next = NULL;
 
   if (meth->count == 1)
     {
-      (*el)->kind = LF_ONEMETHOD;
-      (*el)->lf_onemethod.method_attribute = meth->attribute;
-      (*el)->lf_onemethod.method_type = meth->type;
-      (*el)->lf_onemethod.name = xstrdup (name);
+      el->kind = LF_ONEMETHOD;
+      el->lf_onemethod.method_attribute = meth->attribute;
+      el->lf_onemethod.method_type = meth->type;
+      el->lf_onemethod.name = xstrdup (name);
 
-      *el_len = 9 + strlen ((*el)->lf_onemethod.name);
+      el_len = 9 + strlen (el->lf_onemethod.name);
     }
   else
     {
@@ -5497,16 +5630,18 @@ add_struct_function (dw_die_ref c, hash_table<method_hasher> *method_htab,
 
       add_custom_type (ct);
 
-      (*el)->kind = LF_METHOD;
-      (*el)->lf_method.count = meth->count;
-      (*el)->lf_method.method_list = ct->num;
-      (*el)->lf_method.name = xstrdup (name);
+      el->kind = LF_METHOD;
+      el->lf_method.count = meth->count;
+      el->lf_method.method_list = ct->num;
+      el->lf_method.name = xstrdup (name);
 
-      *el_len = 9 + strlen ((*el)->lf_method.name);
+      el_len = 9 + strlen (el->lf_method.name);
     }
 
-  if (*el_len % 4)
-    *el_len += 4 - (*el_len % 4);
+  if (el_len % 4)
+    el_len += 4 - (el_len % 4);
+
+  add_to_fieldlist (ct, num_members, el, el_len);
 
   method_htab->remove_elt_with_hash (name, htab_hash_string (name));
 
@@ -5525,27 +5660,32 @@ add_struct_function (dw_die_ref c, hash_table<method_hasher> *method_htab,
 
 static void
 add_struct_inheritance (dw_die_ref c, uint16_t accessibility,
-			codeview_subtype **el, size_t *el_len)
+			codeview_custom_type **ct, uint16_t *num_members)
 {
+  codeview_subtype *el;
+  size_t el_len;
+
   /* FIXME: if DW_AT_virtuality is DW_VIRTUALITY_virtual this is a virtual
 	    base class, and we should be issuing an LF_VBCLASS record
 	    instead.  */
   if (get_AT_unsigned (c, DW_AT_virtuality) == DW_VIRTUALITY_virtual)
     return;
 
-  *el = (codeview_subtype *) xmalloc (sizeof (**el));
-  (*el)->next = NULL;
-  (*el)->kind = LF_BCLASS;
-  (*el)->lf_bclass.attributes = accessibility;
-  (*el)->lf_bclass.base_class_type = get_type_num (get_AT_ref (c, DW_AT_type),
+  el = (codeview_subtype *) xmalloc (sizeof (*el));
+  el->next = NULL;
+  el->kind = LF_BCLASS;
+  el->lf_bclass.attributes = accessibility;
+  el->lf_bclass.base_class_type = get_type_num (get_AT_ref (c, DW_AT_type),
 						   true, false);
-  (*el)->lf_bclass.offset.neg = false;
-  (*el)->lf_bclass.offset.num = get_AT_unsigned (c, DW_AT_data_member_location);
+  el->lf_bclass.offset.neg = false;
+  el->lf_bclass.offset.num = get_AT_unsigned (c, DW_AT_data_member_location);
 
-  *el_len = 10 + cv_integer_len (&(*el)->lf_bclass.offset);
+  el_len = 10 + cv_integer_len (&el->lf_bclass.offset);
 
-  if (*el_len % 4)
-    *el_len += 4 - (*el_len % 4);
+  if (el_len % 4)
+    el_len += 4 - (el_len % 4);
+
+  add_to_fieldlist (ct, num_members, el, el_len);
 }
 
 /* Create a new LF_MFUNCTION type for a struct function, add it to the
@@ -5638,6 +5778,36 @@ is_templated_func (dw_die_ref die)
   return false;
 }
 
+/* Create a field list subtype that records that a struct has a nested type
+   contained within it.  */
+
+static void
+add_struct_nested_type (dw_die_ref c, codeview_custom_type **ct,
+			uint16_t *num_members)
+{
+  const char *name = get_AT_string (c, DW_AT_name);
+  codeview_subtype *el;
+  size_t name_len, el_len;
+
+  if (!name)
+    return;
+
+  name_len = strlen (name);
+
+  el = (codeview_subtype *) xmalloc (sizeof (*el));
+  el->next = NULL;
+  el->kind = LF_NESTTYPE;
+  el->lf_nesttype.type = get_type_num (c, true, false);
+  el->lf_nesttype.name = xstrdup (name);
+
+  el_len = 9 + name_len;
+
+  if (el_len % 4)
+    el_len += 4 - (el_len % 4);
+
+  add_to_fieldlist (ct, num_members, el, el_len);
+}
+
 /* Process a DW_TAG_structure_type, DW_TAG_class_type, or DW_TAG_union_type
    DIE, add an LF_FIELDLIST and an LF_STRUCTURE / LF_CLASS / LF_UNION type,
    and return the number of the latter.  */
@@ -5645,10 +5815,17 @@ is_templated_func (dw_die_ref die)
 static uint32_t
 get_type_num_struct (dw_die_ref type, bool in_struct, bool *is_fwd_ref)
 {
-  dw_die_ref first_child;
+  dw_die_ref parent, first_child;
   codeview_custom_type *ct;
   uint16_t num_members = 0;
   uint32_t last_type = 0;
+
+  parent = dw_get_die_parent(type);
+
+  if (parent && (dw_get_die_tag (parent) == DW_TAG_structure_type
+      || dw_get_die_tag (parent) == DW_TAG_class_type
+      || dw_get_die_tag (parent) == DW_TAG_union_type))
+    get_type_num (parent, true, false);
 
   if ((in_struct && get_AT_string (type, DW_AT_name))
       || get_AT_flag (type, DW_AT_declaration))
@@ -5742,8 +5919,6 @@ get_type_num_struct (dw_die_ref type, bool in_struct, bool *is_fwd_ref)
       c = first_child;
       do
 	{
-	  codeview_subtype *el;
-	  size_t el_len = 0;
 	  uint16_t accessibility;
 
 	  c = dw_get_die_sib (c);
@@ -5753,66 +5928,32 @@ get_type_num_struct (dw_die_ref type, bool in_struct, bool *is_fwd_ref)
 	  switch (dw_get_die_tag (c))
 	    {
 	    case DW_TAG_member:
-	      add_struct_member (c, accessibility, &el, &el_len);
+	      add_struct_member (c, accessibility, &ct, &num_members, 0);
 	      break;
 
 	    case DW_TAG_variable:
-	      add_struct_static_member (c, accessibility, &el, &el_len);
+	      add_struct_static_member (c, accessibility, &ct, &num_members);
 	      break;
 
 	    case DW_TAG_subprogram:
 	      if (!is_templated_func (c))
-		add_struct_function (c, method_htab, &el, &el_len);
+		add_struct_function (c, method_htab, &ct, &num_members);
 	      break;
 
 	    case DW_TAG_inheritance:
-	      add_struct_inheritance (c, accessibility, &el, &el_len);
+	      add_struct_inheritance (c, accessibility, &ct, &num_members);
+	      break;
+
+	    case DW_TAG_structure_type:
+	    case DW_TAG_class_type:
+	    case DW_TAG_union_type:
+	    case DW_TAG_enumeration_type:
+	      add_struct_nested_type (c, &ct, &num_members);
 	      break;
 
 	    default:
 	      break;
 	    }
-
-	  if (el_len == 0)
-	    continue;
-
-	  /* Add an LF_INDEX subtype if everything's too big for one
-	     LF_FIELDLIST.  */
-
-	  if (ct->lf_fieldlist.length + el_len > MAX_FIELDLIST_SIZE)
-	    {
-	      codeview_subtype *idx;
-	      codeview_custom_type *ct2;
-
-	      idx = (codeview_subtype *) xmalloc (sizeof (*idx));
-	      idx->next = NULL;
-	      idx->kind = LF_INDEX;
-	      idx->lf_index.type_num = 0;
-
-	      ct->lf_fieldlist.last_subtype->next = idx;
-	      ct->lf_fieldlist.last_subtype = idx;
-
-	      ct2 = (codeview_custom_type *)
-		xmalloc (sizeof (codeview_custom_type));
-
-	      ct2->next = ct;
-	      ct2->kind = LF_FIELDLIST;
-	      ct2->lf_fieldlist.length = 0;
-	      ct2->lf_fieldlist.subtypes = NULL;
-	      ct2->lf_fieldlist.last_subtype = NULL;
-
-	      ct = ct2;
-	    }
-
-	  ct->lf_fieldlist.length += el_len;
-
-	  if (ct->lf_fieldlist.last_subtype)
-	    ct->lf_fieldlist.last_subtype->next = el;
-	  else
-	    ct->lf_fieldlist.subtypes = el;
-
-	  ct->lf_fieldlist.last_subtype = el;
-	  num_members++;
 	}
       while (c != first_child);
 
