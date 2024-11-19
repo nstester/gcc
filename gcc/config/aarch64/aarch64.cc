@@ -3030,7 +3030,22 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
 	if (can_create_pseudo_p ())
 	  tmp_reg = gen_reg_rtx (mode);
 
+	HOST_WIDE_INT mid_const = 0;
+	if (TARGET_PECOFF)
+	  {
+	    poly_int64 offset;
+	    strip_offset (imm, &offset);
+
+	    HOST_WIDE_INT const_offset;
+	    if (offset.is_constant (&const_offset))
+	      /* Written this way for the sake of negative offsets.  */
+	      mid_const = const_offset / (1 << 20) * (1 << 20);
+	  }
+	imm = plus_constant (mode, imm, -mid_const);
+
 	emit_move_insn (tmp_reg, gen_rtx_HIGH (mode, copy_rtx (imm)));
+	if (mid_const)
+	  emit_set_insn (tmp_reg, plus_constant (mode, tmp_reg, mid_const));
 	emit_insn (gen_add_losym (dest, tmp_reg, imm));
 	return;
       }
@@ -21241,7 +21256,8 @@ aarch64_classify_symbol (rtx x, HOST_WIDE_INT offset)
 	case AARCH64_CMODEL_TINY:
 	  /* With -fPIC non-local symbols use the GOT.  For orthogonality
 	     always use the GOT for extern weak symbols.  */
-	  if ((flag_pic || SYMBOL_REF_WEAK (x))
+	  if (!TARGET_PECOFF
+	      && (flag_pic || SYMBOL_REF_WEAK (x))
 	      && !aarch64_symbol_binds_local_p (x))
 	    return SYMBOL_TINY_GOT;
 
@@ -21263,7 +21279,8 @@ aarch64_classify_symbol (rtx x, HOST_WIDE_INT offset)
 	case AARCH64_CMODEL_SMALL_SPIC:
 	case AARCH64_CMODEL_SMALL_PIC:
 	case AARCH64_CMODEL_SMALL:
-	  if ((flag_pic || SYMBOL_REF_WEAK (x))
+	  if (!TARGET_PECOFF
+	      && (flag_pic || SYMBOL_REF_WEAK (x))
 	      && !aarch64_symbol_binds_local_p (x))
 	    return aarch64_cmodel == AARCH64_CMODEL_SMALL_SPIC
 		    ? SYMBOL_SMALL_GOT_28K : SYMBOL_SMALL_GOT_4G;
@@ -31130,6 +31147,15 @@ aarch64_run_selftests (void)
 
 #undef TARGET_ASM_ALIGNED_SI_OP
 #define TARGET_ASM_ALIGNED_SI_OP "\t.word\t"
+
+#if TARGET_PECOFF
+#undef TARGET_ASM_UNALIGNED_HI_OP
+#define TARGET_ASM_UNALIGNED_HI_OP TARGET_ASM_ALIGNED_HI_OP
+#undef TARGET_ASM_UNALIGNED_SI_OP
+#define TARGET_ASM_UNALIGNED_SI_OP TARGET_ASM_ALIGNED_SI_OP
+#undef TARGET_ASM_UNALIGNED_DI_OP
+#define TARGET_ASM_UNALIGNED_DI_OP TARGET_ASM_ALIGNED_DI_OP
+#endif
 
 #undef TARGET_ASM_CAN_OUTPUT_MI_THUNK
 #define TARGET_ASM_CAN_OUTPUT_MI_THUNK \
