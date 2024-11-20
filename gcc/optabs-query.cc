@@ -781,3 +781,75 @@ can_vec_extract (machine_mode mode, machine_mode extr_mode)
   /* We assume we can pun mode to vmode and imode to extr_mode.  */
   return true;
 }
+
+/* OP is either neg_optab or abs_optab and FMODE is the floating-point inner
+   mode of MODE.  Check whether we can implement OP for mode MODE by using
+   xor_optab to flip the sign bit (for neg_optab) or and_optab to clear the
+   sign bit (for abs_optab).  If so, return the integral mode that should be
+   used to do the operation and set *BITPOS to the index of the sign bit
+   (counting from the lsb).  */
+
+opt_machine_mode
+get_absneg_bit_mode (optab op, machine_mode mode,
+		     scalar_float_mode fmode, int *bitpos)
+{
+  /* The format has to have a simple sign bit.  */
+  auto fmt = REAL_MODE_FORMAT (fmode);
+  if (fmt == NULL)
+    return {};
+
+  *bitpos = fmt->signbit_rw;
+  if (*bitpos < 0)
+    return {};
+
+  /* Don't create negative zeros if the format doesn't support them.  */
+  if (op == neg_optab && !fmt->has_signed_zero)
+    return {};
+
+  if (VECTOR_MODE_P (mode))
+    return related_int_vector_mode (mode);
+
+  if (GET_MODE_SIZE (fmode) <= UNITS_PER_WORD)
+    return int_mode_for_mode (fmode);
+
+  return word_mode;
+}
+
+/* Return true if we can implement OP for mode MODE directly, without resorting
+   to a libfunc.   This usually means that OP will be implemented inline.
+
+   Note that this function cannot tell whether the target pattern chooses to
+   use libfuncs internally.  */
+
+bool
+can_open_code_p (optab op, machine_mode mode)
+{
+  if (optab_handler (op, mode) != CODE_FOR_nothing)
+    return true;
+
+  if (op == umul_highpart_optab)
+    return can_mult_highpart_p (mode, true);
+
+  if (op == smul_highpart_optab)
+    return can_mult_highpart_p (mode, false);
+
+  machine_mode new_mode;
+  scalar_float_mode fmode;
+  int bitpos;
+  if ((op == neg_optab || op == abs_optab)
+      && is_a<scalar_float_mode> (GET_MODE_INNER (mode), &fmode)
+      && get_absneg_bit_mode (op, mode, fmode, &bitpos).exists (&new_mode)
+      && can_implement_p (op == neg_optab ? xor_optab : and_optab, new_mode))
+    return true;
+
+  return false;
+}
+
+/* Return true if we can implement OP for mode MODE in some way, either by
+   open-coding it or by calling a libfunc.  */
+
+bool
+can_implement_p (optab op, machine_mode mode)
+{
+  return can_open_code_p (op, mode) || optab_libfunc (op, mode);
+}
