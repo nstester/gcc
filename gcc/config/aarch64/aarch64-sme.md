@@ -651,6 +651,7 @@
 ;; -------------------------------------------------------------------------
 ;; Includes:
 ;; - MOVA
+;; - MOVAZ
 ;; -------------------------------------------------------------------------
 
 (define_insn "@aarch64_sme_<optab><v_int_container><mode>"
@@ -662,7 +663,7 @@
 	   (match_operand:<VPRED> 2 "register_operand" "Upl")
 	   (match_operand:DI 3 "const_int_operand")
 	   (match_operand:SI 4 "register_operand" "Ucj")]
-	  SME_READ))]
+	  SME_READ_HV))]
   "TARGET_STREAMING"
   "mova\t%0.<Vetype>, %2/m, za%3<hv>.<Vetype>[%w4, 0]"
 )
@@ -677,7 +678,7 @@
 	   (match_operand:DI 3 "const_int_operand")
 	   (plus:SI (match_operand:SI 4 "register_operand" "Ucj")
 		    (match_operand:SI 5 "const_int_operand"))]
-	  SME_READ))]
+	  SME_READ_HV))]
   "TARGET_STREAMING
    && UINTVAL (operands[5]) < 128 / <elem_bits>"
   "mova\t%0.<Vetype>, %2/m, za%3<hv>.<Vetype>[%w4, %5]"
@@ -692,9 +693,75 @@
 	   (match_operand:VNx2BI 2 "register_operand" "Upl")
 	   (match_operand:DI 3 "const_int_operand")
 	   (match_operand:SI 4 "register_operand" "Ucj")]
-	  SME_READ))]
+	  SME_READ_HV))]
   "TARGET_STREAMING"
   "mova\t%0.q, %2/m, za%3<hv>.q[%w4, 0]"
+)
+
+(define_insn "@aarch64_sme_<optab><v_int_container><mode>"
+  [(set (match_operand:SVE_FULL 0 "register_operand" "=w")
+	(unspec:SVE_FULL
+	  [(reg:<V_INT_CONTAINER> ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_operand:DI 1 "const_int_operand")
+	   (match_operand:SI 2 "register_operand" "Ucj")
+	   (const_int 0)]
+	  SME_READZ_HV))
+   (set (reg:<V_INT_CONTAINER> ZA_REGNUM)
+	(unspec:<V_INT_CONTAINER>
+	  [(reg:<V_INT_CONTAINER> ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_dup 1)
+	   (match_dup 2)
+	   (const_int 1)]
+	  SME_READZ_HV))]
+  "TARGET_STREAMING_SME2p1"
+  "movaz\t%0.<Vetype>, za%1<hv>.<Vetype>[%w2, 0]"
+)
+
+(define_insn "*aarch64_sme_<optab><v_int_container><mode>_plus"
+  [(set (match_operand:SVE_FULL 0 "register_operand" "=w")
+	(unspec:SVE_FULL
+	  [(reg:<V_INT_CONTAINER> ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_operand:DI 1 "const_int_operand")
+	   (plus:SI (match_operand:SI 2 "register_operand" "Ucj")
+		    (match_operand:SI 3 "const_int_operand"))
+	   (const_int 0)]
+	  SME_READZ_HV))
+   (set (reg:<V_INT_CONTAINER> ZA_REGNUM)
+	(unspec:<V_INT_CONTAINER>
+	  [(reg:<V_INT_CONTAINER> ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_dup 1)
+	   (plus:SI (match_dup 2)
+		    (match_dup 3))
+	   (const_int 1)]
+	  SME_READZ_HV))]
+  "TARGET_STREAMING_SME2p1
+   && UINTVAL (operands[3]) < 128 / <elem_bits>"
+  "movaz\t%0.<Vetype>, za%1<hv>.<Vetype>[%w2, %3]"
+)
+
+(define_insn "@aarch64_sme_<optab><VNx1TI_ONLY:mode><SVE_FULL:mode>"
+  [(set (match_operand:SVE_FULL 0 "register_operand" "=w")
+	(unspec:SVE_FULL
+	  [(reg:VNx1TI_ONLY ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_operand:DI 1 "const_int_operand")
+	   (match_operand:SI 2 "register_operand" "Ucj")
+	   (const_int 0)]
+	  SME_READZ_HV))
+   (set (reg:VNx1TI_ONLY ZA_REGNUM)
+	(unspec:VNx1TI_ONLY
+	  [(reg:VNx1TI_ONLY ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_dup 1)
+	   (match_dup 2)
+	   (const_int 0)]
+	  SME_READZ_HV))]
+  "TARGET_STREAMING_SME2p1"
+  "movaz\t%0.q, za%1<hv>.q[%w2, 0]"
 )
 
 (define_insn "@aarch64_sme_<optab><v_int_container><mode>"
@@ -706,7 +773,7 @@
 	   (match_operand:SI 1 "register_operand" "Ucj")
 	   (match_operand:<VPRED> 2 "register_operand" "Upl")
 	   (match_operand:SVE_FULL 3 "register_operand" "w")]
-	  SME_WRITE))]
+	  SME_WRITE_HV))]
   "TARGET_STREAMING"
   "mova\tza%0<hv>.<Vetype>[%w1, 0], %2/m, %3.<Vetype>"
 )
@@ -721,7 +788,7 @@
 		    (match_operand:SI 2 "const_int_operand"))
 	   (match_operand:<VPRED> 3 "register_operand" "Upl")
 	   (match_operand:SVE_FULL 4 "register_operand" "w")]
-	  SME_WRITE))]
+	  SME_WRITE_HV))]
   "TARGET_STREAMING
    && UINTVAL (operands[2]) < 128 / <elem_bits>"
   "mova\tza%0<hv>.<Vetype>[%w1, %2], %3/m, %4.<Vetype>"
@@ -736,7 +803,7 @@
 	   (match_operand:SI 1 "register_operand" "Ucj")
 	   (match_operand:VNx2BI 2 "register_operand" "Upl")
 	   (match_operand:SVE_FULL 3 "register_operand" "w")]
-	  SME_WRITE))]
+	  SME_WRITE_HV))]
   "TARGET_STREAMING"
   "mova\tza%0<hv>.q[%w1, 0], %2/m, %3.q"
 )
@@ -746,6 +813,7 @@
 ;; -------------------------------------------------------------------------
 ;; Includes:
 ;; - MOVA
+;; - MOVAZ
 ;; -------------------------------------------------------------------------
 
 (define_insn "@aarch64_sme_<optab><mode><mode>"
@@ -755,7 +823,7 @@
 	   (reg:DI SME_STATE_REGNUM)
 	   (match_operand:DI 1 "const_int_operand")
 	   (match_operand:SI 2 "register_operand" "Ucj")]
-	  SME_READ))]
+	  SME_READ_HV))]
   "TARGET_STREAMING_SME2"
   {
     operands[3] = GEN_INT (<vector_count> - 1);
@@ -772,13 +840,67 @@
 	   (plus:SI
 	     (match_operand:SI 2 "register_operand" "Ucj")
 	     (match_operand:SI 3 "const_int_operand"))]
-	  SME_READ))]
+	  SME_READ_HV))]
   "TARGET_STREAMING_SME2
    && UINTVAL (operands[3]) % <vector_count> == 0
    && UINTVAL (operands[3]) < 128 / <elem_bits>"
   {
     operands[4] = GEN_INT (INTVAL (operands[3]) + <vector_count> - 1);
     return "mova\t%0, za%1<hv>.<Vetype>[%w2, %3:%4]";
+  }
+)
+
+(define_insn "@aarch64_sme_<optab><mode><mode>"
+  [(set (match_operand:SVE_FULLx24 0 "aligned_register_operand" "=Uw<vector_count>")
+	(unspec:SVE_FULLx24
+	  [(reg:SVE_FULLx24 ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_operand:DI 1 "const_int_operand")
+	   (match_operand:SI 2 "register_operand" "Ucj")
+	   (const_int 0)]
+	  SME_READZ_HV))
+   (set (reg:SVE_FULLx24 ZA_REGNUM)
+	(unspec:SVE_FULLx24
+	  [(reg:SVE_FULLx24 ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_dup 1)
+	   (match_dup 2)
+	   (const_int 1)]
+	  SME_READZ_HV))]
+  "TARGET_STREAMING_SME2p1"
+  {
+    operands[3] = GEN_INT (<vector_count> - 1);
+    return "movaz\t%0, za%1<hv>.<Vetype>[%w2, 0:%3]";
+  }
+)
+
+(define_insn "*aarch64_sme_<optab><mode><mode>_plus"
+  [(set (match_operand:SVE_FULLx24 0 "aligned_register_operand" "=Uw<vector_count>")
+	(unspec:SVE_FULLx24
+	  [(reg:SVE_FULLx24 ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_operand:DI 1 "const_int_operand")
+	   (plus:SI
+	     (match_operand:SI 2 "register_operand" "Ucj")
+	     (match_operand:SI 3 "const_int_operand"))
+	   (const_int 0)]
+	  SME_READZ_HV))
+   (set (reg:SVE_FULLx24 ZA_REGNUM)
+	(unspec:SVE_FULLx24
+	  [(reg:SVE_FULLx24 ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_dup 1)
+	   (plus:SI
+	     (match_dup 2)
+	     (match_dup 3))
+	   (const_int 1)]
+	  SME_READZ_HV))]
+  "TARGET_STREAMING_SME2p1
+   && UINTVAL (operands[3]) % <vector_count> == 0
+   && UINTVAL (operands[3]) < 128 / <elem_bits>"
+  {
+    operands[4] = GEN_INT (INTVAL (operands[3]) + <vector_count> - 1);
+    return "movaz\t%0, za%1<hv>.<Vetype>[%w2, %3:%4]";
   }
 )
 
@@ -805,6 +927,46 @@
   "mova\t%0, za.d[%w1, %2, vgx<vector_count>]"
 )
 
+(define_insn "@aarch64_sme_readz<mode>"
+  [(set (match_operand:SVE_DIx24 0 "aligned_register_operand" "=Uw<vector_count>")
+	(unspec:SVE_DIx24
+	  [(reg:SVE_DIx24 ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_operand:SI 1 "register_operand" "Uci")
+	   (const_int 0)]
+	  UNSPEC_SME_READZ))
+   (set (reg:SVE_DIx24 ZA_REGNUM)
+	(unspec:SVE_DIx24
+	  [(reg:SVE_DIx24 ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_dup 1)
+	   (const_int 1)]
+	  UNSPEC_SME_READZ))]
+  "TARGET_STREAMING_SME2p1"
+  "movaz\t%0, za.d[%w1, 0, vgx<vector_count>]"
+)
+
+(define_insn "*aarch64_sme_readz<mode>_plus"
+  [(set (match_operand:SVE_DIx24 0 "aligned_register_operand" "=Uw<vector_count>")
+	(unspec:SVE_DIx24
+	  [(reg:SVE_DIx24 ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (plus:SI (match_operand:SI 1 "register_operand" "Uci")
+		    (match_operand:SI 2 "const_0_to_7_operand"))
+	   (const_int 0)]
+	  UNSPEC_SME_READZ))
+   (set (reg:SVE_DIx24 ZA_REGNUM)
+	(unspec:SVE_DIx24
+	  [(reg:SVE_DIx24 ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (plus:SI (match_dup 1)
+		    (match_dup 2))
+	   (const_int 1)]
+	  UNSPEC_SME_READZ))]
+  "TARGET_STREAMING_SME2p1"
+  "movaz\t%0, za.d[%w1, %2, vgx<vector_count>]"
+)
+
 (define_insn "@aarch64_sme_<optab><mode><mode>"
   [(set (reg:SVE_FULLx24 ZA_REGNUM)
 	(unspec:SVE_FULLx24
@@ -813,7 +975,7 @@
 	   (match_operand:DI 0 "const_int_operand")
 	   (match_operand:SI 1 "register_operand" "Ucj")
 	   (match_operand:SVE_FULLx24 2 "aligned_register_operand" "Uw<vector_count>")]
-	  SME_WRITE))]
+	  SME_WRITE_HV))]
   "TARGET_STREAMING_SME2"
   {
     operands[3] = GEN_INT (<vector_count> - 1);
@@ -831,7 +993,7 @@
 	     (match_operand:SI 1 "register_operand" "Ucj")
 	     (match_operand:SI 2 "const_int_operand"))
 	   (match_operand:SVE_FULLx24 3 "aligned_register_operand" "Uw<vector_count>")]
-	  SME_WRITE))]
+	  SME_WRITE_HV))]
   "TARGET_STREAMING_SME2
    && UINTVAL (operands[2]) % <vector_count> == 0
    && UINTVAL (operands[2]) < 128 / <elem_bits>"
@@ -848,7 +1010,7 @@
 	   (reg:DI SME_STATE_REGNUM)
 	   (match_operand:SI 0 "register_operand" "Uci")
 	   (match_operand:SVE_DIx24 1 "aligned_register_operand" "Uw<vector_count>")]
-	  UNSPEC_SME_READ))]
+	  UNSPEC_SME_WRITE))]
   "TARGET_STREAMING_SME2"
   "mova\tza.d[%w0, 0, vgx<vector_count>], %1"
 )
@@ -861,7 +1023,7 @@
 	   (plus:SI (match_operand:SI 0 "register_operand" "Uci")
 		    (match_operand:SI 1 "const_0_to_7_operand"))
 	   (match_operand:SVE_DIx24 2 "aligned_register_operand" "Uw<vector_count>")]
-	  UNSPEC_SME_READ))]
+	  UNSPEC_SME_WRITE))]
   "TARGET_STREAMING_SME2"
   "mova\tza.d[%w0, %1, vgx<vector_count>], %2"
 )
@@ -873,7 +1035,7 @@
 ;; - ZERO
 ;; -------------------------------------------------------------------------
 
-(define_c_enum "unspec" [UNSPEC_SME_ZERO])
+(define_c_enum "unspec" [UNSPEC_SME_ZERO UNSPEC_SME_ZERO_SLICES])
 
 (define_insn "aarch64_sme_zero_za"
   [(set (reg:VNx16QI ZA_REGNUM)
@@ -884,6 +1046,59 @@
   "TARGET_SME"
   {
     return aarch64_output_sme_zero_za (operands[0]);
+  }
+)
+
+(define_insn "@aarch64_sme_zero_za_slices<mode>"
+  [(set (reg:VNx16QI ZA_REGNUM)
+	(unspec:VNx16QI
+	  [(reg:VNx16QI ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (scratch:SME_ZA_SDIx24)
+	   (match_operand:SI 0 "register_operand" "Uci")]
+	  UNSPEC_SME_ZERO_SLICES))]
+  "TARGET_STREAMING_SME2p1"
+  "zero\tza.d[%w0, 0, vgx<vector_count>]"
+)
+
+(define_insn "*aarch64_sme_zero_za_slices<mode>_plus"
+  [(set (reg:VNx16QI ZA_REGNUM)
+	(unspec:VNx16QI
+	  [(reg:VNx16QI ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (scratch:SME_ZA_SDIx24)
+	   (plus:SI (match_operand:SI 0 "register_operand" "Uci")
+		    (match_operand:SI 1 "const_0_to_7_operand"))]
+	  UNSPEC_SME_ZERO_SLICES))]
+  "TARGET_STREAMING_SME2p1"
+  "zero\tza.d[%w0, %1, vgx<vector_count>]"
+)
+
+(define_insn "@aarch64_sme_zero_za_slices<mode>"
+  [(set (reg:VNx16QI ZA_REGNUM)
+	(unspec:VNx16QI
+	  [(reg:VNx16QI ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (scratch:SME_ZA_BHIx124)
+	   (match_operand:SI 0 "register_operand" "Uci")]
+	  UNSPEC_SME_ZERO_SLICES))]
+  "TARGET_STREAMING_SME2p1"
+  "zero\tza.d[%w0, 0:<za32_last_offset><vg_modifier>]"
+)
+
+(define_insn "*aarch64_sme_zero_za_slices<mode>_plus"
+  [(set (reg:VNx16QI ZA_REGNUM)
+	(unspec:VNx16QI
+	  [(reg:VNx16QI ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (scratch:SME_ZA_BHIx124)
+	   (plus:SI (match_operand:SI 0 "register_operand" "Uci")
+		    (match_operand:SI 1 "const_<za32_offset_range>_operand"))]
+	  UNSPEC_SME_ZERO_SLICES))]
+  "TARGET_STREAMING_SME2p1"
+  {
+    operands[2] = GEN_INT (INTVAL (operands[1]) + <za32_last_offset>);
+    return "zero\tza.d[%w0, %1:%2<vg_modifier>]";
   }
 )
 
@@ -926,6 +1141,11 @@
 ;; -------------------------------------------------------------------------
 ;; Includes:
 ;; - ADD
+;; - BFADD
+;; - BFSUB
+;; - FADD
+;; - FSUB
+;; - SUB
 ;; -------------------------------------------------------------------------
 
 (define_insn "@aarch64_sme_<optab><mode>"
@@ -954,28 +1174,28 @@
 )
 
 (define_insn "@aarch64_sme_<optab><mode>"
-  [(set (reg:SME_ZA_SDFx24 ZA_REGNUM)
-	(unspec:SME_ZA_SDFx24
-	  [(reg:SME_ZA_SDFx24 ZA_REGNUM)
+  [(set (reg:SME_ZA_HSDFx24 ZA_REGNUM)
+	(unspec:SME_ZA_HSDFx24
+	  [(reg:SME_ZA_HSDFx24 ZA_REGNUM)
 	   (reg:DI SME_STATE_REGNUM)
 	   (match_operand:SI 0 "register_operand" "Uci")
-	   (match_operand:SME_ZA_SDFx24 1 "aligned_register_operand" "Uw<vector_count>")]
-	  SME_BINARY_SLICE_SDF))]
+	   (match_operand:SME_ZA_HSDFx24 1 "aligned_register_operand" "Uw<vector_count>")]
+	  SME_BINARY_SLICE_HSDF))]
   "TARGET_STREAMING_SME2"
-  "<optab>\tza.<Vetype>[%w0, 0, vgx<vector_count>], %1"
+  "<b><optab>\tza.<Vetype>[%w0, 0, vgx<vector_count>], %1"
 )
 
 (define_insn "*aarch64_sme_<optab><mode>_plus"
-  [(set (reg:SME_ZA_SDFx24 ZA_REGNUM)
-	(unspec:SME_ZA_SDFx24
-	  [(reg:SME_ZA_SDFx24 ZA_REGNUM)
+  [(set (reg:SME_ZA_HSDFx24 ZA_REGNUM)
+	(unspec:SME_ZA_HSDFx24
+	  [(reg:SME_ZA_HSDFx24 ZA_REGNUM)
 	   (reg:DI SME_STATE_REGNUM)
 	   (plus:SI (match_operand:SI 0 "register_operand" "Uci")
 		    (match_operand:SI 1 "const_0_to_7_operand"))
-	   (match_operand:SME_ZA_SDFx24 2 "aligned_register_operand" "Uw<vector_count>")]
-	  SME_BINARY_SLICE_SDF))]
+	   (match_operand:SME_ZA_HSDFx24 2 "aligned_register_operand" "Uw<vector_count>")]
+	  SME_BINARY_SLICE_HSDF))]
   "TARGET_STREAMING_SME2"
-  "<optab>\tza.<Vetype>[%w0, %1, vgx<vector_count>], %2"
+  "<b><optab>\tza.<Vetype>[%w0, %1, vgx<vector_count>], %2"
 )
 
 ;; -------------------------------------------------------------------------
@@ -1629,103 +1849,99 @@
 ;; ---- [FP] Ternary arithmetic on ZA slice
 ;; -------------------------------------------------------------------------
 ;; Includes:
+;; - BFMLA
+;; - BFMLS
 ;; - FMLA
 ;; - FMLS
 ;; -------------------------------------------------------------------------
 
-(define_insn "@aarch64_sme_<optab><SME_ZA_SDF_I:mode><SME_ZA_SDFx24:mode>"
-  [(set (reg:SME_ZA_SDF_I ZA_REGNUM)
-	(unspec:SME_ZA_SDF_I
-	  [(reg:SME_ZA_SDF_I ZA_REGNUM)
+(define_insn "@aarch64_sme_<optab><mode><mode>"
+  [(set (reg:SME_ZA_HSDFx24 ZA_REGNUM)
+	(unspec:SME_ZA_HSDFx24
+	  [(reg:SME_ZA_HSDFx24 ZA_REGNUM)
 	   (reg:DI SME_STATE_REGNUM)
 	   (match_operand:SI 0 "register_operand" "Uci")
-	   (match_operand:SME_ZA_SDFx24 1 "aligned_register_operand" "Uw<vector_count>")
-	   (match_operand:SME_ZA_SDFx24 2 "aligned_register_operand" "Uw<vector_count>")]
+	   (match_operand:SME_ZA_HSDFx24 1 "aligned_register_operand" "Uw<vector_count>")
+	   (match_operand:SME_ZA_HSDFx24 2 "aligned_register_operand" "Uw<vector_count>")]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_STREAMING_SME2
-   && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
-  "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, 0, vgx<vector_count>], %1, %2"
+  "TARGET_STREAMING_SME2"
+  "<b><optab>\tza.<Vetype>[%w0, 0, vgx<vector_count>], %1, %2"
 )
 
-(define_insn "*aarch64_sme_<optab><SME_ZA_SDF_I:mode><SME_ZA_SDFx24:mode>_plus"
-  [(set (reg:SME_ZA_SDF_I ZA_REGNUM)
-	(unspec:SME_ZA_SDF_I
-	  [(reg:SME_ZA_SDF_I ZA_REGNUM)
+(define_insn "*aarch64_sme_<optab><mode><mode>_plus"
+  [(set (reg:SME_ZA_HSDFx24 ZA_REGNUM)
+	(unspec:SME_ZA_HSDFx24
+	  [(reg:SME_ZA_HSDFx24 ZA_REGNUM)
 	   (reg:DI SME_STATE_REGNUM)
 	   (plus:SI (match_operand:SI 0 "register_operand" "Uci")
 		    (match_operand:SI 1 "const_0_to_7_operand"))
-	   (match_operand:SME_ZA_SDFx24 2 "aligned_register_operand" "Uw<vector_count>")
-	   (match_operand:SME_ZA_SDFx24 3 "aligned_register_operand" "Uw<vector_count>")]
+	   (match_operand:SME_ZA_HSDFx24 2 "aligned_register_operand" "Uw<vector_count>")
+	   (match_operand:SME_ZA_HSDFx24 3 "aligned_register_operand" "Uw<vector_count>")]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_STREAMING_SME2
-   && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
-  "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, %1, vgx<vector_count>], %2, %3"
+  "TARGET_STREAMING_SME2"
+  "<b><optab>\tza.<Vetype>[%w0, %1, vgx<vector_count>], %2, %3"
 )
 
-(define_insn "@aarch64_sme_single_<optab><SME_ZA_SDF_I:mode><SME_ZA_SDFx24:mode>"
-  [(set (reg:SME_ZA_SDF_I ZA_REGNUM)
-	(unspec:SME_ZA_SDF_I
-	  [(reg:SME_ZA_SDF_I ZA_REGNUM)
+(define_insn "@aarch64_sme_single_<optab><mode><mode>"
+  [(set (reg:SME_ZA_HSDFx24 ZA_REGNUM)
+	(unspec:SME_ZA_HSDFx24
+	  [(reg:SME_ZA_HSDFx24 ZA_REGNUM)
 	   (reg:DI SME_STATE_REGNUM)
 	   (match_operand:SI 0 "register_operand" "Uci")
-	   (match_operand:SME_ZA_SDFx24 1 "register_operand" "w")
-	   (vec_duplicate:SME_ZA_SDFx24
-	     (match_operand:<VSINGLE> 2 "register_operand" "x"))]
+	   (match_operand:SME_ZA_HSDFx24 1 "register_operand" "w")
+	   (vec_duplicate:SME_ZA_HSDFx24
+	     (match_operand:<SME_ZA_HSDFx24:VSINGLE> 2 "register_operand" "x"))]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_STREAMING_SME2
-   && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
-  "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, 0, vgx<vector_count>], %1, %2.<SME_ZA_SDFx24:Vetype>"
+  "TARGET_STREAMING_SME2"
+  "<b><optab>\tza.<Vetype>[%w0, 0, vgx<vector_count>], %1, %2.<Vetype>"
 )
 
-(define_insn "*aarch64_sme_single_<optab><SME_ZA_SDF_I:mode><SME_ZA_SDFx24:mode>_plus"
-  [(set (reg:SME_ZA_SDF_I ZA_REGNUM)
-	(unspec:SME_ZA_SDF_I
-	  [(reg:SME_ZA_SDF_I ZA_REGNUM)
+(define_insn "*aarch64_sme_single_<optab><mode><mode>_plus"
+  [(set (reg:SME_ZA_HSDFx24 ZA_REGNUM)
+	(unspec:SME_ZA_HSDFx24
+	  [(reg:SME_ZA_HSDFx24 ZA_REGNUM)
 	   (reg:DI SME_STATE_REGNUM)
 	   (plus:SI (match_operand:SI 0 "register_operand" "Uci")
 		    (match_operand:SI 1 "const_0_to_7_operand"))
-	   (match_operand:SME_ZA_SDFx24 2 "register_operand" "w")
-	   (vec_duplicate:SME_ZA_SDFx24
-	     (match_operand:<VSINGLE> 3 "register_operand" "x"))]
+	   (match_operand:SME_ZA_HSDFx24 2 "register_operand" "w")
+	   (vec_duplicate:SME_ZA_HSDFx24
+	     (match_operand:<SME_ZA_HSDFx24:VSINGLE> 3 "register_operand" "x"))]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_STREAMING_SME2
-   && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
-  "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, %1, vgx<vector_count>], %2, %3.<SME_ZA_SDFx24:Vetype>"
+  "TARGET_STREAMING_SME2"
+  "<b><optab>\tza.<Vetype>[%w0, %1, vgx<vector_count>], %2, %3.<Vetype>"
 )
 
-(define_insn "@aarch64_sme_lane_<optab><SME_ZA_SDF_I:mode><SME_ZA_SDFx24:mode>"
-  [(set (reg:SME_ZA_SDF_I ZA_REGNUM)
-	(unspec:SME_ZA_SDF_I
-	  [(reg:SME_ZA_SDF_I ZA_REGNUM)
+(define_insn "@aarch64_sme_lane_<optab><mode><mode>"
+  [(set (reg:SME_ZA_HSDFx24 ZA_REGNUM)
+	(unspec:SME_ZA_HSDFx24
+	  [(reg:SME_ZA_HSDFx24 ZA_REGNUM)
 	   (reg:DI SME_STATE_REGNUM)
 	   (match_operand:SI 0 "register_operand" "Uci")
-	   (match_operand:SME_ZA_SDFx24 1 "aligned_register_operand" "Uw<vector_count>")
-	   (unspec:SME_ZA_SDFx24
-	     [(match_operand:<VSINGLE> 2 "register_operand" "x")
+	   (match_operand:SME_ZA_HSDFx24 1 "aligned_register_operand" "Uw<vector_count>")
+	   (unspec:SME_ZA_HSDFx24
+	     [(match_operand:<SME_ZA_HSDFx24:VSINGLE> 2 "register_operand" "x")
 	      (match_operand:SI 3 "const_int_operand")]
 	     UNSPEC_SVE_LANE_SELECT)]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_STREAMING_SME2
-   && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
-  "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, 0, vgx<vector_count>], %1, %2.<SME_ZA_SDFx24:Vetype>[%3]"
+  "TARGET_STREAMING_SME2"
+  "<b><optab>\tza.<Vetype>[%w0, 0, vgx<vector_count>], %1, %2.<Vetype>[%3]"
 )
 
-(define_insn "*aarch64_sme_lane_<optab><SME_ZA_SDF_I:mode><SME_ZA_SDFx24:mode>"
-  [(set (reg:SME_ZA_SDF_I ZA_REGNUM)
-	(unspec:SME_ZA_SDF_I
-	  [(reg:SME_ZA_SDF_I ZA_REGNUM)
+(define_insn "*aarch64_sme_lane_<optab><mode><mode>"
+  [(set (reg:SME_ZA_HSDFx24 ZA_REGNUM)
+	(unspec:SME_ZA_HSDFx24
+	  [(reg:SME_ZA_HSDFx24 ZA_REGNUM)
 	   (reg:DI SME_STATE_REGNUM)
 	   (plus:SI (match_operand:SI 0 "register_operand" "Uci")
 		    (match_operand:SI 1 "const_0_to_7_operand"))
-	   (match_operand:SME_ZA_SDFx24 2 "aligned_register_operand" "Uw<vector_count>")
-	   (unspec:SME_ZA_SDFx24
-	     [(match_operand:<VSINGLE> 3 "register_operand" "x")
+	   (match_operand:SME_ZA_HSDFx24 2 "aligned_register_operand" "Uw<vector_count>")
+	   (unspec:SME_ZA_HSDFx24
+	     [(match_operand:<SME_ZA_HSDFx24:VSINGLE> 3 "register_operand" "x")
 	      (match_operand:SI 4 "const_int_operand")]
 	     UNSPEC_SVE_LANE_SELECT)]
 	  SME_FP_TERNARY_SLICE))]
-  "TARGET_STREAMING_SME2
-   && <SME_ZA_SDF_I:elem_bits> == <SME_ZA_SDFx24:elem_bits>"
-  "<optab>\tza.<SME_ZA_SDF_I:Vetype>[%w0, %1, vgx<vector_count>], %2, %3.<SME_ZA_SDFx24:Vetype>[%4]"
+  "TARGET_STREAMING_SME2"
+  "<b><optab>\tza.<Vetype>[%w0, %1, vgx<vector_count>], %2, %3.<Vetype>[%4]"
 )
 
 ;; -------------------------------------------------------------------------
@@ -1876,20 +2092,34 @@
 ;; - FMOPS
 ;; -------------------------------------------------------------------------
 
-(define_insn "@aarch64_sme_<optab><SME_ZA_SDF_I:mode><SME_MOP_HSDF:mode>"
-  [(set (reg:SME_ZA_SDF_I ZA_REGNUM)
-	(unspec:SME_ZA_SDF_I
-	  [(reg:SME_ZA_SDF_I ZA_REGNUM)
+(define_insn "@aarch64_sme_<optab><mode><mode>"
+  [(set (reg:SME_MOP_HSDF ZA_REGNUM)
+	(unspec:SME_MOP_HSDF
+	  [(reg:SME_MOP_HSDF ZA_REGNUM)
 	   (reg:DI SME_STATE_REGNUM)
 	   (match_operand:DI 0 "const_int_operand")
-	   (match_operand:<SME_ZA_SDF_I:VPRED> 1 "register_operand" "Upl")
-	   (match_operand:<SME_ZA_SDF_I:VPRED> 2 "register_operand" "Upl")
+	   (match_operand:<VPRED> 1 "register_operand" "Upl")
+	   (match_operand:<VPRED> 2 "register_operand" "Upl")
 	   (match_operand:SME_MOP_HSDF 3 "register_operand" "w")
 	   (match_operand:SME_MOP_HSDF 4 "register_operand" "w")]
 	  SME_FP_MOP))]
-  "TARGET_STREAMING
-   && (<SME_ZA_SDF_I:elem_bits> == 32) == (<SME_MOP_HSDF:elem_bits> <= 32)"
-  "<b><optab>\tza%0.<SME_ZA_SDF_I:Vetype>, %1/m, %2/m, %3.<SME_MOP_HSDF:Vetype>, %4.<SME_MOP_HSDF:Vetype>"
+  "TARGET_STREAMING"
+  "<b><optab>\tza%0.<Vetype>, %1/m, %2/m, %3.<Vetype>, %4.<Vetype>"
+)
+
+(define_insn "@aarch64_sme_<optab><VNx4SI_ONLY:mode><SVE_FULL_HF:mode>"
+  [(set (reg:VNx4SI_ONLY ZA_REGNUM)
+	(unspec:VNx4SI_ONLY
+	  [(reg:VNx4SI_ONLY ZA_REGNUM)
+	   (reg:DI SME_STATE_REGNUM)
+	   (match_operand:DI 0 "const_int_operand")
+	   (match_operand:<VNx4SI_ONLY:VPRED> 1 "register_operand" "Upl")
+	   (match_operand:<VNx4SI_ONLY:VPRED> 2 "register_operand" "Upl")
+	   (match_operand:SVE_FULL_HF 3 "register_operand" "w")
+	   (match_operand:SVE_FULL_HF 4 "register_operand" "w")]
+	  SME_FP_MOP))]
+  "TARGET_STREAMING"
+  "<b><optab>\tza%0.<VNx4SI_ONLY:Vetype>, %1/m, %2/m, %3.<SVE_FULL_HF:Vetype>, %4.<SVE_FULL_HF:Vetype>"
 )
 
 ;; =========================================================================

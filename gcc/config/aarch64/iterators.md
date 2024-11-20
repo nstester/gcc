@@ -432,6 +432,7 @@
 (define_mode_iterator VNx8HI_ONLY [VNx8HI])
 (define_mode_iterator VNx8BF_ONLY [VNx8BF])
 (define_mode_iterator VNx8SI_ONLY [VNx8SI])
+(define_mode_iterator VNx8SF_ONLY [VNx8SF])
 (define_mode_iterator VNx8DI_ONLY [VNx8DI])
 (define_mode_iterator VNx4SI_ONLY [VNx4SI])
 (define_mode_iterator VNx4SF_ONLY [VNx4SF])
@@ -454,6 +455,14 @@
 
 ;; Fully-packed SVE floating-point vector modes and their scalar equivalents.
 (define_mode_iterator SVE_FULL_F_SCALAR [SVE_FULL_F GPF_HF])
+
+(define_mode_iterator SVE_FULL_F_BF [(VNx8BF "TARGET_SSVE_B16B16") SVE_FULL_F])
+
+;; Modes for which (B)FCLAMP is supported.
+(define_mode_iterator SVE_CLAMP_F [(VNx8BF "TARGET_SSVE_B16B16")
+				   (VNx8HF "TARGET_SVE2p1_OR_SME2")
+				   (VNx4SF "TARGET_SVE2p1_OR_SME2")
+				   (VNx2DF "TARGET_SVE2p1_OR_SME2")])
 
 ;; Fully-packed SVE integer vector modes that have 8-bit or 16-bit elements.
 (define_mode_iterator SVE_FULL_BHI [VNx16QI VNx8HI])
@@ -643,7 +652,9 @@
 (define_mode_iterator SVE_Ix24 [VNx32QI VNx16HI VNx8SI VNx4DI
 				VNx64QI VNx32HI VNx16SI VNx8DI])
 
-(define_mode_iterator SVE_Fx24 [VNx16HF VNx8SF VNx4DF
+(define_mode_iterator SVE_Fx24 [(VNx16BF "TARGET_SSVE_B16B16")
+				(VNx32BF "TARGET_SSVE_B16B16")
+				VNx16HF VNx8SF VNx4DF
 				VNx32HF VNx16SF VNx8DF])
 
 (define_mode_iterator SVE_SFx24 [VNx8SF VNx16SF])
@@ -651,8 +662,6 @@
 ;; The modes used to represent different ZA access sizes.
 (define_mode_iterator SME_ZA_I [VNx16QI VNx8HI VNx4SI VNx2DI VNx1TI])
 (define_mode_iterator SME_ZA_SDI [VNx4SI (VNx2DI "TARGET_SME_I16I64")])
-
-(define_mode_iterator SME_ZA_SDF_I [VNx4SI (VNx2DI "TARGET_SME_F64F64")])
 
 (define_mode_iterator SME_ZA_BIx24 [VNx32QI VNx64QI])
 
@@ -673,13 +682,20 @@
 (define_mode_iterator SME_ZA_SDIx24 [VNx8SI (VNx4DI "TARGET_SME_I16I64")
 				     VNx16SI (VNx8DI "TARGET_SME_I16I64")])
 
-(define_mode_iterator SME_ZA_SDFx24 [VNx8SF (VNx4DF "TARGET_SME_F64F64")
-				     VNx16SF (VNx8DF "TARGET_SME_F64F64")])
+(define_mode_iterator SME_ZA_HSDFx24 [VNx8SF VNx16SF
+				      (VNx4DF "TARGET_SME_F64F64")
+				      (VNx8DF "TARGET_SME_F64F64")
+				      (VNx16HF "TARGET_STREAMING_SME_F16F16")
+				      (VNx32HF "TARGET_STREAMING_SME_F16F16")
+				      (VNx16BF "TARGET_STREAMING_SME_B16B16")
+				      (VNx32BF "TARGET_STREAMING_SME_B16B16")])
 
 ;; The modes for which outer product instructions are supported.
 (define_mode_iterator SME_MOP_BHI [VNx16QI (VNx8HI "TARGET_SME_I16I64")])
-(define_mode_iterator SME_MOP_HSDF [VNx8BF VNx8HF VNx4SF
-				    (VNx2DF "TARGET_SME_F64F64")])
+(define_mode_iterator SME_MOP_HSDF [VNx4SF
+				    (VNx2DF "TARGET_SME_F64F64")
+				    (VNx8HF "TARGET_STREAMING_SME_F16F16")
+				    (VNx8BF "TARGET_STREAMING_SME_B16B16")])
 
 ;; ------------------------------------------------------------------
 ;; Unspec enumerations for Advance SIMD. These could well go into
@@ -1086,6 +1102,7 @@
     UNSPEC_FMAXNMQV
     UNSPEC_FMINQV
     UNSPEC_FMINNMQV
+    UNSPEC_FCVTL
     UNSPEC_FCVTN
     UNSPEC_FDOT
     UNSPEC_LD1_EXTENDQ
@@ -1134,6 +1151,9 @@
     UNSPEC_SME_READ
     UNSPEC_SME_READ_HOR
     UNSPEC_SME_READ_VER
+    UNSPEC_SME_READZ
+    UNSPEC_SME_READZ_HOR
+    UNSPEC_SME_READZ_VER
     UNSPEC_SME_SDOT
     UNSPEC_SME_SVDOT
     UNSPEC_SME_SMLA
@@ -2484,7 +2504,8 @@
 ;; The constraint to use for an SVE [SU]DOT, FMUL, FMLA or FMLS lane index.
 (define_mode_attr sve_lane_con [(VNx8HI "y") (VNx4SI "y") (VNx2DI "x")
 							  (V2DI "x")
-				(VNx8HF "y") (VNx4SF "y") (VNx2DF "x")])
+				(VNx8BF "y") (VNx8HF "y")
+				(VNx4SF "y") (VNx2DF "x")])
 
 ;; The constraint to use for an SVE FCMLA lane index.
 (define_mode_attr sve_lane_pair_con [(VNx8HF "y") (VNx4SF "x")])
@@ -2494,8 +2515,13 @@
 				 (V2DI "vec") (DI "offset")])
 
 (define_mode_attr b [(VNx8BF "b") (VNx8HF "") (VNx4SF "") (VNx2DF "")
-		     (VNx16BF "b") (VNx16HF "")
-		     (VNx32BF "b") (VNx32HF "")])
+		     (VNx16BF "b") (VNx16HF "") (VNx8SF "") (VNx4DF "")
+		     (VNx32BF "b") (VNx32HF "") (VNx16SF "") (VNx8DF "")])
+
+(define_mode_attr is_bf16 [(VNx8BF "true")
+			   (VNx8HF "false")
+			   (VNx4SF "false")
+			   (VNx2DF "false")])
 
 (define_mode_attr aligned_operand [(VNx16QI "register_operand")
 				   (VNx8HI "register_operand")
@@ -2973,6 +2999,12 @@
 
 (define_code_attr inc_dec [(minus "dec") (ss_minus "sqdec") (us_minus "uqdec")
 			   (plus "inc") (ss_plus "sqinc") (us_plus "uqinc")])
+
+;; The predicated FP operation associated with each rtl code.  This is only
+;; useful for operations that have both predicated and unpredicated forms.
+(define_code_attr SVE_COND_FP [(plus "UNSPEC_COND_FADD")
+			       (minus "UNSPEC_COND_FSUB")
+			       (mult "UNSPEC_COND_FMUL")])
 
 ;; -------------------------------------------------------------------
 ;; Int Iterators.
@@ -3638,9 +3670,10 @@
 (define_int_iterator UNSPEC_REVD_ONLY [UNSPEC_REVD])
 
 (define_int_iterator SME_LD1 [UNSPEC_SME_LD1_HOR UNSPEC_SME_LD1_VER])
-(define_int_iterator SME_READ [UNSPEC_SME_READ_HOR UNSPEC_SME_READ_VER])
+(define_int_iterator SME_READ_HV [UNSPEC_SME_READ_HOR UNSPEC_SME_READ_VER])
+(define_int_iterator SME_READZ_HV [UNSPEC_SME_READZ_HOR UNSPEC_SME_READZ_VER])
 (define_int_iterator SME_ST1 [UNSPEC_SME_ST1_HOR UNSPEC_SME_ST1_VER])
-(define_int_iterator SME_WRITE [UNSPEC_SME_WRITE_HOR UNSPEC_SME_WRITE_VER])
+(define_int_iterator SME_WRITE_HV [UNSPEC_SME_WRITE_HOR UNSPEC_SME_WRITE_VER])
 
 (define_int_iterator SME_BINARY_SDI [UNSPEC_SME_ADDHA UNSPEC_SME_ADDVA])
 
@@ -3658,7 +3691,7 @@
 
 (define_int_iterator SME_BINARY_SLICE_SDI [UNSPEC_SME_ADD UNSPEC_SME_SUB])
 
-(define_int_iterator SME_BINARY_SLICE_SDF [UNSPEC_SME_FADD UNSPEC_SME_FSUB])
+(define_int_iterator SME_BINARY_SLICE_HSDF [UNSPEC_SME_FADD UNSPEC_SME_FSUB])
 
 (define_int_iterator SME_BINARY_WRITE_SLICE_SDI [UNSPEC_SME_ADD_WRITE
 						 UNSPEC_SME_SUB_WRITE])
@@ -3795,6 +3828,8 @@
 			(UNSPEC_SME_LD1_VER "ld1_ver")
 			(UNSPEC_SME_READ_HOR "read_hor")
 			(UNSPEC_SME_READ_VER "read_ver")
+			(UNSPEC_SME_READZ_HOR "readz_hor")
+			(UNSPEC_SME_READZ_VER "readz_ver")
 			(UNSPEC_SME_SDOT "sdot")
 			(UNSPEC_SME_SVDOT "svdot")
 			(UNSPEC_SME_SMLA "smla")
@@ -4545,6 +4580,45 @@
 			      (UNSPEC_COND_FNMLA "fnmad")
 			      (UNSPEC_COND_FNMLS "fnmsb")])
 
+(define_int_attr supports_bf16 [(UNSPEC_COND_FADD "true")
+				(UNSPEC_COND_FAMAX "false")
+				(UNSPEC_COND_FAMIN "false")
+				(UNSPEC_COND_FDIV "false")
+				(UNSPEC_COND_FMAX "true")
+				(UNSPEC_COND_FMAXNM "true")
+				(UNSPEC_COND_FMIN "true")
+				(UNSPEC_COND_FMINNM "true")
+				(UNSPEC_COND_FMLA "true")
+				(UNSPEC_COND_FMLS "true")
+				(UNSPEC_COND_FMUL "true")
+				(UNSPEC_COND_FMULX "false")
+				(UNSPEC_COND_FMULX "false")
+				(UNSPEC_COND_FNMLA "false")
+				(UNSPEC_COND_FNMLS "false")
+				(UNSPEC_COND_FSUB "true")
+				(UNSPEC_COND_SMAX "true")
+				(UNSPEC_COND_SMIN "true")])
+
+;; Differs from supports_bf16 only in UNSPEC_COND_FSUB.
+(define_int_attr supports_bf16_rev [(UNSPEC_COND_FADD "true")
+				    (UNSPEC_COND_FAMAX "false")
+				    (UNSPEC_COND_FAMIN "false")
+				    (UNSPEC_COND_FDIV "false")
+				    (UNSPEC_COND_FMAX "true")
+				    (UNSPEC_COND_FMAXNM "true")
+				    (UNSPEC_COND_FMIN "true")
+				    (UNSPEC_COND_FMINNM "true")
+				    (UNSPEC_COND_FMLA "true")
+				    (UNSPEC_COND_FMLS "true")
+				    (UNSPEC_COND_FMUL "true")
+				    (UNSPEC_COND_FMULX "false")
+				    (UNSPEC_COND_FMULX "false")
+				    (UNSPEC_COND_FNMLA "false")
+				    (UNSPEC_COND_FNMLS "false")
+				    (UNSPEC_COND_FSUB "false")
+				    (UNSPEC_COND_SMAX "true")
+				    (UNSPEC_COND_SMIN "true")])
+
 ;; The register constraint to use for the final operand in a binary BRK.
 (define_int_attr brk_reg_con [(UNSPEC_BRKN "0")
 			      (UNSPEC_BRKPA "Upa") (UNSPEC_BRKPB "Upa")])
@@ -4613,6 +4687,8 @@
 		     (UNSPEC_SME_LD1_VER "v")
 		     (UNSPEC_SME_READ_HOR "h")
 		     (UNSPEC_SME_READ_VER "v")
+		     (UNSPEC_SME_READZ_HOR "h")
+		     (UNSPEC_SME_READZ_VER "v")
 		     (UNSPEC_SME_ST1_HOR "h")
 		     (UNSPEC_SME_ST1_VER "v")
 		     (UNSPEC_SME_WRITE_HOR "h")

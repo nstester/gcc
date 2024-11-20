@@ -349,6 +349,14 @@ constexpr auto AARCH64_FL_DEFAULT_ISA_MODE ATTRIBUTE_UNUSED
 /* The FEAT_SME_I16I64 extension to SME, enabled through +sme-i16i64.  */
 #define TARGET_SME_I16I64 AARCH64_HAVE_ISA (SME_I16I64)
 
+/* The FEAT_SME_B16B16 extension to SME, enabled through +sme-b16b16.  */
+#define TARGET_STREAMING_SME_B16B16 \
+  (AARCH64_HAVE_ISA (SME_B16B16) && TARGET_STREAMING)
+
+/* The FEAT_SME_F16F16 extension to SME, enabled through +sme-f16f16.  */
+#define TARGET_STREAMING_SME_F16F16 \
+  (AARCH64_HAVE_ISA (SME_F16F16) && TARGET_STREAMING)
+
 /* The FEAT_SME_F64F64 extension to SME, enabled through +sme-f64f64.  */
 #define TARGET_SME_F64F64 AARCH64_HAVE_ISA (SME_F64F64)
 
@@ -357,6 +365,10 @@ constexpr auto AARCH64_FL_DEFAULT_ISA_MODE ATTRIBUTE_UNUSED
 
 /* Same with streaming mode enabled.  */
 #define TARGET_STREAMING_SME2 (TARGET_STREAMING && TARGET_SME2)
+
+#define TARGET_STREAMING_SME2p1 (TARGET_STREAMING && AARCH64_HAVE_ISA (SME2p1))
+
+#define TARGET_SME_B16B16 AARCH64_HAVE_ISA (SME_B16B16)
 
 /* ARMv8.3-A features.  */
 #define TARGET_ARMV8_3	AARCH64_HAVE_ISA (V8_3A)
@@ -486,6 +498,10 @@ constexpr auto AARCH64_FL_DEFAULT_ISA_MODE ATTRIBUTE_UNUSED
 
 /* Combinatorial tests.  */
 
+#define TARGET_SVE2_OR_SME2 \
+  ((TARGET_SVE2 || TARGET_STREAMING) \
+   && (TARGET_SME2 || TARGET_NON_STREAMING))
+
 /* There's no need to check TARGET_SME for streaming or streaming-compatible
    functions, since streaming mode itself implies SME.  */
 #define TARGET_SVE2p1_OR_SME (TARGET_SVE2p1 || TARGET_STREAMING)
@@ -493,6 +509,9 @@ constexpr auto AARCH64_FL_DEFAULT_ISA_MODE ATTRIBUTE_UNUSED
 #define TARGET_SVE2p1_OR_SME2 \
   ((TARGET_SVE2p1 || TARGET_STREAMING) \
    && (TARGET_SME2 || TARGET_NON_STREAMING))
+
+#define TARGET_SSVE_B16B16 \
+  (AARCH64_HAVE_ISA (SVE_B16B16) && TARGET_SVE2_OR_SME2)
 
 /* Standard register usage.  */
 
