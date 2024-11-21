@@ -5781,12 +5781,14 @@ foreach { armfunc armflag armdefs } {
 	v7r "-march=armv7-r+fp" __ARM_ARCH_7R__
 	v7m "-march=armv7-m -mthumb -mfloat-abi=soft" __ARM_ARCH_7M__
 	v7em "-march=armv7e-m+fp -mthumb" __ARM_ARCH_7EM__
+	v7em_hard "-march=armv7e-m+fp -mfpu=auto -mfloat-abi=hard -mthumb" __ARM_ARCH_7EM__
 	v7ve "-march=armv7ve+fp -marm"
 		"__ARM_ARCH_7A__ && __ARM_FEATURE_IDIV"
 	v7ve_neon "-march=armv7ve+simd -mfpu=auto -mfloat-abi=softfp"
 		  "__ARM_ARCH_7A__ && __ARM_FEATURE_IDIV && __ARM_NEON__"
 	v8a "-march=armv8-a+simd" __ARM_ARCH_8A__
 	v8a_hard "-march=armv8-a+simd -mfpu=auto -mfloat-abi=hard" __ARM_ARCH_8A__
+	v8a_crc_hard "-march=armv8-a+crc+simd -mfpu=auto -mfloat-abi=hard" "__ARM_ARCH_8A__ && __ARM_FEATURE_CRC32"
 	v8_1a "-march=armv8.1-a+simd" __ARM_ARCH_8A__
 	v8_2a "-march=armv8.2-a+simd" __ARM_ARCH_8A__
 	v8r "-march=armv8-r+fp.sp" __ARM_ARCH_8R__
@@ -5848,6 +5850,16 @@ foreach { armfunc armflag armdefs } {
 foreach { armfunc armflag armdefs } {
 	    xscale_arm "-mcpu=xscale -mfloat-abi=soft -marm" "__XSCALE__ && !__thumb__"
 	    cortex_a57 "-mcpu=cortex-a57" __ARM_ARCH_8A__
+	    cortex_m0 "-mcpu=cortex-m0 -mfloat-abi=soft -mthumb" "__ARM_ARCH_6M__ && __thumb__"
+	    cortex_m0_small "-mcpu=cortex-m0.small-multiply -mfloat-abi=soft -mthumb" "__ARM_ARCH_6M__ && __thumb__"
+	    cortex_m0plus_small "-mcpu=cortex-m0plus.small-multiply -mfloat-abi=soft -mthumb" "__ARM_ARCH_6M__ && __thumb__"
+	    cortex_m1_small "-mcpu=cortex-m1.small-multiply -mfloat-abi=soft -mthumb" "__ARM_ARCH_6M__ && __thumb__"
+	    cortex_m3 "-mcpu=cortex-m3 -mfloat-abi=soft -mthumb" "__ARM_ARCH_7M__"
+	    cortex_m4 "-mcpu=cortex-m4 -mfpu=auto -mthumb" "__ARM_ARCH_7EM__"
+	    cortex_m4_hard "-mcpu=cortex-m4 -mfpu=auto -mfloat-abi=hard -mthumb" "__ARM_ARCH_7EM__"
+	    cortex_m7 "-mcpu=cortex-m7 -mfpu=auto -mthumb" "__ARM_ARCH_7EM__"
+	    cortex_m23 "-mcpu=cortex-m23 -mfloat-abi=soft -mthumb" "__ARM_ARCH_8M_BASE__  && __thumb__"
+	    cortex_m55 "-mcpu=cortex-m55 -mfpu=auto -mthumb" "__ARM_ARCH_8M_MAIN__  && __thumb__"
 	} {
     eval [string map [list FUNC $armfunc FLAG $armflag DEFS $armdefs ] {
 	proc check_effective_target_arm_cpu_FUNC_ok { } {
@@ -6114,7 +6126,7 @@ proc check_effective_target_arm_pacbti_hw {} {
 	  asm ("autg r12, lr, sp");
 	  asm ("bx lr");
 	}
-    } "-march=armv8.1-m.main+pacbti+fp -mbranch-protection=standard -mthumb -mfloat-abi=hard"]
+    } "-mcpu=unset -march=armv8.1-m.main+pacbti+fp -mbranch-protection=standard -mthumb -mfloat-abi=hard"]
 }
 
 # Return 1 if this compilation turns on string_ops_prefer_neon on.
