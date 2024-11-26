@@ -219,11 +219,11 @@ package body Diagnostics.Utils is
      (if D.Warn_Err then "error"
       else
        (case D.Kind is
-        when Diagnostics.Error => "error",
+        when Diagnostics.Error | Non_Serious_Error => "error",
         when Warning | Restriction_Warning | Default_Warning |
              Tagless_Warning => "warning",
         when Style => "style",
-        when Info | Info_Warning => "info"));
+        when Info => "info"));
 
    ------------------------------
    -- Get_Primary_Labeled_Span --
@@ -259,7 +259,6 @@ package body Diagnostics.Utils is
       if Warning_Doc_Switch
         and then Diag.Kind in Default_Warning
           | Info
-          | Info_Warning
           | Restriction_Warning
           | Style
           | Warning
@@ -273,7 +272,7 @@ package body Diagnostics.Utils is
 
             elsif Diag.Kind /= Info then
 
-               --  For Default_Warning and Info_Warning
+               --  For Default_Warning
 
                return "[enabled by default]";
             end if;
