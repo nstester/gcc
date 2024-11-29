@@ -911,7 +911,7 @@ static aarch64_fcmla_laneq_builtin_datum aarch64_fcmla_lane_builtin_data[] = {
    2, \
    { SIMD_INTR_MODE(A, L), SIMD_INTR_MODE(B, L) }, \
    { SIMD_INTR_QUAL(A), SIMD_INTR_QUAL(B) }, \
-   FLAG_AUTO_FP, \
+   FLAG_NONE, \
    SIMD_INTR_MODE(A, L) == SIMD_INTR_MODE(B, L) \
      && SIMD_INTR_QUAL(A) == SIMD_INTR_QUAL(B) \
   },
@@ -923,7 +923,7 @@ static aarch64_fcmla_laneq_builtin_datum aarch64_fcmla_lane_builtin_data[] = {
    2, \
    { SIMD_INTR_MODE(A, d), SIMD_INTR_MODE(A, q) }, \
    { SIMD_INTR_QUAL(A), SIMD_INTR_QUAL(A) }, \
-   FLAG_AUTO_FP, \
+   FLAG_NONE, \
    false \
   },
 
@@ -934,7 +934,7 @@ static aarch64_fcmla_laneq_builtin_datum aarch64_fcmla_lane_builtin_data[] = {
    2, \
    { SIMD_INTR_MODE(A, d), SIMD_INTR_MODE(A, q) }, \
    { SIMD_INTR_QUAL(A), SIMD_INTR_QUAL(A) }, \
-   FLAG_AUTO_FP, \
+   FLAG_NONE, \
    false \
   },
 
@@ -1482,10 +1482,14 @@ aarch64_init_simd_builtin_functions (bool called_from_pragma)
 						      size_type_node,
 						      intSI_type_node,
 						      NULL);
+      /* aarch64_im_lane_boundsi should be leaf and nothrow as it
+	 is expanded as nop or will cause an user error.  */
+      tree attrs = aarch64_add_attribute ("nothrow", NULL_TREE);
+      attrs = aarch64_add_attribute ("leaf", attrs);
       aarch64_builtin_decls[AARCH64_SIMD_BUILTIN_LANE_CHECK]
 	= aarch64_general_add_builtin ("__builtin_aarch64_im_lane_boundsi",
 				       lane_check_fpr,
-				       AARCH64_SIMD_BUILTIN_LANE_CHECK);
+				       AARCH64_SIMD_BUILTIN_LANE_CHECK, attrs);
     }
 
   for (i = 0; i < ARRAY_SIZE (aarch64_simd_builtin_data); i++, fcode++)
@@ -2020,10 +2024,12 @@ aarch64_init_prefetch_builtin (void)
 {
 #define AARCH64_INIT_PREFETCH_BUILTIN(INDEX, N)				\
   aarch64_builtin_decls[INDEX] =					\
-    aarch64_general_add_builtin ("__builtin_aarch64_" N, ftype, INDEX)
+    aarch64_general_add_builtin ("__builtin_aarch64_" N, ftype, INDEX,  \
+				 prefetch_attrs)
 
   tree ftype;
   tree cv_argtype;
+  tree prefetch_attrs = aarch64_get_attributes (FLAG_PREFETCH_MEMORY, DImode);
   cv_argtype = build_qualified_type (void_type_node, TYPE_QUAL_CONST
 						     | TYPE_QUAL_VOLATILE);
   cv_argtype = build_pointer_type (cv_argtype);
@@ -2156,6 +2162,8 @@ aarch64_init_ls64_builtins (void)
 static void
 aarch64_init_data_intrinsics (void)
 {
+  /* These intrinsics are not fp nor they read/write memory. */
+  tree attrs = aarch64_get_attributes (FLAG_NONE, SImode);
   tree uint32_fntype = build_function_type_list (uint32_type_node,
 						 uint32_type_node, NULL_TREE);
   tree ulong_fntype = build_function_type_list (long_unsigned_type_node,
@@ -2165,22 +2173,22 @@ aarch64_init_data_intrinsics (void)
 						 uint64_type_node, NULL_TREE);
   aarch64_builtin_decls[AARCH64_REV16]
     = aarch64_general_add_builtin ("__builtin_aarch64_rev16", uint32_fntype,
-				   AARCH64_REV16);
+				   AARCH64_REV16, attrs);
   aarch64_builtin_decls[AARCH64_REV16L]
     = aarch64_general_add_builtin ("__builtin_aarch64_rev16l", ulong_fntype,
-				   AARCH64_REV16L);
+				   AARCH64_REV16L, attrs);
   aarch64_builtin_decls[AARCH64_REV16LL]
     = aarch64_general_add_builtin ("__builtin_aarch64_rev16ll", uint64_fntype,
-				   AARCH64_REV16LL);
+				   AARCH64_REV16LL, attrs);
   aarch64_builtin_decls[AARCH64_RBIT]
     = aarch64_general_add_builtin ("__builtin_aarch64_rbit", uint32_fntype,
-				   AARCH64_RBIT);
+				   AARCH64_RBIT, attrs);
   aarch64_builtin_decls[AARCH64_RBITL]
     = aarch64_general_add_builtin ("__builtin_aarch64_rbitl", ulong_fntype,
-				   AARCH64_RBITL);
+				   AARCH64_RBITL, attrs);
   aarch64_builtin_decls[AARCH64_RBITLL]
     = aarch64_general_add_builtin ("__builtin_aarch64_rbitll", uint64_fntype,
-				   AARCH64_RBITLL);
+				   AARCH64_RBITLL, attrs);
 }
 
 /* Implement #pragma GCC aarch64 "arm_acle.h".  */
