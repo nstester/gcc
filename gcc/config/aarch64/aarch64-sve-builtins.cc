@@ -253,10 +253,11 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
 #define TYPES_b_integer(S, D) \
   S (s8), TYPES_b_unsigned (S, D)
 
-/* _s8
+/* _mf8
+   _s8
    _u8.  */
 #define TYPES_b_data(S, D) \
-  TYPES_b_integer (S, D)
+  S (mf8), TYPES_b_integer (S, D)
 
 /* _s8 _s16
    _u8 _u16.  */
@@ -346,9 +347,17 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
   TYPES_s_data (S, D), \
   TYPES_d_data (S, D)
 
+/* _f16_mf8.  */
+#define TYPES_h_float_mf8(S, D) \
+  D (f16, mf8)
+
 /* _f32.  */
 #define TYPES_s_float(S, D) \
   S (f32)
+
+/* _f32_mf8.  */
+#define TYPES_s_float_mf8(S, D) \
+  D (f32, mf8)
 
 /*      _f32
    _s16 _s32 _s64
@@ -480,6 +489,20 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
   D (f32, s32), \
   D (f32, u32)
 
+/* _f16_mf8
+   _bf16_mf8.  */
+#define TYPES_cvt_mf8(S, D) \
+  D (f16, mf8), D (bf16, mf8)
+
+/* _mf8_f16
+   _mf8_bf16.  */
+#define TYPES_cvtn_mf8(S, D) \
+  D (mf8, f16), D (mf8, bf16)
+
+/* _mf8_f32.  */
+#define TYPES_cvtnx_mf8(S, D) \
+  D (mf8, f32)
+
 /* { _s32 _s64 } x { _b8 _b16 _b32 _b64 }
    { _u32 _u64 }.  */
 #define TYPES_inc_dec_n1(D, A) \
@@ -539,16 +562,18 @@ CONSTEXPR const group_suffix_info group_suffixes[] = {
   D (u8, s32), \
   D (u16, s64)
 
-/* {     _bf16           }   {     _bf16           }
+/* { _mf8 _bf16          }   { _mf8 _bf16          }
    {      _f16 _f32 _f64 }   {      _f16 _f32 _f64 }
    { _s8  _s16 _s32 _s64 } x { _s8  _s16 _s32 _s64 }
    { _u8  _u16 _u32 _u64 }   { _u8  _u16 _u32 _u64 }.  */
 #define TYPES_reinterpret1(D, A) \
+  D (A, mf8), \
   D (A, bf16), \
   D (A, f16), D (A, f32), D (A, f64), \
   D (A, s8), D (A, s16), D (A, s32), D (A, s64), \
   D (A, u8), D (A, u16), D (A, u32), D (A, u64)
 #define TYPES_reinterpret(S, D) \
+  TYPES_reinterpret1 (D, mf8), \
   TYPES_reinterpret1 (D, bf16), \
   TYPES_reinterpret1 (D, f16), \
   TYPES_reinterpret1 (D, f32), \
@@ -760,6 +785,7 @@ DEF_SVE_TYPES_ARRAY (bhs_widen);
 DEF_SVE_TYPES_ARRAY (c);
 DEF_SVE_TYPES_ARRAY (h_bfloat);
 DEF_SVE_TYPES_ARRAY (h_float);
+DEF_SVE_TYPES_ARRAY (h_float_mf8);
 DEF_SVE_TYPES_ARRAY (h_integer);
 DEF_SVE_TYPES_ARRAY (hs_signed);
 DEF_SVE_TYPES_ARRAY (hs_integer);
@@ -771,6 +797,7 @@ DEF_SVE_TYPES_ARRAY (hsd_integer);
 DEF_SVE_TYPES_ARRAY (hsd_data);
 DEF_SVE_TYPES_ARRAY (s_float);
 DEF_SVE_TYPES_ARRAY (s_float_hsd_integer);
+DEF_SVE_TYPES_ARRAY (s_float_mf8);
 DEF_SVE_TYPES_ARRAY (s_float_sd_integer);
 DEF_SVE_TYPES_ARRAY (s_signed);
 DEF_SVE_TYPES_ARRAY (s_unsigned);
@@ -790,9 +817,12 @@ DEF_SVE_TYPES_ARRAY (cvt_bfloat);
 DEF_SVE_TYPES_ARRAY (cvt_h_s_float);
 DEF_SVE_TYPES_ARRAY (cvt_f32_f16);
 DEF_SVE_TYPES_ARRAY (cvt_long);
+DEF_SVE_TYPES_ARRAY (cvt_mf8);
 DEF_SVE_TYPES_ARRAY (cvt_narrow_s);
 DEF_SVE_TYPES_ARRAY (cvt_narrow);
 DEF_SVE_TYPES_ARRAY (cvt_s_s);
+DEF_SVE_TYPES_ARRAY (cvtn_mf8);
+DEF_SVE_TYPES_ARRAY (cvtnx_mf8);
 DEF_SVE_TYPES_ARRAY (inc_dec_n);
 DEF_SVE_TYPES_ARRAY (qcvt_x2);
 DEF_SVE_TYPES_ARRAY (qcvt_x4);
@@ -930,9 +960,10 @@ static const predication_index preds_za_m[] = { PRED_za_m, NUM_PREDS };
 
 /* A list of all arm_sve.h functions.  */
 static CONSTEXPR const function_group_info function_groups[] = {
-#define DEF_SVE_FUNCTION_GS(NAME, SHAPE, TYPES, GROUPS, PREDS) \
+#define DEF_SVE_FUNCTION_GS_FPM(NAME, SHAPE, TYPES, GROUPS, PREDS, FPM_MODE) \
   { #NAME, &functions::NAME, &shapes::SHAPE, types_##TYPES, groups_##GROUPS, \
-    preds_##PREDS, aarch64_required_extensions::REQUIRED_EXTENSIONS },
+    preds_##PREDS, aarch64_required_extensions::REQUIRED_EXTENSIONS, \
+    FPM_##FPM_MODE },
 #include "aarch64-sve-builtins.def"
 };
 
@@ -940,7 +971,8 @@ static CONSTEXPR const function_group_info function_groups[] = {
 static CONSTEXPR const function_group_info neon_sve_function_groups[] = {
 #define DEF_NEON_SVE_FUNCTION(NAME, SHAPE, TYPES, GROUPS, PREDS) \
   { #NAME, &neon_sve_bridge_functions::NAME, &shapes::SHAPE, types_##TYPES, \
-    groups_##GROUPS, preds_##PREDS, aarch64_required_extensions::ssve (0) },
+    groups_##GROUPS, preds_##PREDS, aarch64_required_extensions::ssve (0), \
+    FPM_unused },
 #include "aarch64-neon-sve-bridge-builtins.def"
 };
 
@@ -948,12 +980,13 @@ static CONSTEXPR const function_group_info neon_sve_function_groups[] = {
 static CONSTEXPR const function_group_info sme_function_groups[] = {
 #define DEF_SME_FUNCTION_GS(NAME, SHAPE, TYPES, GROUPS, PREDS) \
   { #NAME, &functions::NAME, &shapes::SHAPE, types_##TYPES, groups_##GROUPS, \
-    preds_##PREDS, aarch64_required_extensions::REQUIRED_EXTENSIONS },
+    preds_##PREDS, aarch64_required_extensions::REQUIRED_EXTENSIONS, \
+    FPM_unused },
 #define DEF_SME_ZA_FUNCTION_GS(NAME, SHAPE, TYPES, GROUPS, PREDS) \
   { #NAME, &functions::NAME##_za, &shapes::SHAPE, types_##TYPES, \
     groups_##GROUPS, preds_##PREDS, \
     aarch64_required_extensions::REQUIRED_EXTENSIONS \
-      .and_also (AARCH64_FL_ZA_ON) },
+      .and_also (AARCH64_FL_ZA_ON), FPM_unused },
 #include "aarch64-sve-builtins-sme.def"
 };
 
@@ -1235,6 +1268,7 @@ function_instance::hash () const
   h.add_int (type_suffix_ids[1]);
   h.add_int (group_suffix_id);
   h.add_int (pred);
+  h.add_int (fpm_mode);
   return h.end ();
 }
 
@@ -1421,6 +1455,8 @@ function_builder::get_name (const function_instance &instance,
   if (!overloaded_p || instance.shape->explicit_group_suffix_p ())
     append_name (instance.group_suffix ().string);
   append_name (pred_suffixes[instance.pred]);
+  if (instance.fpm_mode == FPM_set)
+    append_name ("_fpm");
   return finish_name ();
 }
 
@@ -1665,7 +1701,8 @@ function_builder::add_overloaded_functions (const function_group_info &group,
     {
       function_instance instance (group.base_name, *group.base,
 				  *group.shape, mode, types,
-				  group_suffix_id, group.preds[pi]);
+				  group_suffix_id, group.preds[pi],
+				  group.fpm_mode);
       add_overloaded_function (instance, group.required_extensions);
     };
 
@@ -1842,8 +1879,8 @@ function_resolver::lookup_form (mode_suffix_index mode,
 				group_suffix_index group)
 {
   type_suffix_pair types = { type0, type1 };
-  function_instance instance (base_name, base, shape, mode, types,
-			      group, pred);
+  function_instance instance (base_name, base, shape, mode, types, group, pred,
+			      fpm_mode);
   registered_function *rfn
     = function_table->find_with_hash (instance, instance.hash ());
   return rfn ? rfn->decl : NULL_TREE;
@@ -3055,11 +3092,12 @@ function_resolver::check_gp_argument (unsigned int nops,
 {
   gcc_assert (pred != PRED_za_m);
   i = 0;
+  unsigned int nfpm_args = (fpm_mode == FPM_set)? 1:0;
   if (pred != PRED_none)
     {
       /* Unary merge operations should use resolve_unary instead.  */
       gcc_assert (!shape->has_merge_argument_p (*this, nops));
-      nargs = nops + 1;
+      nargs = nops + nfpm_args + 1;
       if (!check_num_arguments (nargs)
 	  || !require_vector_type (i, gp_type_index ()))
 	return false;
@@ -3067,7 +3105,7 @@ function_resolver::check_gp_argument (unsigned int nops,
     }
   else
     {
-      nargs = nops;
+      nargs = nops + nfpm_args;
       if (!check_num_arguments (nargs))
 	return false;
     }
@@ -4504,6 +4542,13 @@ function_expander::expand ()
   for (unsigned int i = 0; i < nargs; ++i)
     args.quick_push (expand_normal (CALL_EXPR_ARG (call_expr, i)));
 
+  if (fpm_mode == FPM_set)
+    {
+      /* The last element of these functions is always an fpm_t that must be
+         written to FPMR before the call to the instruction itself. */
+      gcc_assert (args.last ()->mode == DImode);
+      emit_move_insn (gen_rtx_REG (DImode, FPM_REGNUM), args.last ());
+    }
   return base->expand (*this);
 }
 

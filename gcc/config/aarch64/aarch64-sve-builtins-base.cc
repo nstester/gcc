@@ -775,9 +775,9 @@ public:
     tree pg = gimple_call_arg (f.call, 0);
     if (!f.type_suffix (0).unsigned_p && integer_minus_onep (op2))
       {
-	function_instance instance ("svneg", functions::svneg,
-				    shapes::unary, MODE_none,
-				    f.type_suffix_ids, GROUP_none, f.pred);
+	function_instance instance ("svneg", functions::svneg, shapes::unary,
+				    MODE_none, f.type_suffix_ids, GROUP_none,
+				    f.pred, FPM_unused);
 	gcall *call = f.redirect_call (instance);
 	unsigned offset_index = 0;
 	if (f.pred == PRED_m)
@@ -805,7 +805,8 @@ public:
       {
 	function_instance instance ("svlsr", functions::svlsr,
 				    shapes::binary_uint_opt_n, MODE_n,
-				    f.type_suffix_ids, GROUP_none, f.pred);
+				    f.type_suffix_ids, GROUP_none, f.pred,
+				    FPM_unused);
 	call = f.redirect_call (instance);
 	tree d = INTEGRAL_TYPE_P (TREE_TYPE (op2)) ? op2 : op2_cst;
 	new_divisor = wide_int_to_tree (TREE_TYPE (d), tree_log2 (d));
@@ -818,7 +819,8 @@ public:
 
 	function_instance instance ("svasrd", functions::svasrd,
 				    shapes::shift_right_imm, MODE_n,
-				    f.type_suffix_ids, GROUP_none, f.pred);
+				    f.type_suffix_ids, GROUP_none, f.pred,
+				    FPM_unused);
 	call = f.redirect_call (instance);
 	new_divisor = wide_int_to_tree (scalar_types[VECTOR_TYPE_svuint64_t],
 					tree_log2 (op2_cst));
@@ -836,21 +838,26 @@ public:
   rtx
   expand (function_expander &e) const override
   {
-    /* In the optab, the multiplication operands come before the accumulator
-       operand.  The optab is keyed off the multiplication mode.  */
-    e.rotate_inputs_left (0, 3);
     insn_code icode;
-    if (e.type_suffix_ids[1] == NUM_TYPE_SUFFIXES)
-      icode = e.convert_optab_handler_for_sign (sdot_prod_optab,
-						udot_prod_optab,
-						0, e.result_mode (),
-						GET_MODE (e.args[0]));
+    if (e.fpm_mode == aarch64_sve::FPM_set)
+      icode = code_for_aarch64_sve_dot (e.result_mode ());
     else
-      icode = (e.type_suffix (0).float_p
-	       ? CODE_FOR_aarch64_sve_fdotvnx4sfvnx8hf
-	       : e.type_suffix (0).unsigned_p
-	       ? CODE_FOR_udot_prodvnx4sivnx8hi
-	       : CODE_FOR_sdot_prodvnx4sivnx8hi);
+      {
+	/* In the optab, the multiplication operands come before the accumulator
+	   operand.  The optab is keyed off the multiplication mode.  */
+	e.rotate_inputs_left (0, 3);
+	if (e.type_suffix_ids[1] == NUM_TYPE_SUFFIXES)
+	  icode = e.convert_optab_handler_for_sign (sdot_prod_optab,
+						    udot_prod_optab,
+						    0, e.result_mode (),
+						    GET_MODE (e.args[0]));
+	else
+	  icode = (e.type_suffix (0).float_p
+		   ? CODE_FOR_aarch64_sve_fdotvnx4sfvnx8hf
+		   : e.type_suffix (0).unsigned_p
+		   ? CODE_FOR_udot_prodvnx4sivnx8hi
+		   : CODE_FOR_sdot_prodvnx4sivnx8hi);
+      }
     return e.use_unpred_insn (icode);
   }
 };
@@ -863,17 +870,24 @@ public:
   rtx
   expand (function_expander &e) const override
   {
+    insn_code icode;
     machine_mode mode0 = GET_MODE (e.args[0]);
     machine_mode mode1 = GET_MODE (e.args[1]);
-    /* Use the same ordering as the dot_prod_optab, with the
-       accumulator last.  */
-    e.rotate_inputs_left (0, 4);
-    int unspec = unspec_for (e);
-    insn_code icode;
-    if (unspec == UNSPEC_FDOT)
-      icode = CODE_FOR_aarch64_fdot_prod_lanevnx4sfvnx8hf;
+    if (e.fpm_mode == aarch64_sve::FPM_set)
+      {
+	icode = code_for_aarch64_sve_dot_lane (mode0);
+      }
     else
-      icode = code_for_aarch64_dot_prod_lane (unspec, mode0, mode1);
+      {
+	/* Use the same ordering as the dot_prod_optab, with the
+	   accumulator last.  */
+	e.rotate_inputs_left (0, 4);
+	int unspec = unspec_for (e);
+	if (unspec == UNSPEC_FDOT)
+	  icode = CODE_FOR_aarch64_fdot_prod_lanevnx4sfvnx8hf;
+	else
+	  icode = code_for_aarch64_dot_prod_lane (unspec, mode0, mode1);
+      }
     return e.use_exact_insn (icode);
   }
 };
@@ -2100,9 +2114,9 @@ public:
       negated_op = op2;
     if (!f.type_suffix (0).unsigned_p && negated_op)
       {
-	function_instance instance ("svneg", functions::svneg,
-				    shapes::unary, MODE_none,
-				    f.type_suffix_ids, GROUP_none, f.pred);
+	function_instance instance ("svneg", functions::svneg, shapes::unary,
+				    MODE_none, f.type_suffix_ids, GROUP_none,
+				    f.pred, FPM_unused);
 	gcall *call = f.redirect_call (instance);
 	unsigned offset_index = 0;
 	if (f.pred == PRED_m)
@@ -2143,7 +2157,8 @@ public:
 				      tree_log2 (shift_op2));
 	function_instance instance ("svlsl", functions::svlsl,
 				    shapes::binary_uint_opt_n, MODE_n,
-				    f.type_suffix_ids, GROUP_none, f.pred);
+				    f.type_suffix_ids, GROUP_none, f.pred,
+				    FPM_unused);
 	gcall *call = f.redirect_call (instance);
 	gimple_call_set_arg (call, 1, shift_op1);
 	gimple_call_set_arg (call, 2, shift_op2);
@@ -3252,7 +3267,7 @@ FUNCTION (svdiv, svdiv_impl,)
 FUNCTION (svdivr, rtx_code_function_rotated, (DIV, UDIV, UNSPEC_COND_FDIV))
 FUNCTION (svdot, svdot_impl,)
 FUNCTION (svdot_lane, svdotprod_lane_impl, (UNSPEC_SDOT, UNSPEC_UDOT,
-					    UNSPEC_FDOT))
+					    UNSPEC_FDOT, UNSPEC_DOT_LANE_FP8))
 FUNCTION (svdup, svdup_impl,)
 FUNCTION (svdup_lane, svdup_lane_impl,)
 FUNCTION (svdupq, svdupq_impl,)

@@ -430,6 +430,7 @@
 (define_mode_iterator VNx16QI_ONLY [VNx16QI])
 (define_mode_iterator VNx16SI_ONLY [VNx16SI])
 (define_mode_iterator VNx8HI_ONLY [VNx8HI])
+(define_mode_iterator VNx8HF_ONLY [VNx8HF])
 (define_mode_iterator VNx8BF_ONLY [VNx8BF])
 (define_mode_iterator VNx8SI_ONLY [VNx8SI])
 (define_mode_iterator VNx8SF_ONLY [VNx8SF])
@@ -476,6 +477,9 @@
 
 ;; Fully-packed SVE vector modes that have 16-bit float elements.
 (define_mode_iterator SVE_FULL_HF [VNx8BF VNx8HF])
+
+;; Pairs of the above.
+(define_mode_iterator SVE_FULL_HFx2 [VNx16BF VNx16HF])
 
 ;; Fully-packed SVE vector modes that have 16-bit, 32-bit or 64-bit elements.
 (define_mode_iterator SVE_FULL_HSD [VNx8HI VNx4SI VNx2DI
@@ -958,17 +962,32 @@
     UNSPEC_COND_FCVTX	; Used in aarch64-sve2.md.
     UNSPEC_COND_FCVTXNT	; Used in aarch64-sve2.md.
     UNSPEC_COND_FLOGB	; Used in aarch64-sve2.md.
+    UNSPEC_DOT_FP8	; Used in aarch64-sve2.md.
+    UNSPEC_DOT_LANE_FP8	; Used in aarch64-sve2.md.
     UNSPEC_EORBT	; Used in aarch64-sve2.md.
     UNSPEC_EORTB	; Used in aarch64-sve2.md.
+    UNSPEC_F1CVT	; Used in aarch64-sve2.md.
+    UNSPEC_F1CVTLT	; Used in aarch64-sve2.md.
+    UNSPEC_F2CVT	; Used in aarch64-sve2.md.
+    UNSPEC_F2CVTLT	; Used in aarch64-sve2.md.
     UNSPEC_FADDP	; Used in aarch64-sve2.md.
+    UNSPEC_FCVTNB	; Used in aarch64-sve2.md.
+    UNSPEC_FCVTNT	; Used in aarch64-sve2.md.
     UNSPEC_FMAXNMP	; Used in aarch64-sve2.md.
     UNSPEC_FMAXP	; Used in aarch64-sve2.md.
     UNSPEC_FMINNMP	; Used in aarch64-sve2.md.
     UNSPEC_FMINP	; Used in aarch64-sve2.md.
     UNSPEC_FMLALB	; Used in aarch64-sve2.md.
+    UNSPEC_FMLALB_FP8	; Used in aarch64-sve2.md.
+    UNSPEC_FMLALLBB_FP8	; Used in aarch64-sve2.md.
+    UNSPEC_FMLALLBT_FP8	; Used in aarch64-sve2.md.
+    UNSPEC_FMLALLTB_FP8	; Used in aarch64-sve2.md.
+    UNSPEC_FMLALLTT_FP8	; Used in aarch64-sve2.md.
     UNSPEC_FMLALT	; Used in aarch64-sve2.md.
+    UNSPEC_FMLALT_FP8	; Used in aarch64-sve2.md.
     UNSPEC_FMLSLB	; Used in aarch64-sve2.md.
     UNSPEC_FMLSLT	; Used in aarch64-sve2.md.
+    UNSPEC_FP8FCVTN	; Used in aarch64-sve2.md.
     UNSPEC_HISTCNT	; Used in aarch64-sve2.md.
     UNSPEC_HISTSEG	; Used in aarch64-sve2.md.
     UNSPEC_LD1_COUNT	; Used in aarch64-sve2.md.
@@ -4731,3 +4750,47 @@
 
 (define_code_attr faminmax_op
   [(smax "famax") (smin "famin")])
+
+;; Iterators and attributes for fp8 sve/sme conversions
+
+(define_int_iterator FP8CVT_UNS
+  [UNSPEC_F1CVT
+   UNSPEC_F2CVT
+   UNSPEC_F1CVTLT
+   UNSPEC_F2CVTLT])
+
+(define_int_attr fp8_cvt_uns_op
+  [(UNSPEC_F1CVT "f1cvt")
+   (UNSPEC_F2CVT "f2cvt")
+   (UNSPEC_F1CVTLT "f1cvtlt")
+   (UNSPEC_F2CVTLT "f2cvtlt")])
+
+(define_int_iterator SVE2_FP8_TERNARY_VNX8HF
+  [UNSPEC_FMLALB_FP8
+   UNSPEC_FMLALT_FP8])
+
+(define_int_iterator SVE2_FP8_TERNARY_VNX4SF
+  [UNSPEC_FMLALLBB_FP8
+   UNSPEC_FMLALLBT_FP8
+   UNSPEC_FMLALLTB_FP8
+   UNSPEC_FMLALLTT_FP8])
+
+(define_int_iterator SVE2_FP8_TERNARY_LANE_VNX8HF
+  [UNSPEC_FMLALB_FP8
+   UNSPEC_FMLALT_FP8])
+
+(define_int_iterator SVE2_FP8_TERNARY_LANE_VNX4SF
+  [UNSPEC_FMLALLBB_FP8
+   UNSPEC_FMLALLBT_FP8
+   UNSPEC_FMLALLTB_FP8
+   UNSPEC_FMLALLTT_FP8])
+
+(define_int_attr sve2_fp8_fma_op_vnx8hf
+  [(UNSPEC_FMLALB_FP8 "fmlalb")
+   (UNSPEC_FMLALT_FP8 "fmlalt")])
+
+(define_int_attr sve2_fp8_fma_op_vnx4sf
+  [(UNSPEC_FMLALLBB_FP8 "fmlallbb")
+   (UNSPEC_FMLALLBT_FP8 "fmlallbt")
+   (UNSPEC_FMLALLTB_FP8 "fmlalltb")
+   (UNSPEC_FMLALLTT_FP8 "fmlalltt")])
