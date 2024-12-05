@@ -193,22 +193,23 @@ using namespace aarch64;
 #define SIMD_MAX_BUILTIN_ARGS 5
 
 /* Flags that describe what a function might do.  */
-const unsigned int FLAG_NONE = 0U;
 const unsigned int FLAG_READ_FPCR = 1U << 0;
 const unsigned int FLAG_RAISE_FP_EXCEPTIONS = 1U << 1;
 const unsigned int FLAG_READ_MEMORY = 1U << 2;
 const unsigned int FLAG_PREFETCH_MEMORY = 1U << 3;
 const unsigned int FLAG_WRITE_MEMORY = 1U << 4;
 
-/* Not all FP intrinsics raise FP exceptions or read FPCR register,
-   use this flag to suppress it.  */
+/* Indicates that READ_FPCR and RAISE_FP_EXCEPTIONS should be set for
+   floating-point modes but not for integer modes.  */
 const unsigned int FLAG_AUTO_FP = 1U << 5;
 
+const unsigned int FLAG_QUIET = 0;
+const unsigned int FLAG_DEFAULT = FLAG_AUTO_FP;
 const unsigned int FLAG_FP = FLAG_READ_FPCR | FLAG_RAISE_FP_EXCEPTIONS;
 const unsigned int FLAG_ALL = FLAG_READ_FPCR | FLAG_RAISE_FP_EXCEPTIONS
   | FLAG_READ_MEMORY | FLAG_PREFETCH_MEMORY | FLAG_WRITE_MEMORY;
-const unsigned int FLAG_STORE = FLAG_WRITE_MEMORY | FLAG_AUTO_FP;
-const unsigned int FLAG_LOAD = FLAG_READ_MEMORY | FLAG_AUTO_FP;
+const unsigned int FLAG_STORE = FLAG_WRITE_MEMORY;
+const unsigned int FLAG_LOAD = FLAG_READ_MEMORY;
 
 typedef struct
 {
@@ -913,7 +914,7 @@ static aarch64_fcmla_laneq_builtin_datum aarch64_fcmla_lane_builtin_data[] = {
    2, \
    { SIMD_INTR_MODE(A, L), SIMD_INTR_MODE(B, L) }, \
    { SIMD_INTR_QUAL(A), SIMD_INTR_QUAL(B) }, \
-   FLAG_NONE, \
+   FLAG_DEFAULT, \
    SIMD_INTR_MODE(A, L) == SIMD_INTR_MODE(B, L) \
      && SIMD_INTR_QUAL(A) == SIMD_INTR_QUAL(B) \
   },
@@ -925,7 +926,7 @@ static aarch64_fcmla_laneq_builtin_datum aarch64_fcmla_lane_builtin_data[] = {
    2, \
    { SIMD_INTR_MODE(A, d), SIMD_INTR_MODE(A, q) }, \
    { SIMD_INTR_QUAL(A), SIMD_INTR_QUAL(A) }, \
-   FLAG_NONE, \
+   FLAG_DEFAULT, \
    false \
   },
 
@@ -936,7 +937,7 @@ static aarch64_fcmla_laneq_builtin_datum aarch64_fcmla_lane_builtin_data[] = {
    2, \
    { SIMD_INTR_MODE(A, d), SIMD_INTR_MODE(A, q) }, \
    { SIMD_INTR_QUAL(A), SIMD_INTR_QUAL(A) }, \
-   FLAG_NONE, \
+   FLAG_DEFAULT, \
    false \
   },
 
@@ -1322,7 +1323,7 @@ aarch64_init_simd_builtin_scalar_types (void)
 static unsigned int
 aarch64_call_properties (unsigned int flags, machine_mode mode)
 {
-  if (!(flags & FLAG_AUTO_FP) && FLOAT_MODE_P (mode))
+  if ((flags & FLAG_AUTO_FP) && FLOAT_MODE_P (mode))
     flags |= FLAG_FP;
 
   /* -fno-trapping-math means that we can assume any FP exceptions
@@ -1857,7 +1858,7 @@ aarch64_init_crc32_builtins ()
       aarch64_crc_builtin_datum* d = &aarch64_crc_builtin_data[i];
       tree argtype = aarch64_simd_builtin_type (d->mode, qualifier_unsigned);
       tree ftype = build_function_type_list (usi_type, usi_type, argtype, NULL_TREE);
-      tree attrs = aarch64_get_attributes (FLAG_NONE, d->mode);
+      tree attrs = aarch64_get_attributes (FLAG_DEFAULT, d->mode);
       tree fndecl
 	= aarch64_general_add_builtin (d->name, ftype, d->fcode, attrs);
 
@@ -2232,7 +2233,7 @@ static void
 aarch64_init_data_intrinsics (void)
 {
   /* These intrinsics are not fp nor they read/write memory. */
-  tree attrs = aarch64_get_attributes (FLAG_NONE, SImode);
+  tree attrs = aarch64_get_attributes (FLAG_DEFAULT, SImode);
   tree uint32_fntype = build_function_type_list (uint32_type_node,
 						 uint32_type_node, NULL_TREE);
   tree ulong_fntype = build_function_type_list (long_unsigned_type_node,
@@ -4048,7 +4049,7 @@ aarch64_general_gimple_fold_builtin (unsigned int fcode, gcall *stmt,
   switch (fcode)
     {
       BUILTIN_VALL (UNOP, reduc_plus_scal_, 10, ALL)
-      BUILTIN_VDQ_I (UNOPU, reduc_plus_scal_, 10, NONE)
+      BUILTIN_VDQ_I (UNOPU, reduc_plus_scal_, 10, DEFAULT)
 	new_stmt = gimple_build_call_internal (IFN_REDUC_PLUS,
 					       1, args[0]);
 	gimple_call_set_lhs (new_stmt, gimple_call_lhs (stmt));
@@ -4061,9 +4062,9 @@ aarch64_general_gimple_fold_builtin (unsigned int fcode, gcall *stmt,
 	gimple_call_set_lhs (new_stmt, gimple_call_lhs (stmt));
 	break;
 
-     BUILTIN_VDC (BINOP, combine, 0, AUTO_FP)
-     BUILTIN_VD_I (BINOPU, combine, 0, NONE)
-     BUILTIN_VDC_P (BINOPP, combine, 0, NONE)
+     BUILTIN_VDC (BINOP, combine, 0, QUIET)
+     BUILTIN_VD_I (BINOPU, combine, 0, DEFAULT)
+     BUILTIN_VDC_P (BINOPP, combine, 0, DEFAULT)
 	{
 	  tree first_part, second_part;
 	  if (BYTES_BIG_ENDIAN)
@@ -4152,14 +4153,14 @@ aarch64_general_gimple_fold_builtin (unsigned int fcode, gcall *stmt,
 					       1, args[0]);
 	gimple_call_set_lhs (new_stmt, gimple_call_lhs (stmt));
 	break;
-      BUILTIN_VSDQ_I_DI (BINOP, ashl, 3, NONE)
+      BUILTIN_VSDQ_I_DI (BINOP, ashl, 3, DEFAULT)
 	if (TREE_CODE (args[1]) == INTEGER_CST
 	    && wi::ltu_p (wi::to_wide (args[1]), element_precision (args[0])))
 	  new_stmt = gimple_build_assign (gimple_call_lhs (stmt),
 					  LSHIFT_EXPR, args[0], args[1]);
 	break;
-      BUILTIN_VSDQ_I_DI (BINOP, sshl, 0, NONE)
-      BUILTIN_VSDQ_I_DI (BINOP_UUS, ushl, 0, NONE)
+      BUILTIN_VSDQ_I_DI (BINOP, sshl, 0, DEFAULT)
+      BUILTIN_VSDQ_I_DI (BINOP_UUS, ushl, 0, DEFAULT)
 	{
 	  tree cst = args[1];
 	  tree ctype = TREE_TYPE (cst);
@@ -4191,10 +4192,10 @@ aarch64_general_gimple_fold_builtin (unsigned int fcode, gcall *stmt,
 	    }
 	}
 	break;
-      BUILTIN_VDQ_I (SHIFTIMM, ashr, 3, NONE)
-      VAR1 (SHIFTIMM, ashr_simd, 0, NONE, di)
-      BUILTIN_VDQ_I (USHIFTIMM, lshr, 3, NONE)
-      VAR1 (USHIFTIMM, lshr_simd, 0, NONE, di)
+      BUILTIN_VDQ_I (SHIFTIMM, ashr, 3, DEFAULT)
+      VAR1 (SHIFTIMM, ashr_simd, 0, DEFAULT, di)
+      BUILTIN_VDQ_I (USHIFTIMM, lshr, 3, DEFAULT)
+      VAR1 (USHIFTIMM, lshr_simd, 0, DEFAULT, di)
 	if (TREE_CODE (args[1]) == INTEGER_CST
 	    && wi::ltu_p (wi::to_wide (args[1]), element_precision (args[0])))
 	  new_stmt = gimple_build_assign (gimple_call_lhs (stmt),
