@@ -30046,10 +30046,10 @@ supported.
 @item -march=@var{architecture-string}
 Generate code for the specified PTX ISA target architecture.
 Valid architecture strings are
-@samp{sm_30}, @samp{sm_35},
-@samp{sm_53},
+@samp{sm_30}, @samp{sm_35}, @samp{sm_37},
+@samp{sm_52}, @samp{sm_53},
 @samp{sm_70}, @samp{sm_75},
-and @samp{sm_80}.
+@samp{sm_80}, and @samp{sm_89}.
 The default depends on how the compiler has been configured, see
 @option{--with-arch}.
 
@@ -30073,9 +30073,9 @@ capable.  For instance, for @option{-march-map=sm_50} select
 Generate code for the specified PTX ISA version.
 Valid version strings are
 @samp{3.1},
-@samp{4.2},
+@samp{4.1}, @samp{4.2},
 @samp{6.0}, @samp{6.3},
-and @samp{7.0}.
+@samp{7.0}, and @samp{7.8}.
 The default PTX ISA version is 6.0, unless a higher
 version is required for specified PTX ISA target architecture via
 option @option{-march=}.
