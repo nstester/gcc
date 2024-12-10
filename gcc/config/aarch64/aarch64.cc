@@ -2678,6 +2678,60 @@ aarch64_constant_alignment (const_tree exp, HOST_WIDE_INT align)
   return align;
 }
 
+/* Align definitions of arrays, unions and structures so that
+   initializations and copies can be made more efficient.  This is not
+   ABI-changing, so it only affects places where we can see the
+   definition.  Increasing the alignment tends to introduce padding,
+   so don't do this when optimizing for size/conserving stack space.  */
+
+unsigned
+aarch64_data_alignment (const_tree type, unsigned align)
+{
+  if (optimize_size)
+    return align;
+
+  if (AGGREGATE_TYPE_P (type))
+    {
+      unsigned HOST_WIDE_INT size = 0;
+
+      if (TYPE_SIZE (type) && TREE_CODE (TYPE_SIZE (type)) == INTEGER_CST
+	  && tree_fits_uhwi_p (TYPE_SIZE (type)))
+	size = tree_to_uhwi (TYPE_SIZE (type));
+
+      /* Align small structs/arrays to 32 bits, or 64 bits if larger.  */
+      if (align < 32 && size <= 32)
+	align = 32;
+      else if (align < 64)
+	align = 64;
+    }
+
+  return align;
+}
+
+unsigned
+aarch64_stack_alignment (const_tree type, unsigned align)
+{
+  if (flag_conserve_stack)
+    return align;
+
+  if (AGGREGATE_TYPE_P (type))
+    {
+      unsigned HOST_WIDE_INT size = 0;
+
+      if (TYPE_SIZE (type) && TREE_CODE (TYPE_SIZE (type)) == INTEGER_CST
+	  && tree_fits_uhwi_p (TYPE_SIZE (type)))
+	size = tree_to_uhwi (TYPE_SIZE (type));
+
+      /* Align small structs/arrays to 32 bits, or 64 bits if larger.  */
+      if (align < 32 && size <= 32)
+	align = 32;
+      else if (align < 64)
+	align = 64;
+    }
+
+  return align;
+}
+
 /* Return true if calls to DECL should be treated as
    long-calls (ie called via a register).  */
 static bool
@@ -10650,7 +10704,7 @@ aarch64_classify_address (struct aarch64_address_info *info,
   unsigned int vec_flags = aarch64_classify_vector_memory_mode (mode);
   vec_flags &= ~VEC_PARTIAL;
 
-  /* On BE, we use load/store pair for all large int mode load/stores.
+  /* We use load/store pair for all large int mode load/stores.
      TI/TF/TDmode may also use a load/store pair.  */
   bool advsimd_struct_p = (vec_flags == (VEC_ADVSIMD | VEC_STRUCT));
   bool load_store_pair_p = (type == ADDR_QUERY_LDP_STP
@@ -10658,8 +10712,7 @@ aarch64_classify_address (struct aarch64_address_info *info,
 			    || mode == TImode
 			    || mode == TFmode
 			    || mode == TDmode
-			    || ((!TARGET_SIMD || BYTES_BIG_ENDIAN)
-				&& advsimd_struct_p));
+			    || advsimd_struct_p);
   /* If we are dealing with ADDR_QUERY_LDP_STP_N that means the incoming mode
      corresponds to the actual size of the memory being loaded/stored and the
      mode of the corresponding addressing mode is half of that.  */
@@ -10690,14 +10743,6 @@ aarch64_classify_address (struct aarch64_address_info *info,
      allow_reg_index_p above.  */
   if ((vec_flags & (VEC_SVE_DATA | VEC_SVE_PRED)) != 0
       && (code != REG && code != PLUS))
-    return false;
-
-  /* On LE, for AdvSIMD, don't support anything other than POST_INC or
-     REG addressing.  */
-  if (advsimd_struct_p
-      && TARGET_SIMD
-      && !BYTES_BIG_ENDIAN
-      && (code != POST_INC && code != REG))
     return false;
 
   gcc_checking_assert (GET_MODE (x) == VOIDmode
