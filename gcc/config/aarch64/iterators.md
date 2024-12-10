@@ -41,6 +41,8 @@
 ;; Iterators for single modes, for "@" patterns.
 (define_mode_iterator SI_ONLY [SI])
 (define_mode_iterator DI_ONLY [DI])
+(define_mode_iterator V8HF_ONLY [V8HF])
+(define_mode_iterator V4SF_ONLY [V4SF])
 
 ;; Iterator for all integer modes (up to 64-bit)
 (define_mode_iterator ALLI [QI HI SI DI])
@@ -181,8 +183,16 @@
 ;; Advanced SIMD single Float modes.
 (define_mode_iterator VDQSF [V2SF V4SF])
 
+;; Quad vector float modes with half/bfloat elements.
+(define_mode_iterator VQ_BHF [V8HF V8BF])
+
 ;; Quad vector Float modes with half/single elements.
 (define_mode_iterator VQ_HSF [V8HF V4SF])
+
+(define_mode_iterator VDQ_HSF_FDOT [(V4HF "TARGET_FP8DOT2")
+				    (V8HF "TARGET_FP8DOT2")
+				    (V2SF "TARGET_FP8DOT4")
+				    (V4SF "TARGET_FP8DOT4")])
 
 ;; Modes suitable to use as the return type of a vcond expression.
 (define_mode_iterator VDQF_COND [V2SF V2SI V4SF V4SI V2DF V2DI])
@@ -429,6 +439,9 @@
 ;; Modes available for Advanced SIMD lut operations.
 (define_mode_iterator VLUT [V8QI V16QI V4HI V4HF V4BF])
 (define_mode_iterator VLUTx2 [V2x8HI V2x8HF V2x8BF])
+
+;; Modes available for Advanced SIMD FP8 conversion operations.
+(define_mode_iterator VCVTFPM [V4HF V8HF V4SF])
 
 ;; Iterators for single modes, for "@" patterns.
 (define_mode_iterator VNx16QI_ONLY [VNx16QI])
@@ -715,6 +728,14 @@
     UNSPEC_ASHIFT_SIGNED	; Used in aarch-simd.md.
     UNSPEC_ASHIFT_UNSIGNED	; Used in aarch64-simd.md.
     UNSPEC_ABS		; Used in aarch64-simd.md.
+    UNSPEC_FCVTN_FP8	; Used in aarch64-simd.md.
+    UNSPEC_FCVTN2_FP8	; Used in aarch64-builtins.cc.
+    UNSPEC_F1CVTL_FP8	; Used in aarch64-simd.md.
+    UNSPEC_F1CVTL2_FP8	; Used in aarch64-builtins.cc.
+    UNSPEC_F2CVTL_FP8	; Used in aarch64-simd.md.
+    UNSPEC_F2CVTL2_FP8	; Used in aarch64-builtins.cc.
+    UNSPEC_FDOT_FP8	; Used in aarch64-simd.md.
+    UNSPEC_FDOT_LANE_FP8 ; Used in aarch64-simd.md.
     UNSPEC_FMAX		; Used in aarch64-simd.md.
     UNSPEC_FMAXNMV	; Used in aarch64-simd.md.
     UNSPEC_FMAXV	; Used in aarch64-simd.md.
@@ -723,6 +744,7 @@
     UNSPEC_FMINV	; Used in aarch64-simd.md.
     UNSPEC_FADDV	; Used in aarch64-simd.md.
     UNSPEC_FNEG		; Used in aarch64-simd.md.
+    UNSPEC_FSCALE	; Used in aarch64-simd.md.
     UNSPEC_ADDV		; Used in aarch64-simd.md.
     UNSPEC_SMAXV	; Used in aarch64-simd.md.
     UNSPEC_SMINV	; Used in aarch64-simd.md.
@@ -1794,6 +1816,23 @@
 (define_mode_attr V2ntype [(V8HI "16b") (V4SI "8h")
 			   (V2DI "4s")])
 
+;; The result of FCVTN on two vectors of the given mode.  The result has
+;; twice as many QI elements as the input.
+(define_mode_attr VPACKB [(V4HF "V8QI") (V8HF "V16QI") (V4SF "V8QI")])
+(define_mode_attr VPACKBtype [(V4HF "8b") (V8HF "16b") (V4SF "8b")])
+
+;; Modes narrowed all the way to bytes.
+(define_mode_attr VNARROWB [(V4HF "V8QI") (V8HF "V16QI")
+			    (V2SF "V8QI") (V4SF "V16QI")])
+
+;; Register suffix for modes narrowed to bytes.
+(define_mode_attr Vnbtype [(V4HF "8b") (V8HF "16b")
+			   (V2SF "8b") (V4SF "16b")])
+
+;; Register suffix representing one group of byte elements per wider element.
+(define_mode_attr Vnbsubtype [(V4HF "2b") (V8HF "2b")
+			      (V2SF "4b") (V4SF "4b")])
+
 ;; Widened modes of vector modes.
 (define_mode_attr VWIDE [(V8QI  "V8HI")  (V4HI  "V4SI")
 			 (V2SI  "V2DI")  (V16QI "V8HI")
@@ -2001,16 +2040,6 @@
 (define_mode_attr vq_int_equiv [(DF   "v2di")   (SF   "v4si")
 ])
 
-;; Floating-point equivalent of selected modes.
-(define_mode_attr V_FP_EQUIV [(VNx8HI "VNx8HF") (VNx8HF "VNx8HF")
-			      (VNx8BF "VNx8HF")
-			      (VNx4SI "VNx4SF") (VNx4SF "VNx4SF")
-			      (VNx2DI "VNx2DF") (VNx2DF "VNx2DF")])
-(define_mode_attr v_fp_equiv [(VNx8HI "vnx8hf") (VNx8HF "vnx8hf")
-			      (VNx8BF "vnx8hf")
-			      (VNx4SI "vnx4sf") (VNx4SF "vnx4sf")
-			      (VNx2DI "vnx2df") (VNx2DF "vnx2df")])
-
 ;; Maps full and partial vector modes of any element type to a full-vector
 ;; integer mode with the same number of units.
 (define_mode_attr V_INT_CONTAINER [(VNx16QI "VNx16QI") (VNx8QI "VNx8HI")
@@ -2039,16 +2068,6 @@
 				   (VNx2BF "vnx2di")
 				   (VNx4SF "vnx4si") (VNx2SF "vnx2di")
 				   (VNx2DF "vnx2di")])
-
-;; Mode for vector conditional operations where the comparison has
-;; different type from the lhs.
-(define_mode_attr V_cmp_mixed [(V2SI "V2SF") (V4SI "V4SF")
-			       (V2DI "V2DF") (V2SF "V2SI")
-			       (V4SF "V4SI") (V2DF "V2DI")])
-
-(define_mode_attr v_cmp_mixed [(V2SI "v2sf") (V4SI "v4sf")
-			       (V2DI "v2df") (V2SF "v2si")
-			       (V4SF "v4si") (V2DF "v2di")])
 
 ;; Lower case element modes (as used in shift immediate patterns).
 (define_mode_attr ve_mode [(V8QI "qi") (V16QI "qi")
@@ -2551,7 +2570,8 @@
 				 (V8HI "vec") (V2SI "vec") (V4SI "vec")
 				 (V2DI "vec") (DI "offset")])
 
-(define_mode_attr b [(VNx8BF "b") (VNx8HF "") (VNx4SF "") (VNx2DF "")
+(define_mode_attr b [(V4BF "b") (V4HF "") (V8BF "b") (V8HF "")
+		     (VNx8BF "b") (VNx8HF "") (VNx4SF "") (VNx2DF "")
 		     (VNx16BF "b") (VNx16HF "") (VNx8SF "") (VNx4DF "")
 		     (VNx32BF "b") (VNx32HF "") (VNx16SF "") (VNx8DF "")])
 
@@ -3778,29 +3798,45 @@
    UNSPEC_F1CVTLT
    UNSPEC_F2CVTLT])
 
-(define_int_iterator SVE2_FP8_TERNARY_VNX8HF
+(define_int_iterator FMLAL_FP8_HF
   [UNSPEC_FMLALB_FP8
    UNSPEC_FMLALT_FP8])
 
-(define_int_iterator SVE2_FP8_TERNARY_VNX4SF
+(define_int_iterator FMLALL_FP8_SF
   [UNSPEC_FMLALLBB_FP8
    UNSPEC_FMLALLBT_FP8
    UNSPEC_FMLALLTB_FP8
    UNSPEC_FMLALLTT_FP8])
 
-(define_int_iterator SVE2_FP8_TERNARY_LANE_VNX8HF
-  [UNSPEC_FMLALB_FP8
-   UNSPEC_FMLALT_FP8])
+;; Iterators for fpm instructions
 
-(define_int_iterator SVE2_FP8_TERNARY_LANE_VNX4SF
-  [UNSPEC_FMLALLBB_FP8
-   UNSPEC_FMLALLBT_FP8
-   UNSPEC_FMLALLTB_FP8
-   UNSPEC_FMLALLTT_FP8])
+(define_int_iterator FPM_UNARY_UNS [UNSPEC_F1CVTL_FP8 UNSPEC_F2CVTL_FP8])
+
+(define_int_iterator FPM_BINARY_UNS [UNSPEC_FCVTN_FP8])
+
+(define_int_iterator FSCALE_UNS [UNSPEC_FSCALE])
+
+(define_int_iterator FPM_FDOT [UNSPEC_FDOT_FP8])
+(define_int_iterator FPM_FDOT_LANE [UNSPEC_FDOT_LANE_FP8])
 
 ;; -------------------------------------------------------------------
 ;; Int Iterators Attributes.
 ;; -------------------------------------------------------------------
+
+;; The AArch64 insn mnemonic associated with an unspec.
+(define_int_attr insn
+  [(UNSPEC_F1CVTL_FP8 "f1cvtl")
+   (UNSPEC_F2CVTL_FP8 "f2cvtl")
+   (UNSPEC_FCVTN_FP8 "fcvtn")
+   (UNSPEC_FDOT_FP8 "fdot")
+   (UNSPEC_FDOT_LANE_FP8 "fdot")
+   (UNSPEC_FMLALB_FP8 "fmlalb")
+   (UNSPEC_FMLALT_FP8 "fmlalt")
+   (UNSPEC_FMLALLBB_FP8 "fmlallbb")
+   (UNSPEC_FMLALLBT_FP8 "fmlallbt")
+   (UNSPEC_FMLALLTB_FP8 "fmlalltb")
+   (UNSPEC_FMLALLTT_FP8 "fmlalltt")
+   (UNSPEC_FSCALE "fscale")])
 
 ;; The optab associated with an operation.  Note that for ANDF, IORF
 ;; and XORF, the optab pattern is not actually defined; we just use this
@@ -4799,13 +4835,3 @@
    (UNSPEC_F2CVT "f2cvt")
    (UNSPEC_F1CVTLT "f1cvtlt")
    (UNSPEC_F2CVTLT "f2cvtlt")])
-
-(define_int_attr sve2_fp8_fma_op_vnx8hf
-  [(UNSPEC_FMLALB_FP8 "fmlalb")
-   (UNSPEC_FMLALT_FP8 "fmlalt")])
-
-(define_int_attr sve2_fp8_fma_op_vnx4sf
-  [(UNSPEC_FMLALLBB_FP8 "fmlallbb")
-   (UNSPEC_FMLALLBT_FP8 "fmlallbt")
-   (UNSPEC_FMLALLTB_FP8 "fmlalltb")
-   (UNSPEC_FMLALLTT_FP8 "fmlalltt")])
