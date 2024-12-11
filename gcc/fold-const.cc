@@ -3158,6 +3158,19 @@ combine_comparisons (location_t loc,
    like math-related flags or undefined behavior; only return true for
    values that are provably bitwise identical in all circumstances.
 
+   If OEP_ASSUME_WRAPV is set, then require the values to be bitwise identical
+   under two's compliment arithmetic (ignoring any possible Undefined Behaviour)
+   rather than just numerically equivalent.  The compared expressions must
+   however perform the same operations but may do intermediate computations in
+   differing signs.  Because this comparison ignores any possible UB it cannot
+   be used blindly without ensuring that the context you are using it in itself
+   doesn't guarantee that there will be no UB.  Conditional expressions are
+   excluded from this relaxation.
+
+   When OEP_ASSUME_WRAPV is used operand_compare::hash_operand may return
+   differing hashes even for cases where operand_compare::operand_equal_p
+   compares equal.
+
    Unless OEP_MATCH_SIDE_EFFECTS is set, the function returns false on
    any operand with side effect.  This is unnecesarily conservative in the
    case we know that arg0 and arg1 are in disjoint code paths (such as in
@@ -3169,6 +3182,19 @@ bool
 operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 				  unsigned int flags)
 {
+  return operand_equal_p (TREE_TYPE (arg0), arg0, TREE_TYPE (arg1), arg1, flags);
+}
+
+/* The same as operand_equal_p however the type of ARG0 and ARG1 are assumed to
+   be the TYPE0 and TYPE1 respectively.  TYPE0 and TYPE1 represent the type the
+   expression is being compared under for equality.  This means that they can
+   differ from the actual TREE_TYPE (..) value of ARG0 and ARG1.  */
+
+bool
+operand_compare::operand_equal_p (tree type0, const_tree arg0,
+				  tree type1, const_tree arg1,
+				  unsigned int flags)
+{
   bool r;
   if (verify_hash_value (arg0, arg1, flags, &r))
     return r;
@@ -3178,25 +3204,25 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 
   /* If either is ERROR_MARK, they aren't equal.  */
   if (TREE_CODE (arg0) == ERROR_MARK || TREE_CODE (arg1) == ERROR_MARK
-      || TREE_TYPE (arg0) == error_mark_node
-      || TREE_TYPE (arg1) == error_mark_node)
+      || type0 == error_mark_node
+      || type1 == error_mark_node)
     return false;
 
   /* Similar, if either does not have a type (like a template id),
      they aren't equal.  */
-  if (!TREE_TYPE (arg0) || !TREE_TYPE (arg1))
+  if (!type0 || !type1)
     return false;
 
   /* Bitwise identity makes no sense if the values have different layouts.  */
   if ((flags & OEP_BITWISE)
-      && !tree_nop_conversion_p (TREE_TYPE (arg0), TREE_TYPE (arg1)))
+      && !tree_nop_conversion_p (type0, type1))
     return false;
 
   /* We cannot consider pointers to different address space equal.  */
-  if (POINTER_TYPE_P (TREE_TYPE (arg0))
-      && POINTER_TYPE_P (TREE_TYPE (arg1))
-      && (TYPE_ADDR_SPACE (TREE_TYPE (TREE_TYPE (arg0)))
-	  != TYPE_ADDR_SPACE (TREE_TYPE (TREE_TYPE (arg1)))))
+  if (POINTER_TYPE_P (type0)
+      && POINTER_TYPE_P (type1)
+      && (TYPE_ADDR_SPACE (TREE_TYPE (type0))
+	  != TYPE_ADDR_SPACE (TREE_TYPE (type1))))
     return false;
 
   /* Check equality of integer constants before bailing out due to
@@ -3209,26 +3235,70 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
       return tree_int_cst_equal (arg0, arg1);
     }
 
+  if ((flags & OEP_ASSUME_WRAPV)
+      && (CONVERT_EXPR_P (arg0) || CONVERT_EXPR_P (arg1)))
+    {
+      const_tree t_arg0 = arg0;
+      const_tree t_arg1 = arg1;
+      STRIP_NOPS (arg0);
+      STRIP_NOPS (arg1);
+      /* Only recurse if the conversion was one that was valid to strip.  */
+      if (t_arg0 != arg0 || t_arg1 != arg1)
+	return operand_equal_p (type0, arg0, type1, arg1, flags);
+    }
+
   if (!(flags & OEP_ADDRESS_OF))
     {
+      /* Check if we are checking an operation where the two's compliment
+	 bitwise representation of the result is not the same between signed and
+	 unsigned arithmetic.  */
+      bool enforce_signedness = true;
+      if (flags & OEP_ASSUME_WRAPV)
+	{
+	  switch (TREE_CODE (arg0))
+	    {
+	    case PLUS_EXPR:
+	    case MINUS_EXPR:
+	    case MULT_EXPR:
+	    case BIT_IOR_EXPR:
+	    case BIT_XOR_EXPR:
+	    case BIT_AND_EXPR:
+	    case BIT_NOT_EXPR:
+	    case ABS_EXPR:
+	    CASE_CONVERT:
+	    case SSA_NAME:
+	    case INTEGER_CST:
+	    case VAR_DECL:
+	    case PARM_DECL:
+	    case RESULT_DECL:
+	      enforce_signedness = false;
+	      break;
+
+	    default:
+	      break;
+	    }
+	}
+
       /* If both types don't have the same signedness, then we can't consider
 	 them equal.  We must check this before the STRIP_NOPS calls
 	 because they may change the signedness of the arguments.  As pointers
 	 strictly don't have a signedness, require either two pointers or
 	 two non-pointers as well.  */
-      if (TYPE_UNSIGNED (TREE_TYPE (arg0)) != TYPE_UNSIGNED (TREE_TYPE (arg1))
-	  || POINTER_TYPE_P (TREE_TYPE (arg0))
-			     != POINTER_TYPE_P (TREE_TYPE (arg1)))
+      if (POINTER_TYPE_P (type0) != POINTER_TYPE_P (type1)
+	  || (TYPE_UNSIGNED (type0) != TYPE_UNSIGNED (type1)
+	      && enforce_signedness))
 	return false;
 
       /* If both types don't have the same precision, then it is not safe
 	 to strip NOPs.  */
-      if (element_precision (TREE_TYPE (arg0))
-	  != element_precision (TREE_TYPE (arg1)))
+      if (element_precision (type0) != element_precision (type1))
 	return false;
 
       STRIP_NOPS (arg0);
       STRIP_NOPS (arg1);
+
+      type0 = TREE_TYPE (arg0);
+      type1 = TREE_TYPE (arg1);
     }
 #if 0
   /* FIXME: Fortran FE currently produce ADDR_EXPR of NOP_EXPR. Enable the
@@ -3287,9 +3357,9 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 
   /* When not checking adddresses, this is needed for conversions and for
      COMPONENT_REF.  Might as well play it safe and always test this.  */
-  if (TREE_CODE (TREE_TYPE (arg0)) == ERROR_MARK
-      || TREE_CODE (TREE_TYPE (arg1)) == ERROR_MARK
-      || (TYPE_MODE (TREE_TYPE (arg0)) != TYPE_MODE (TREE_TYPE (arg1))
+  if (TREE_CODE (type0) == ERROR_MARK
+      || TREE_CODE (type1) == ERROR_MARK
+      || (TYPE_MODE (type0) != TYPE_MODE (type1)
 	  && !(flags & OEP_ADDRESS_OF)))
     return false;
 
@@ -3382,21 +3452,18 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 	    return true;
 
 	  /* See sem_variable::equals in ipa-icf for a similar approach.  */
-	  tree typ0 = TREE_TYPE (arg0);
-	  tree typ1 = TREE_TYPE (arg1);
-
-	  if (TREE_CODE (typ0) != TREE_CODE (typ1))
+	  if (TREE_CODE (type0) != TREE_CODE (type1))
 	    return false;
-	  else if (TREE_CODE (typ0) == ARRAY_TYPE)
+	  else if (TREE_CODE (type0) == ARRAY_TYPE)
 	    {
 	      /* For arrays, check that the sizes all match.  */
-	      const HOST_WIDE_INT siz0 = int_size_in_bytes (typ0);
-	      if (TYPE_MODE (typ0) != TYPE_MODE (typ1)
+	      const HOST_WIDE_INT siz0 = int_size_in_bytes (type0);
+	      if (TYPE_MODE (type0) != TYPE_MODE (type1)
 		  || siz0 < 0
-		  || siz0 != int_size_in_bytes (typ1))
+		  || siz0 != int_size_in_bytes (type1))
 		return false;
 	    }
-	  else if (!types_compatible_p (typ0, typ1))
+	  else if (!types_compatible_p (type0, type1))
 	    return false;
 
 	  vec<constructor_elt, va_gc> *v0 = CONSTRUCTOR_ELTS (arg0);
@@ -3406,7 +3473,7 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 
 	  /* Address of CONSTRUCTOR is defined in GENERIC to mean the value
 	     of the CONSTRUCTOR referenced indirectly.  */
-	  flags &= ~OEP_ADDRESS_OF;
+	  flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 
 	  for (unsigned idx = 0; idx < vec_safe_length (v0); ++idx)
 	    {
@@ -3420,7 +3487,7 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 
 	      /* ... and that they apply to the same field!  */
 	      if (c0->index != c1->index
-		  && (TREE_CODE (typ0) == ARRAY_TYPE
+		  && (TREE_CODE (type0) == ARRAY_TYPE
 		      ? !operand_equal_p (c0->index, c1->index, flags)
 		      : !operand_equal_p (DECL_FIELD_OFFSET (c0->index),
 					  DECL_FIELD_OFFSET (c1->index),
@@ -3462,8 +3529,7 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
         {
 	CASE_CONVERT:
         case FIX_TRUNC_EXPR:
-	  if (TYPE_UNSIGNED (TREE_TYPE (arg0))
-	      != TYPE_UNSIGNED (TREE_TYPE (arg1)))
+	  if (TYPE_UNSIGNED (type0) != TYPE_UNSIGNED (type1))
 	    return false;
 	  break;
 	default:
@@ -3499,22 +3565,20 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 	case INDIRECT_REF:
 	  if (!(flags & OEP_ADDRESS_OF))
 	    {
-	      if (TYPE_ALIGN (TREE_TYPE (arg0))
-		  != TYPE_ALIGN (TREE_TYPE (arg1)))
+	      if (TYPE_ALIGN (type0) != TYPE_ALIGN (type1))
 		return false;
 	      /* Verify that the access types are compatible.  */
-	      if (TYPE_MAIN_VARIANT (TREE_TYPE (arg0))
-		  != TYPE_MAIN_VARIANT (TREE_TYPE (arg1)))
+	      if (TYPE_MAIN_VARIANT (type0) != TYPE_MAIN_VARIANT (type1))
 		return false;
 	    }
-	  flags &= ~OEP_ADDRESS_OF;
+	  flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	  return OP_SAME (0);
 
 	case IMAGPART_EXPR:
 	  /* Require the same offset.  */
-	  if (!operand_equal_p (TYPE_SIZE (TREE_TYPE (arg0)),
-				TYPE_SIZE (TREE_TYPE (arg1)),
-				flags & ~OEP_ADDRESS_OF))
+	  if (!operand_equal_p (TYPE_SIZE (type0),
+				TYPE_SIZE (type1),
+				flags & ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV)))
 	    return false;
 
 	/* Fallthru.  */
@@ -3527,15 +3591,15 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 	  if (!(flags & OEP_ADDRESS_OF))
 	    {
 	      /* Require equal access sizes */
-	      if (TYPE_SIZE (TREE_TYPE (arg0)) != TYPE_SIZE (TREE_TYPE (arg1))
-		  && (!TYPE_SIZE (TREE_TYPE (arg0))
-		      || !TYPE_SIZE (TREE_TYPE (arg1))
-		      || !operand_equal_p (TYPE_SIZE (TREE_TYPE (arg0)),
-					   TYPE_SIZE (TREE_TYPE (arg1)),
+	      if (TYPE_SIZE (type0) != TYPE_SIZE (type1)
+		  && (!TYPE_SIZE (type0)
+		      || !TYPE_SIZE (type1)
+		      || !operand_equal_p (TYPE_SIZE (type0),
+					   TYPE_SIZE (type1),
 					   flags)))
 		return false;
 	      /* Verify that access happens in similar types.  */
-	      if (!types_compatible_p (TREE_TYPE (arg0), TREE_TYPE (arg1)))
+	      if (!types_compatible_p (type0, type1))
 		return false;
 	      /* Verify that accesses are TBAA compatible.  */
 	      if (!alias_ptr_types_compatible_p
@@ -3547,11 +3611,10 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 		      != MR_DEPENDENCE_BASE (arg1)))
 		return false;
 	     /* Verify that alignment is compatible.  */
-	     if (TYPE_ALIGN (TREE_TYPE (arg0))
-		 != TYPE_ALIGN (TREE_TYPE (arg1)))
+	     if (TYPE_ALIGN (type0) != TYPE_ALIGN (type1))
 		return false;
 	    }
-	  flags &= ~OEP_ADDRESS_OF;
+	  flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	  return (OP_SAME (0) && OP_SAME (1)
 		  /* TARGET_MEM_REF require equal extra operands.  */
 		  && (TREE_CODE (arg0) != TARGET_MEM_REF
@@ -3563,7 +3626,7 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 	case ARRAY_RANGE_REF:
 	  if (!OP_SAME (0))
 	    return false;
-	  flags &= ~OEP_ADDRESS_OF;
+	  flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	  /* Compare the array index by value if it is constant first as we
 	     may have different types but same value here.  */
 	  return ((tree_int_cst_equal (TREE_OPERAND (arg0, 1),
@@ -3596,7 +3659,7 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 	    /* Most of time we only need to compare FIELD_DECLs for equality.
 	       However when determining address look into actual offsets.
 	       These may match for unions and unshared record types.  */
-	    flags &= ~OEP_ADDRESS_OF;
+	    flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	    if (!OP_SAME (1))
 	      {
 		if (compare_address
@@ -3630,7 +3693,7 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 	case BIT_FIELD_REF:
 	  if (!OP_SAME (0))
 	    return false;
-	  flags &= ~OEP_ADDRESS_OF;
+	  flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	  return OP_SAME (1) && OP_SAME (2);
 
 	default:
@@ -3676,7 +3739,7 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 	case COND_EXPR:
 	  if (! OP_SAME (1) || ! OP_SAME_WITH_NULL (2))
 	    return false;
-	  flags &= ~OEP_ADDRESS_OF;
+	  flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	  return OP_SAME (0);
 
 	case BIT_INSERT_EXPR:
@@ -3684,8 +3747,7 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 	     of op1.  Need to check to make sure they are the same.  */
 	  if (TREE_CODE (TREE_OPERAND (arg0, 1)) == INTEGER_CST
 	      && TREE_CODE (TREE_OPERAND (arg1, 1)) == INTEGER_CST
-	      && TYPE_PRECISION (TREE_TYPE (TREE_OPERAND (arg0, 1)))
-		 != TYPE_PRECISION (TREE_TYPE (TREE_OPERAND (arg1, 1))))
+	      && TYPE_PRECISION (type0) != TYPE_PRECISION (type1))
 	    return false;
 	  /* FALLTHRU */
 
@@ -3716,7 +3778,7 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 	if (!operand_equal_p (OBJ_TYPE_REF_EXPR (arg0),
 			      OBJ_TYPE_REF_EXPR (arg1), flags))
 	  return false;
-	flags &= ~OEP_ADDRESS_OF;
+	flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	if (tree_to_uhwi (OBJ_TYPE_REF_TOKEN (arg0))
 	    != tree_to_uhwi (OBJ_TYPE_REF_TOKEN (arg1)))
 	  return false;
@@ -3826,16 +3888,15 @@ operand_compare::operand_equal_p (const_tree arg0, const_tree arg1,
 	     indexed in increasing order and form an initial sequence.
 
 	     We make no effort to compare nonconstant ones in GENERIC.  */
-	  if (!VECTOR_TYPE_P (TREE_TYPE (arg0))
-	      || !VECTOR_TYPE_P (TREE_TYPE (arg1)))
+	  if (!VECTOR_TYPE_P (type0) || !VECTOR_TYPE_P (type1))
 	    return false;
 
 	  /* Be sure that vectors constructed have the same representation.
 	     We only tested element precision and modes to match.
 	     Vectors may be BLKmode and thus also check that the number of
 	     parts match.  */
-	  if (maybe_ne (TYPE_VECTOR_SUBPARTS (TREE_TYPE (arg0)),
-			TYPE_VECTOR_SUBPARTS (TREE_TYPE (arg1))))
+	  if (maybe_ne (TYPE_VECTOR_SUBPARTS (type0),
+			TYPE_VECTOR_SUBPARTS (type1)))
 	    return false;
 
 	  vec<constructor_elt, va_gc> *v0 = CONSTRUCTOR_ELTS (arg0);
@@ -4004,7 +4065,7 @@ operand_compare::hash_operand (const_tree t, inchash::hash &hstate,
       {
 	unsigned HOST_WIDE_INT idx;
 	tree field, value;
-	flags &= ~OEP_ADDRESS_OF;
+	flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	hstate.add_int (CONSTRUCTOR_NO_CLEARING (t));
 	FOR_EACH_CONSTRUCTOR_ELT (CONSTRUCTOR_ELTS (t), idx, field, value)
 	  {
@@ -4118,7 +4179,7 @@ operand_compare::hash_operand (const_tree t, inchash::hash &hstate,
 	    case INDIRECT_REF:
 	    case MEM_REF:
 	    case TARGET_MEM_REF:
-	      flags &= ~OEP_ADDRESS_OF;
+	      flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	      sflags = flags;
 	      break;
 
@@ -4136,11 +4197,11 @@ operand_compare::hash_operand (const_tree t, inchash::hash &hstate,
 	    case ARRAY_REF:
 	    case ARRAY_RANGE_REF:
 	    case BIT_FIELD_REF:
-	      sflags &= ~OEP_ADDRESS_OF;
+	      sflags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	      break;
 
 	    case COND_EXPR:
-	      flags &= ~OEP_ADDRESS_OF;
+	      flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	      break;
 
 	    case WIDEN_MULT_PLUS_EXPR:
@@ -4170,7 +4231,7 @@ operand_compare::hash_operand (const_tree t, inchash::hash &hstate,
 	    case OBJ_TYPE_REF:
 	    /* Virtual table reference.  */
 	      inchash::add_expr (OBJ_TYPE_REF_EXPR (t), hstate, flags);
-	      flags &= ~OEP_ADDRESS_OF;
+	      flags &= ~(OEP_ADDRESS_OF | OEP_ASSUME_WRAPV);
 	      inchash::add_expr (OBJ_TYPE_REF_TOKEN (t), hstate, flags);
 	      inchash::add_expr (OBJ_TYPE_REF_OBJECT (t), hstate, flags);
 	      if (!virtual_method_call_p (t))
@@ -4232,7 +4293,7 @@ operand_compare::verify_hash_value (const_tree arg0, const_tree arg1,
     {
       if (operand_equal_p (arg0, arg1, flags | OEP_NO_HASH_CHECK))
 	{
-	  if (arg0 != arg1 && !(flags & OEP_DECL_NAME))
+	  if (arg0 != arg1 && !(flags & (OEP_DECL_NAME | OEP_ASSUME_WRAPV)))
 	    {
 	      inchash::hash hstate0 (0), hstate1 (0);
 	      hash_operand (arg0, hstate0, flags | OEP_HASH_CHECK);
@@ -17471,6 +17532,111 @@ test_arithmetic_folding ()
 				   x);
 }
 
+namespace test_operand_equality {
+
+/* Verify structural equality.  */
+
+/* Execute fold_vec_perm_cst unit tests.  */
+
+static void
+test ()
+{
+  tree stype = integer_type_node;
+  tree utype = unsigned_type_node;
+  tree x = create_tmp_var_raw (stype, "x");
+  tree y = create_tmp_var_raw (stype, "y");
+  tree z = create_tmp_var_raw (stype, "z");
+  tree four = build_int_cst (stype, 4);
+  tree lhs1 = fold_build2 (PLUS_EXPR, stype, x, y);
+  tree rhs1 = fold_convert (stype,
+		fold_build2 (PLUS_EXPR, utype,
+			     fold_convert (utype, x),
+			     fold_convert (utype, y)));
+
+  /* (int)((unsigned x) + (unsigned y)) == x + y.  */
+  ASSERT_TRUE (operand_equal_p (lhs1, rhs1, OEP_ASSUME_WRAPV));
+  ASSERT_FALSE (operand_equal_p (lhs1, rhs1, 0));
+
+  /* (int)(unsigned) x == x.  */
+  tree lhs2 = build1 (NOP_EXPR, stype,
+		build1 (NOP_EXPR, utype, x));
+  tree rhs2 = x;
+  ASSERT_TRUE (operand_equal_p (lhs2, rhs2, OEP_ASSUME_WRAPV));
+  ASSERT_TRUE (operand_equal_p (lhs2, rhs2, 0));
+
+  /* (unsigned x) + (unsigned y) == x + y.  */
+  tree lhs3 = lhs1;
+  tree rhs3 = fold_build2 (PLUS_EXPR, utype,
+			   fold_convert (utype, x),
+			   fold_convert (utype, y));
+  ASSERT_TRUE (operand_equal_p (lhs3, rhs3, OEP_ASSUME_WRAPV));
+  ASSERT_FALSE (operand_equal_p (lhs3, rhs3, 0));
+
+  /* (unsigned x) / (unsigned y) == x / y.  */
+  tree lhs4 = fold_build2 (TRUNC_DIV_EXPR, stype, x, y);;
+  tree rhs4 = fold_build2 (TRUNC_DIV_EXPR, utype,
+			   fold_convert (utype, x),
+			   fold_convert (utype, y));
+  ASSERT_FALSE (operand_equal_p (lhs4, rhs4, OEP_ASSUME_WRAPV));
+  ASSERT_FALSE (operand_equal_p (lhs4, rhs4, 0));
+
+  /* (long x) / 4 == (long)(x / 4).  */
+  tree lstype = long_long_integer_type_node;
+  tree lfour = build_int_cst (lstype, 4);
+  tree lhs5 = fold_build2 (TRUNC_DIV_EXPR, lstype,
+			   fold_build1 (VIEW_CONVERT_EXPR, lstype, x), lfour);
+  tree rhs5 = fold_build1 (VIEW_CONVERT_EXPR, lstype,
+			   fold_build2 (TRUNC_DIV_EXPR, stype, x, four));
+  ASSERT_FALSE (operand_equal_p (lhs5, rhs5, OEP_ASSUME_WRAPV));
+  ASSERT_FALSE (operand_equal_p (lhs5, rhs5, 0));
+
+  /* (unsigned x) / 4 == x / 4.  */
+  tree lhs6 = fold_build2 (TRUNC_DIV_EXPR, stype, x, four);;
+  tree rhs6 = fold_build2 (TRUNC_DIV_EXPR, utype,
+			   fold_convert (utype, x),
+			   fold_convert (utype, four));
+  ASSERT_FALSE (operand_equal_p (lhs6, rhs6, OEP_ASSUME_WRAPV));
+  ASSERT_FALSE (operand_equal_p (lhs6, rhs6, 0));
+
+  /* a / (int)((unsigned)b - (unsigned)c)) == a / (b - c).  */
+  tree lhs7 = fold_build2 (TRUNC_DIV_EXPR, stype, x, lhs1);
+  tree rhs7 = fold_build2 (TRUNC_DIV_EXPR, stype, x, rhs1);
+  ASSERT_TRUE (operand_equal_p (lhs7, rhs7, OEP_ASSUME_WRAPV));
+  ASSERT_FALSE (operand_equal_p (lhs7, rhs7, 0));
+
+  /* (unsigned x) + 4 == x + 4.  */
+  tree lhs8 = fold_build2 (PLUS_EXPR, stype, x, four);
+  tree rhs8 = fold_build2 (PLUS_EXPR, utype,
+			   fold_convert (utype, x),
+			   fold_convert (utype, four));
+  ASSERT_TRUE (operand_equal_p (lhs8, rhs8, OEP_ASSUME_WRAPV));
+  ASSERT_FALSE (operand_equal_p (lhs8, rhs8, 0));
+
+  /* (unsigned x) + 4 == 4 + x.  */
+  tree lhs9 = fold_build2 (PLUS_EXPR, stype, four, x);
+  tree rhs9 = fold_build2 (PLUS_EXPR, utype,
+			   fold_convert (utype, x),
+			   fold_convert (utype, four));
+  ASSERT_TRUE (operand_equal_p (lhs9, rhs9, OEP_ASSUME_WRAPV));
+  ASSERT_FALSE (operand_equal_p (lhs9, rhs9, 0));
+
+  /* ((unsigned x) + 4) * (unsigned y)) + z == ((4 + x) * y) + z.  */
+  tree lhs10 = fold_build2 (PLUS_EXPR, stype,
+			   fold_build2 (MULT_EXPR, stype,
+					fold_build2 (PLUS_EXPR, stype, four, x),
+					y),
+			   z);
+  tree rhs10 = fold_build2 (MULT_EXPR, utype,
+			   fold_build2 (PLUS_EXPR, utype,
+					fold_convert (utype, x),
+					fold_convert (utype, four)),
+			   fold_convert (utype, y));
+  rhs10 = fold_build2 (PLUS_EXPR, stype, fold_convert (stype, rhs10), z);
+  ASSERT_TRUE (operand_equal_p (lhs10, rhs10, OEP_ASSUME_WRAPV));
+  ASSERT_FALSE (operand_equal_p (lhs10, rhs10, 0));
+}
+}
+
 namespace test_fold_vec_perm_cst {
 
 /* Build a VECTOR_CST corresponding to VMODE, and has
@@ -18264,6 +18430,7 @@ fold_const_cc_tests ()
   test_vector_folding ();
   test_vec_duplicate_folding ();
   test_fold_vec_perm_cst::test ();
+  test_operand_equality::test ();
 }
 
 } // namespace selftest

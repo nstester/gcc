@@ -7901,15 +7901,14 @@ store_constructor (tree exp, rtx target, int cleared, poly_int64 size,
       {
 	unsigned HOST_WIDE_INT idx;
 	constructor_elt *ce;
-	int i;
 	bool need_to_clear;
 	insn_code icode = CODE_FOR_nothing;
 	tree elt;
 	tree elttype = TREE_TYPE (type);
 	int elt_size = vector_element_bits (type);
 	machine_mode eltmode = TYPE_MODE (elttype);
-	HOST_WIDE_INT bitsize;
-	HOST_WIDE_INT bitpos;
+	poly_int64 bitsize;
+	poly_int64 bitpos;
 	rtvec vector = NULL;
 	poly_uint64 n_elts;
 	unsigned HOST_WIDE_INT const_n_elts;
@@ -7966,12 +7965,9 @@ store_constructor (tree exp, rtx target, int cleared, poly_int64 size,
 
 	n_elts = TYPE_VECTOR_SUBPARTS (type);
 	if (REG_P (target)
-	    && VECTOR_MODE_P (mode)
-	    && n_elts.is_constant (&const_n_elts))
+	    && VECTOR_MODE_P (mode))
 	  {
-	    machine_mode emode = eltmode;
-	    bool vector_typed_elts_p = false;
-
+	    const_n_elts = 0;
 	    if (CONSTRUCTOR_NELTS (exp)
 		&& (TREE_CODE (TREE_TYPE (CONSTRUCTOR_ELT (exp, 0)->value))
 		    == VECTOR_TYPE))
@@ -7980,23 +7976,26 @@ store_constructor (tree exp, rtx target, int cleared, poly_int64 size,
 		gcc_assert (known_eq (CONSTRUCTOR_NELTS (exp)
 				      * TYPE_VECTOR_SUBPARTS (etype),
 				      n_elts));
-		emode = TYPE_MODE (etype);
-		vector_typed_elts_p = true;
-	      }
-	    icode = convert_optab_handler (vec_init_optab, mode, emode);
-	    if (icode != CODE_FOR_nothing)
-	      {
-		unsigned int n = const_n_elts;
 
-		if (vector_typed_elts_p)
-		  {
-		    n = CONSTRUCTOR_NELTS (exp);
-		    vec_vec_init_p = true;
-		  }
-		vector = rtvec_alloc (n);
-		for (unsigned int k = 0; k < n; k++)
-		  RTVEC_ELT (vector, k) = CONST0_RTX (emode);
+		icode = convert_optab_handler (vec_init_optab, mode,
+					       TYPE_MODE (etype));
+		const_n_elts = CONSTRUCTOR_NELTS (exp);
+		vec_vec_init_p = icode != CODE_FOR_nothing;
 	      }
+	    else if (exact_div (n_elts, GET_MODE_NUNITS (eltmode))
+			.is_constant (&const_n_elts))
+	      {
+		/* For a non-const type vector, we check it is made up of
+		   similarly non-const type vectors. */
+		icode = convert_optab_handler (vec_init_optab, mode, eltmode);
+	      }
+
+	  if (const_n_elts && icode != CODE_FOR_nothing)
+	    {
+	      vector = rtvec_alloc (const_n_elts);
+	      for (unsigned int k = 0; k < const_n_elts; k++)
+		RTVEC_ELT (vector, k) = CONST0_RTX (eltmode);
+	    }
 	  }
 
 	/* Compute the size of the elements in the CTOR.  It differs
@@ -8006,7 +8005,7 @@ store_constructor (tree exp, rtx target, int cleared, poly_int64 size,
 			 ? TREE_TYPE (CONSTRUCTOR_ELT (exp, 0)->value)
 			 : elttype);
 	if (VECTOR_TYPE_P (val_type))
-	  bitsize = tree_to_uhwi (TYPE_SIZE (val_type));
+	  bitsize = tree_to_poly_uint64 (TYPE_SIZE (val_type));
 	else
 	  bitsize = elt_size;
 
@@ -8019,12 +8018,12 @@ store_constructor (tree exp, rtx target, int cleared, poly_int64 size,
 	  need_to_clear = true;
 	else
 	  {
-	    unsigned HOST_WIDE_INT count = 0, zero_count = 0;
+	    poly_uint64 count = 0, zero_count = 0;
 	    tree value;
 
 	    FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (exp), idx, value)
 	      {
-		int n_elts_here = bitsize / elt_size;
+		poly_int64 n_elts_here = exact_div (bitsize, elt_size);
 		count += n_elts_here;
 		if (mostly_zeros_p (value))
 		  zero_count += n_elts_here;
@@ -8033,7 +8032,7 @@ store_constructor (tree exp, rtx target, int cleared, poly_int64 size,
 	    /* Clear the entire vector first if there are any missing elements,
 	       or if the incidence of zero elements is >= 75%.  */
 	    need_to_clear = (maybe_lt (count, n_elts)
-			     || 4 * zero_count >= 3 * count);
+			     || maybe_gt (4 * zero_count, 3 * count));
 	  }
 
 	if (need_to_clear && maybe_gt (size, 0) && !vector)
@@ -8060,9 +8059,13 @@ store_constructor (tree exp, rtx target, int cleared, poly_int64 size,
 
         /* Store each element of the constructor into the corresponding
 	   element of TARGET, determined by counting the elements.  */
-	for (idx = 0, i = 0;
-	     vec_safe_iterate (CONSTRUCTOR_ELTS (exp), idx, &ce);
-	     idx++, i += bitsize / elt_size)
+	HOST_WIDE_INT chunk_size = 0;
+	bool chunk_multiple_p = constant_multiple_p (bitsize, elt_size,
+						     &chunk_size);
+	gcc_assert (chunk_multiple_p || vec_vec_init_p);
+
+	for (idx = 0; vec_safe_iterate (CONSTRUCTOR_ELTS (exp), idx, &ce);
+	     idx++)
 	  {
 	    HOST_WIDE_INT eltpos;
 	    tree value = ce->value;
@@ -8073,7 +8076,7 @@ store_constructor (tree exp, rtx target, int cleared, poly_int64 size,
 	    if (ce->index)
 	      eltpos = tree_to_uhwi (ce->index);
 	    else
-	      eltpos = i;
+	      eltpos = idx * chunk_size;
 
 	    if (vector)
 	      {
@@ -8461,10 +8464,8 @@ get_inner_reference (tree exp, poly_int64 *pbitsize,
 
   if (size_tree != 0)
     {
-      if (! tree_fits_uhwi_p (size_tree))
+      if (!poly_int_tree_p (size_tree, pbitsize))
 	mode = BLKmode, *pbitsize = -1;
-      else
-	*pbitsize = tree_to_uhwi (size_tree);
     }
 
   *preversep = reverse_storage_order_for_component_p (exp);
