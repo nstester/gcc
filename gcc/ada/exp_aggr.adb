@@ -79,9 +79,9 @@ with Warnsw;         use Warnsw;
 package body Exp_Aggr is
 
    type Case_Bounds is record
-     Choice_Lo   : Node_Id;
-     Choice_Hi   : Node_Id;
-     Choice_Node : Node_Id;
+      Choice_Lo   : Node_Id;
+      Choice_Hi   : Node_Id;
+      Choice_Node : Node_Id;
    end record;
 
    type Case_Table_Type is array (Nat range <>) of Case_Bounds;
@@ -102,9 +102,9 @@ package body Exp_Aggr is
       Comp_Typ  : Node_Id;
       Init_Expr : Node_Id;
       Stmts     : List_Id);
-    --  Perform the initialization of component Comp with expected type
-    --  Comp_Typ of aggregate N. Init_Expr denotes the initialization
-    --  expression of the component. All generated code is added to Stmts.
+   --  Perform the initialization of component Comp with expected type
+   --  Comp_Typ of aggregate N. Init_Expr denotes the initialization
+   --  expression of the component. All generated code is added to Stmts.
 
    function Is_Static_Dispatch_Table_Aggregate (N : Node_Id) return Boolean;
    --  Returns true if N is an aggregate used to initialize the components
@@ -534,10 +534,7 @@ package body Exp_Aggr is
       end if;
 
       --  If the expression has side effects (e.g. contains calls with
-      --  potential side effects) reject as well. We only preanalyze the
-      --  expression to prevent the removal of intended side effects.
-
-      Preanalyze_And_Resolve (Expr, Ctyp);
+      --  potential side effects), then reject it as well.
 
       if not Side_Effect_Free (Expr) then
          return False;
@@ -1082,9 +1079,9 @@ package body Exp_Aggr is
 
       function Get_Assoc_Expr (Assoc : Node_Id) return Node_Id;
       --  For an association with a box, use value given by aspect
-     --   Default_Component_Value of array type if specified, else use
-     --   value given by aspect Default_Value for component type itself
-     --   if specified, else return Empty.
+      --  Default_Component_Value of array type if specified, else use
+      --  value given by aspect Default_Value for component type itself
+      --  if specified, else return Empty.
 
       function Local_Compile_Time_Known_Value (E : Node_Id) return Boolean;
       function Local_Expr_Value               (E : Node_Id) return Uint;
@@ -1267,7 +1264,7 @@ package body Exp_Aggr is
       function Gen_Assign
         (Ind  : Node_Id;
          Expr : Node_Id) return List_Id
-       is
+      is
          function Add_Loop_Actions (Lis : List_Id) return List_Id;
          --  Collect insert_actions generated in the construction of a loop,
          --  and prepend them to the sequence of assignments to complete the
@@ -1645,8 +1642,7 @@ package body Exp_Aggr is
          if Is_Iterated_Component then
 
             --  Create a new scope for the loop variable so that the
-            --  following Gen_Assign (that ends up calling
-            --  Preanalyze_And_Resolve) can correctly find it.
+            --  following Gen_Assign can correctly find it.
 
             Ent := New_Internal_Entity (E_Loop,
                  Current_Scope, Loc, 'L');
@@ -4221,7 +4217,7 @@ package body Exp_Aggr is
       --  First, climb the parent chain, looking through qualified expressions
       --  and dependent expressions of conditional expressions.
 
-      while True loop
+      loop
          case Nkind (Parent_Node) is
             when N_Case_Expression_Alternative =>
                null;
@@ -4280,25 +4276,13 @@ package body Exp_Aggr is
 
          or else Is_Build_In_Place_Aggregate_Return (Parent_Node)
       then
-         Node := N;
-
          --  Mark the aggregate, as well as all the intermediate conditional
          --  expressions, as having expansion delayed. This will block the
          --  usual (bottom-up) expansion of the marked nodes and replace it
          --  with a top-down expansion from the parent node.
 
-         while Node /= Parent_Node loop
-            if Nkind (Node) in N_Aggregate
-                             | N_Case_Expression
-                             | N_Extension_Aggregate
-                             | N_If_Expression
-            then
-               Set_Expansion_Delayed (Node);
-            end if;
-
-            Node := Parent (Node);
-         end loop;
-
+         Set_Expansion_Delayed (N);
+         Delay_Conditional_Expressions_Between (N, Parent_Node);
          return;
       end if;
 
@@ -4410,7 +4394,6 @@ package body Exp_Aggr is
       Dims                 : constant Nat := Number_Dimensions (Typ);
       Max_Others_Replicate : constant Nat := Max_Aggregate_Size (N);
 
-      Ctyp              : Entity_Id := Component_Type (Typ);
       Static_Components : Boolean   := True;
 
       procedure Check_Static_Components;
@@ -4430,7 +4413,7 @@ package body Exp_Aggr is
       --  Return True if the aggregate N is flat (which is not trivial in the
       --  case of multidimensional aggregates).
 
-      function Is_Static_Element (N : Node_Id; Dims : Nat) return Boolean;
+      function Is_Static_Element (N : Node_Id) return Boolean;
       --  Return True if N, an element of a component association list, i.e.
       --  N_Component_Association or N_Iterated_Component_Association, has a
       --  compile-time known value and can be passed as is to the back-end
@@ -4474,7 +4457,7 @@ package body Exp_Aggr is
          then
             Assoc := First (Component_Associations (N));
             while Present (Assoc) loop
-               if not Is_Static_Element (Assoc, Dims) then
+               if not Is_Static_Element (Assoc) then
                   Static_Components := False;
                   exit;
                end if;
@@ -4699,7 +4682,7 @@ package body Exp_Aggr is
                               --  only if either the element is static or is
                               --  an aggregate (we already know it is OK).
 
-                              elsif not Is_Static_Element (Elmt, Dims)
+                              elsif not Is_Static_Element (Elmt)
                                 and then Nkind (Expr) /= N_Aggregate
                               then
                                  return False;
@@ -4856,7 +4839,7 @@ package body Exp_Aggr is
       -- Is_Static_Element --
       -----------------------
 
-      function Is_Static_Element (N : Node_Id; Dims : Nat) return Boolean is
+      function Is_Static_Element (N : Node_Id) return Boolean is
          Expr : constant Node_Id := Expression (N);
 
       begin
@@ -4873,14 +4856,6 @@ package body Exp_Aggr is
            and then not Expansion_Delayed (Expr)
          then
             return True;
-
-         --  However, one may write static expressions that are syntactically
-         --  ambiguous, so preanalyze the expression before checking it again,
-         --  but only at the innermost level for a multidimensional array.
-
-         elsif Dims = 1 then
-            Preanalyze_And_Resolve (Expr, Ctyp);
-            return Compile_Time_Known_Value (Expr);
 
          else
             return False;
@@ -4921,10 +4896,6 @@ package body Exp_Aggr is
       if Has_Controlled_Component (Typ) then
          return;
       end if;
-
-      --  Special handling for mutably taggeds
-
-      Ctyp := Get_Corresponding_Mutably_Tagged_Type_If_Present (Ctyp);
 
       Check_Static_Components;
 
@@ -5019,8 +4990,12 @@ package body Exp_Aggr is
       Typ : constant Entity_Id := Etype (N);
       --  Typ is the correct constrained array subtype of the aggregate
 
-      Ctyp : Entity_Id := Component_Type (Typ);
-      --  Ctyp is the corresponding component type.
+      Component_Typ : constant Entity_Id := Component_Type (Typ);
+      --  Component_Typ is the corresponding component type
+
+      Ctyp : constant Entity_Id :=
+        Get_Corresponding_Mutably_Tagged_Type_If_Present (Component_Typ);
+      --  Ctyp is the corresponding component type to be used
 
       Aggr_Dimension : constant Pos := Number_Dimensions (Typ);
       --  Number of aggregate index dimensions
@@ -5355,21 +5330,6 @@ package body Exp_Aggr is
               and then Nkind (First (Choice_List (Assoc))) = N_Others_Choice
             then
                Others_Present (Dim) := True;
-
-               --  An others_clause may be superfluous if previous components
-               --  cover the full given range of a constrained array. In such
-               --  a case an others_clause does not contribute any additional
-               --  components and has not been analyzed. We analyze it now to
-               --  detect type errors in the expression, even though no code
-               --  will be generated for it.
-
-               if Dim = Aggr_Dimension
-                 and then Nkind (Assoc) /= N_Iterated_Component_Association
-                 and then not Analyzed (Expression (Assoc))
-                 and then not Box_Present (Assoc)
-               then
-                  Preanalyze_And_Resolve (Expression (Assoc), Ctyp);
-               end if;
             end if;
          end if;
 
@@ -5392,8 +5352,7 @@ package body Exp_Aggr is
             if Present (Component_Associations (Sub_Aggr)) then
                Assoc := First (Component_Associations (Sub_Aggr));
                while Present (Assoc) loop
-                  Expr := Expression (Assoc);
-                  Compute_Others_Present (Expr, Dim + 1);
+                  Compute_Others_Present (Expression (Assoc), Dim + 1);
                   Next (Assoc);
                end loop;
             end if;
@@ -5832,13 +5791,13 @@ package body Exp_Aggr is
                          Constraints =>
                            New_List (Make_Range (Loc, Aggr_Lo, Aggr_Hi)))));
 
-               --  Create a temporary array of the above subtype which
-               --  will be used to capture the aggregate assignments.
+            --  Create a temporary array of the above subtype which
+            --  will be used to capture the aggregate assignments.
 
-               TmpD : constant Node_Id :=
-                 Make_Object_Declaration (Loc,
-                   Defining_Identifier => TmpE,
-                   Object_Definition   => New_Occurrence_Of (SubE, Loc));
+            TmpD : constant Node_Id :=
+              Make_Object_Declaration (Loc,
+                Defining_Identifier => TmpE,
+                Object_Definition   => New_Occurrence_Of (SubE, Loc));
 
          begin
             Insert_Actions (N, New_List (SubD, TmpD));
@@ -5965,10 +5924,6 @@ package body Exp_Aggr is
       --  never get here.
 
       pragma Assert (not Raises_Constraint_Error (N));
-
-      --  Special handling for mutably taggeds
-
-      Ctyp := Get_Corresponding_Mutably_Tagged_Type_If_Present (Ctyp);
 
       --  STEP 1a
 
@@ -8683,7 +8638,7 @@ package body Exp_Aggr is
       --  expansion has been delayed, analyze it again and expand it.
 
       if Is_Delayed_Conditional_Expression (Expression (Init_Stmt)) then
-         Set_Analyzed (Expression (Init_Stmt), False);
+         Unanalyze_Delayed_Conditional_Expression (Expression (Init_Stmt));
       end if;
 
       Append_To (Blk_Stmts, Init_Stmt);
@@ -8797,18 +8752,6 @@ package body Exp_Aggr is
       return Nkind (Unqual_N) in N_Aggregate | N_Extension_Aggregate
         and then Expansion_Delayed (Unqual_N);
    end Is_Delayed_Aggregate;
-
-   ---------------------------------------
-   -- Is_Delayed_Conditional_Expression --
-   ---------------------------------------
-
-   function Is_Delayed_Conditional_Expression (N : Node_Id) return Boolean is
-      Unqual_N : constant Node_Id := Unqualify (N);
-
-   begin
-      return Nkind (Unqual_N) in N_Case_Expression | N_If_Expression
-        and then Expansion_Delayed (Unqual_N);
-   end Is_Delayed_Conditional_Expression;
 
    ----------------------------------------
    -- Is_Static_Dispatch_Table_Aggregate --

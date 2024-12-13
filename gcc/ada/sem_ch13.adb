@@ -138,7 +138,7 @@ package body Sem_Ch13 is
    --  the expression of aspect Asp evaluates to False or is erroneous.
 
    function Build_Predicate_Function_Declaration
-      (Typ : Entity_Id) return Node_Id;
+     (Typ : Entity_Id) return Node_Id;
    --  Build the declaration for a predicate function. The declaration is built
    --  at the same time as the body but inserted before, as explained below.
 
@@ -313,9 +313,9 @@ package body Sem_Ch13 is
    --  or to have the proper profile (when a subprogram).
 
    procedure Resolve_Aspect_Stable_Properties
-    (Typ_Or_Subp   : Entity_Id;
-     Expr          : Node_Id;
-     Class_Present : Boolean);
+     (Typ_Or_Subp   : Entity_Id;
+      Expr          : Node_Id;
+      Class_Present : Boolean);
    --  Resolve each one of the functions specified in the specification of
    --  aspect Stable_Properties (or Stable_Properties'Class).
 
@@ -9382,7 +9382,7 @@ package body Sem_Ch13 is
             when N_Op_Not =>
                return not Get_RList (Right_Opnd (Exp), Static);
 
-               --  Comparisons of type with static value
+            --  Comparisons of type with static value
 
             when N_Op_Compare =>
 
@@ -10174,7 +10174,7 @@ package body Sem_Ch13 is
       --  Predicate_Function (T) is non-empty.
 
       procedure Replace_Current_Instance_References
-         (N : Node_Id; Typ, New_Entity : Entity_Id);
+        (N : Node_Id; Typ, New_Entity : Entity_Id);
       --  Replace all references to Typ in the tree rooted at N with
       --  references to Param. [New_Entity will be a formal parameter of a
       --  predicate function.]
@@ -10394,7 +10394,7 @@ package body Sem_Ch13 is
       -----------------------------------------
 
       procedure Replace_Current_Instance_References
-         (N : Node_Id; Typ, New_Entity : Entity_Id)
+        (N : Node_Id; Typ, New_Entity : Entity_Id)
       is
          Root : Node_Id renames N;
 
@@ -11186,7 +11186,7 @@ package body Sem_Ch13 is
          elsif A_Id in Aspect_Default_Component_Value | Aspect_Default_Value
             and then Is_Private_Type (T)
          then
-            Preanalyze_Spec_Expression (End_Decl_Expr, Full_View (T));
+            Preanalyze_And_Resolve (End_Decl_Expr, Full_View (T));
 
          --  The following aspect expressions may contain references to
          --  components and discriminants of the type.
@@ -16181,11 +16181,11 @@ package body Sem_Ch13 is
 
                   when Aspect_Default_Value =>
                      Check_Aspect_Too_Late (ASN);
-                     Preanalyze_Spec_Expression (Expr, E);
+                     Preanalyze_And_Resolve (Expr, E);
 
                   when Aspect_Default_Component_Value =>
                      Check_Aspect_Too_Late (ASN);
-                     Preanalyze_Spec_Expression (Expr, Component_Type (E));
+                     Preanalyze_And_Resolve (Expr, Component_Type (E));
 
                   when Aspect_CPU
                      | Aspect_Interrupt_Priority
@@ -16886,8 +16886,8 @@ package body Sem_Ch13 is
    ------------------------------
 
    procedure Resolve_Aspect_Aggregate
-    (Typ  : Entity_Id;
-     Expr : Node_Id)
+     (Typ  : Entity_Id;
+      Expr : Node_Id)
    is
       function Valid_Empty          (E : Entity_Id) return Boolean;
       function Valid_Add_Named      (E : Entity_Id) return Boolean;
@@ -17083,7 +17083,7 @@ package body Sem_Ch13 is
    --------------------------------------
 
    procedure Resolve_Aspect_Stable_Properties
-    (Typ_Or_Subp : Entity_Id; Expr : Node_Id; Class_Present : Boolean)
+     (Typ_Or_Subp : Entity_Id; Expr : Node_Id; Class_Present : Boolean)
    is
       Is_Aspect_Of_Type : constant Boolean := Is_Type (Typ_Or_Subp);
 
@@ -18713,9 +18713,9 @@ package body Sem_Ch13 is
                goto Continue;
             end if;
 
-           --  Don't do the check if warnings off for either type, note the
-           --  deliberate use of OR here instead of OR ELSE to get the flag
-           --  Warnings_Off_Used set for both types if appropriate.
+            --  Don't do the check if warnings off for either type, note the
+            --  deliberate use of OR here instead of OR ELSE to get the flag
+            --  Warnings_Off_Used set for both types if appropriate.
 
             if Has_Warnings_Off (Source) or Has_Warnings_Off (Target) then
                goto Continue;

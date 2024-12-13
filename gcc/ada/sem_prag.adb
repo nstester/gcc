@@ -3326,7 +3326,7 @@ package body Sem_Prag is
       --  final place yet. A direct analysis may generate side effects and this
       --  is not desired at this point.
 
-      Preanalyze_Assert_Expression (Expr, Standard_Boolean);
+      Preanalyze_And_Resolve (Expr, Standard_Boolean);
       Set_Is_Analyzed_Pragma (N);
 
       Restore_Ghost_Region (Saved_GM, Saved_IGR);
@@ -5209,7 +5209,7 @@ package body Sem_Prag is
 
             if Present (Arg2) then
                Check_Optional_Identifier (Arg2, Name_Message);
-               Preanalyze_Spec_Expression
+               Preanalyze_Assert_Expression
                  (Get_Pragma_Arg (Arg2), Standard_String);
             end if;
          end if;
@@ -9185,8 +9185,8 @@ package body Sem_Prag is
          Match     : Boolean;
 
          function Same_Base_Type
-          (Ptype  : Node_Id;
-           Formal : Entity_Id) return Boolean;
+           (Ptype  : Node_Id;
+            Formal : Entity_Id) return Boolean;
          --  Determines if Ptype references the type of Formal. Note that only
          --  the base types need to match according to the spec. Ptype here is
          --  the argument from the pragma, which is either a type name, or an
@@ -13415,7 +13415,7 @@ package body Sem_Prag is
                if Ekind (Spec_Id) = E_Function then
                   Error_Msg_N (Fix_Error
                     ("pragma % cannot apply to function '[[]']"), N);
-                     return;
+                  return;
 
                elsif Ekind (Spec_Id) = E_Generic_Function then
                   Error_Msg_N (Fix_Error
@@ -17048,7 +17048,7 @@ package body Sem_Prag is
                if Ekind (Spec_Id) = E_Function then
                   Error_Msg_N (Fix_Error
                     ("pragma % cannot apply to function '[[]']"), N);
-                     return;
+                  return;
 
                elsif Ekind (Spec_Id) = E_Generic_Function then
                   Error_Msg_N (Fix_Error
@@ -21105,8 +21105,8 @@ package body Sem_Prag is
          when Pragma_No_Return => Prag_No_Return : declare
 
             function Check_No_Return
-               (E : Entity_Id;
-                N : Node_Id) return Boolean;
+              (E : Entity_Id;
+               N : Node_Id) return Boolean;
             --  Check rule 6.5.1(4/3) of the Ada RM. If the rule is violated,
             --  emit an error message and return False, otherwise return True.
             --  6.5.1 Nonreturning procedures:
@@ -21118,8 +21118,8 @@ package body Sem_Prag is
             ---------------------
 
             function Check_No_Return
-               (E : Entity_Id;
-                N : Node_Id) return Boolean
+              (E : Entity_Id;
+               N : Node_Id) return Boolean
             is
             begin
                if Ekind (E) in E_Function | E_Generic_Function then

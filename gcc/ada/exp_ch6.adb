@@ -334,8 +334,8 @@ package body Exp_Ch6 is
    --    --  formals; therefore Is_Build_In_Place_Function_Call returns False.
 
    procedure Replace_Renaming_Declaration_Id
-      (New_Decl  : Node_Id;
-       Orig_Decl : Node_Id);
+     (New_Decl  : Node_Id;
+      Orig_Decl : Node_Id);
    --  Replace the internal identifier of the new renaming declaration New_Decl
    --  with the identifier of its original declaration Orig_Decl exchanging the
    --  entities containing their defining identifiers to ensure the correct
@@ -5314,6 +5314,42 @@ package body Exp_Ch6 is
             Establish_Transient_Scope
               (Call_Node, Needs_Secondary_Stack (Etype (Call_Node)));
          end if;
+
+      --  Functions returning noncontrolled objects that may be subject to
+      --  user-defined indexing also need special attention. The problem
+      --  is that, when a call to such a function is directly passed as an
+      --  actual in a call to the Constant_Indexing function, the latter
+      --  call effectively binds the lifetime of the actual to that of its
+      --  return value, thus extending it beyond the call. This cannot be
+      --  directly supported by code generators, for which the lifetime of
+      --  temporaries created for actuals ends immediately after the call.
+      --  Therefore we force the creation of a temporary in this case, as
+      --  the above code would have done in the controlled case; note that,
+      --  in this latter case, the temporary cannot be finalized just after
+      --  the call as would naturally be done, and Is_Finalizable_Transient
+      --  also has a special processing for it (see Is_Indexed_Container).
+
+      elsif Nkind (Call_Node) = N_Function_Call
+        and then Nkind (Parent (Call_Node)) = N_Function_Call
+      then
+         declare
+            Aspect : constant Node_Id :=
+              Find_Value_Of_Aspect
+                (Etype (Call_Node), Aspect_Constant_Indexing);
+
+         begin
+            if Present (Aspect)
+              and then Is_Entity_Name (Name (Parent (Call_Node)))
+              and then Entity (Name (Parent (Call_Node))) = Entity (Aspect)
+            then
+               --  Resolution is now finished, make sure we don't start
+               --  analysis again because of the duplication.
+
+               Set_Analyzed (Call_Node);
+
+               Remove_Side_Effects (Call_Node);
+            end if;
+         end;
       end if;
    end Expand_Call_Helper;
 
@@ -5332,13 +5368,7 @@ package body Exp_Ch6 is
       --  Note that simple return statements are distributed into conditional
       --  expressions but we may be invoked before this distribution is done.
 
-      if Nkind (Par) = N_Simple_Return_Statement
-        or else (Nkind (Par) = N_If_Expression
-                  and then Nkind (Parent (Par)) = N_Simple_Return_Statement)
-        or else (Nkind (Par) = N_Case_Expression_Alternative
-                  and then
-                    Nkind (Parent (Parent (Par))) = N_Simple_Return_Statement)
-      then
+      if Nkind (Unconditional_Parent (N)) = N_Simple_Return_Statement then
          return;
       end if;
 
@@ -5356,7 +5386,17 @@ package body Exp_Ch6 is
          return;
       end if;
 
-      --  Avoid expansions to catch an error when the function call is on the
+      --  The same optimization: if the returned value is used to initialize a
+      --  dynamically allocated object, then no need to copy/readjust/finalize,
+      --  we can initialize it in place.
+
+      if Nkind (Par) = N_Qualified_Expression
+        and then Nkind (Parent (Par)) = N_Allocator
+      then
+         return;
+      end if;
+
+      --  Avoid expansion to catch the error when the function call is on the
       --  left-hand side of an assignment.
 
       if Nkind (Par) = N_Assignment_Statement and then N = Name (Par) then
@@ -9576,8 +9616,8 @@ package body Exp_Ch6 is
    -------------------------------------
 
    procedure Replace_Renaming_Declaration_Id
-      (New_Decl  : Node_Id;
-       Orig_Decl : Node_Id)
+     (New_Decl  : Node_Id;
+      Orig_Decl : Node_Id)
    is
       New_Id  : constant Entity_Id := Defining_Entity (New_Decl);
       Orig_Id : constant Entity_Id := Defining_Entity (Orig_Decl);
@@ -9772,7 +9812,7 @@ package body Exp_Ch6 is
             when N_Entry_Call_Statement
                | N_Procedure_Call_Statement
                | N_Function_Call
-              =>
+            =>
                declare
                   Call_Node : Node_Id renames Nod;
                   Subp      : Entity_Id;
@@ -9852,7 +9892,7 @@ package body Exp_Ch6 is
 
             when N_Procedure_Specification
                | N_Function_Specification
-              =>
+            =>
                return Skip;
 
             when N_Abstract_Subprogram_Declaration
@@ -9882,7 +9922,7 @@ package body Exp_Ch6 is
                | N_Use_Package_Clause
                | N_Use_Type_Clause
                | N_With_Clause
-              =>
+            =>
                return Skip;
 
             when others =>

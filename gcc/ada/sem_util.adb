@@ -4981,7 +4981,7 @@ package body Sem_Util is
                   end if;
                end if;
 
-                  Next_Elmt (State_Elmt);
+               Next_Elmt (State_Elmt);
             end loop;
          end if;
       end Report_Unused_Body_States;
@@ -7440,7 +7440,7 @@ package body Sem_Util is
    -------------------------------
 
    function Enclosing_Lib_Unit_Entity
-      (E : Entity_Id := Current_Scope) return Entity_Id
+     (E : Entity_Id := Current_Scope) return Entity_Id
    is
       Unit_Entity : Entity_Id;
 
@@ -13872,10 +13872,12 @@ package body Sem_Util is
    -- In_Pragma_Expression --
    --------------------------
 
-   function In_Pragma_Expression (N : Node_Id; Nam : Name_Id) return Boolean is
-      P : Node_Id;
+   function In_Pragma_Expression
+     (N : Node_Id; Nam : Name_Id := No_Name) return Boolean
+   is
+      P : Node_Id := Parent (N);
+
    begin
-      P := Parent (N);
       loop
          if No (P) then
             return False;
@@ -13885,7 +13887,9 @@ package body Sem_Util is
          elsif Is_Body_Or_Package_Declaration (P) then
             return False;
 
-         elsif Nkind (P) = N_Pragma and then Pragma_Name (P) = Nam then
+         elsif Nkind (P) = N_Pragma
+           and then (Nam = No_Name or else Pragma_Name (P) = Nam)
+         then
             return True;
 
          else
@@ -14793,26 +14797,25 @@ package body Sem_Util is
 
    procedure Inspect_Deferred_Constant_Completion (Decl : Node_Id) is
    begin
-         --  Deferred constant signature
+      --  Deferred constant signature
 
-         if Nkind (Decl) = N_Object_Declaration
-           and then Constant_Present (Decl)
-           and then No (Expression (Decl))
+      if Nkind (Decl) = N_Object_Declaration
+        and then Constant_Present (Decl)
+        and then No (Expression (Decl))
 
-            --  No need to check internally generated constants
+         --  No need to check internally generated constants
 
-           and then Comes_From_Source (Decl)
+        and then Comes_From_Source (Decl)
 
-            --  The constant is not completed. A full object declaration or a
-            --  pragma Import complete a deferred constant.
+         --  The constant is not completed. A full object declaration or a
+         --  pragma Import complete a deferred constant.
 
-           and then not Has_Completion (Defining_Identifier (Decl))
-         then
-            Error_Msg_N
-              ("constant declaration requires initialization expression",
-              Defining_Identifier (Decl));
-         end if;
-
+        and then not Has_Completion (Defining_Identifier (Decl))
+      then
+         Error_Msg_N
+           ("constant declaration requires initialization expression",
+           Defining_Identifier (Decl));
+      end if;
    end Inspect_Deferred_Constant_Completion;
 
    procedure Inspect_Deferred_Constant_Completion (Decls : List_Id) is
@@ -16727,9 +16730,9 @@ package body Sem_Util is
    -- Is_Effectively_Volatile --
    -----------------------------
 
-   function Is_Effectively_Volatile
-     (Id               : Entity_Id;
-      Ignore_Protected : Boolean := False) return Boolean is
+   function Is_Effectively_Volatile (Id : Entity_Id) return Boolean is
+      Comp         : Entity_Id;
+      Has_Vol_Comp : Boolean := False;
    begin
       if Is_Type (Id) then
 
@@ -16760,15 +16763,13 @@ package body Sem_Util is
                   --  private type may be missing in case of error.
 
                   return Present (Anc)
-                    and then Is_Effectively_Volatile
-                      (Component_Type (Anc), Ignore_Protected);
+                    and then Is_Effectively_Volatile (Component_Type (Anc));
                end;
             end if;
 
-         --  A protected type is always volatile unless Ignore_Protected is
-         --  True.
+         --  A protected type is always volatile
 
-         elsif Is_Protected_Type (Id) and then not Ignore_Protected then
+         elsif Is_Protected_Type (Id) then
             return True;
 
          --  A descendant of Ada.Synchronous_Task_Control.Suspension_Object is
@@ -16776,6 +16777,35 @@ package body Sem_Util is
 
          elsif Is_Descendant_Of_Suspension_Object (Id) then
             return True;
+
+         --  A record type for which all components have an effectively
+         --  volatile type.
+
+         elsif Is_Record_Type (Id) then
+
+            --  Inspect all components defined in the scope of the type,
+            --  looking for those whose type is not effecively volatile.
+
+            Comp := First_Component (Id);
+            while Present (Comp) loop
+               if Comes_From_Source (Comp) then
+                  if Is_Effectively_Volatile (Etype (Comp)) then
+                     Has_Vol_Comp := True;
+
+                  --  The component is not effecively volatile
+
+                  else
+                     return False;
+                  end if;
+               end if;
+
+               Next_Component (Comp);
+            end loop;
+
+            --  If we get here, then all components are of an effectively
+            --  volatile type.
+
+            return Has_Vol_Comp;
 
          --  Otherwise the type is not effectively volatile
 
@@ -16794,7 +16824,7 @@ package body Sem_Util is
             and then not
               (Ekind (Id) = E_Variable and then No_Caching_Enabled (Id)))
              or else Has_Volatile_Components (Id)
-             or else Is_Effectively_Volatile (Etype (Id), Ignore_Protected);
+             or else Is_Effectively_Volatile (Etype (Id));
       end if;
    end Is_Effectively_Volatile;
 
@@ -16803,19 +16833,16 @@ package body Sem_Util is
    -----------------------------------------
 
    function Is_Effectively_Volatile_For_Reading
-     (Id               : Entity_Id;
-      Ignore_Protected : Boolean := False) return Boolean
+     (Id : Entity_Id) return Boolean
    is
+      Comp : Entity_Id;
    begin
-      --  A concurrent type is effectively volatile for reading, except for a
-      --  protected type when Ignore_Protected is True.
+      --  A concurrent type is effectively volatile for reading
 
-      if Is_Task_Type (Id)
-        or else (Is_Protected_Type (Id) and then not Ignore_Protected)
-      then
+      if Is_Concurrent_Type (Id) then
          return True;
 
-      elsif Is_Effectively_Volatile (Id, Ignore_Protected) then
+      elsif Is_Effectively_Volatile (Id) then
 
         --  Other volatile types and objects are effectively volatile for
         --  reading when they have property Async_Writers or Effective_Reads
@@ -16845,8 +16872,25 @@ package body Sem_Util is
 
                return Present (Anc)
                  and then Is_Effectively_Volatile_For_Reading
-                   (Component_Type (Anc), Ignore_Protected);
+                   (Component_Type (Anc));
             end;
+
+         --  In addition, a record type is effectively volatile for reading
+         --  if at least one component has an effectively volatile type for
+         --  reading.
+
+         elsif Is_Record_Type (Id) then
+            Comp := First_Component (Id);
+            while Present (Comp) loop
+               if Comes_From_Source (Comp)
+                 and then Is_Effectively_Volatile_For_Reading (Etype (Comp))
+               then
+                  return True;
+               end if;
+               Next_Component (Comp);
+            end loop;
+
+            return False;
          end if;
       end if;
 
@@ -16859,9 +16903,6 @@ package body Sem_Util is
    ------------------------------------
 
    function Is_Effectively_Volatile_Object (N : Node_Id) return Boolean is
-      function Is_Effectively_Volatile (E : Entity_Id) return Boolean is
-         (Is_Effectively_Volatile (E, Ignore_Protected => False));
-
       function Is_Effectively_Volatile_Object_Inst
       is new Is_Effectively_Volatile_Object_Shared (Is_Effectively_Volatile);
    begin
@@ -16875,10 +16916,6 @@ package body Sem_Util is
    function Is_Effectively_Volatile_Object_For_Reading
      (N : Node_Id) return Boolean
    is
-      function Is_Effectively_Volatile_For_Reading
-        (E : Entity_Id) return Boolean
-      is (Is_Effectively_Volatile_For_Reading (E, Ignore_Protected => False));
-
       function Is_Effectively_Volatile_Object_For_Reading_Inst
       is new Is_Effectively_Volatile_Object_Shared
         (Is_Effectively_Volatile_For_Reading);
@@ -25882,7 +25919,7 @@ package body Sem_Util is
    ----------------------------------
 
    function Predicate_Failure_Expression
-    (Typ : Entity_Id; Inherited_OK : Boolean) return Node_Id
+     (Typ : Entity_Id; Inherited_OK : Boolean) return Node_Id
    is
       PF_Aspect : constant Node_Id :=
         Find_Aspect (Typ, Aspect_Predicate_Failure);
@@ -26004,9 +26041,9 @@ package body Sem_Util is
       ----------------------
 
       function Trace_Components
-         (T     : Entity_Id;
-          Check : Boolean) return Entity_Id
-       is
+        (T     : Entity_Id;
+         Check : Boolean) return Entity_Id
+      is
          Btype     : constant Entity_Id := Base_Type (T);
          Component : Entity_Id;
          P         : Entity_Id;
@@ -29352,6 +29389,51 @@ package body Sem_Util is
       return Scope_Within_Or_Same (Scope (E), S);
    end Within_Scope;
 
+   -----------------------------------
+   -- Within_Spec_Static_Expression --
+   -----------------------------------
+
+   function Within_Spec_Static_Expression (N : Node_Id) return Boolean is
+      P : Node_Id;
+
+   begin
+      if not In_Spec_Expression then
+         return False;
+
+      else
+         P := N;
+         loop
+            if No (P) then
+               return False;
+
+            --  Prevent the search from going too far
+
+            elsif Nkind (P) not in N_Subexpr then
+               return False;
+
+            elsif Is_OK_Static_Expression (P) then
+               return True;
+
+            --  Return True for static scalar subtypes that are prefixes of an
+            --  attribute (even if not yet marked static) since they will be
+            --  marked as static in Eval_Attribute (as called from Resolve_
+            --  Attribute).
+
+            elsif Present (Parent (P))
+              and then Nkind (Parent (P)) = N_Attribute_Reference
+              and then Is_Entity_Name (P)
+              and then Is_Type (Entity (P))
+              and then Is_OK_Static_Subtype (Entity (P))
+            then
+               return True;
+
+            else
+               P := Parent (P);
+            end if;
+         end loop;
+      end if;
+   end Within_Spec_Static_Expression;
+
    ----------------
    -- Wrong_Type --
    ----------------
@@ -29846,7 +29928,7 @@ package body Sem_Util is
       --  Does the given value lie within the given interval?
 
       procedure Normalize_Interval_List
-         (List : in out Discrete_Interval_List; Last : out Nat);
+        (List : in out Discrete_Interval_List; Last : out Nat);
       --  Perform sorting and merging as required by Check_Consistency
 
       -------------------------

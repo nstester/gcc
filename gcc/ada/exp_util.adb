@@ -141,14 +141,14 @@ package body Exp_Util is
    --  function body that computes image.
 
    procedure Build_Task_Image_Prefix
-      (Loc    : Source_Ptr;
-       Len    : out Entity_Id;
-       Res    : out Entity_Id;
-       Pos    : out Entity_Id;
-       Prefix : Entity_Id;
-       Sum    : Node_Id;
-       Decls  : List_Id;
-       Stats  : List_Id);
+     (Loc    : Source_Ptr;
+      Len    : out Entity_Id;
+      Res    : out Entity_Id;
+      Pos    : out Entity_Id;
+      Prefix : Entity_Id;
+      Sum    : Node_Id;
+      Decls  : List_Id;
+      Stats  : List_Id);
    --  Common processing for Task_Array_Image and Task_Record_Image. Create
    --  local variables and assign prefix of name to result string.
 
@@ -1079,10 +1079,11 @@ package body Exp_Util is
               Unchecked_Convert_To (RTE (RE_Storage_Offset),
                 Make_Attribute_Reference (Loc,
                   Prefix         =>
-                    (if No (Alloc_Expr) then
-                       Make_Explicit_Dereference (Loc, Relocate_Node (Expr))
+                    (if Is_Allocate then
+                       Duplicate_Subexpr_No_Checks (Expression (Alloc_Expr))
                      else
-                       Relocate_Node (Expression (Alloc_Expr))),
+                       Make_Explicit_Dereference (Loc,
+                         Duplicate_Subexpr_No_Checks (Expr))),
                   Attribute_Name => Name_Alignment)));
          end if;
 
@@ -1094,7 +1095,6 @@ package body Exp_Util is
 
                Flag_Expr : Node_Id;
                Param     : Node_Id;
-               Pref      : Node_Id;
                Temp      : Node_Id;
 
             begin
@@ -1136,7 +1136,7 @@ package body Exp_Util is
                   if Is_RTE (Etype (Temp), RE_Tag_Ptr) then
                      Param :=
                        Make_Explicit_Dereference (Loc,
-                         Prefix => Relocate_Node (Temp));
+                         Prefix => Duplicate_Subexpr_No_Checks (Temp));
 
                   --  In the default case, obtain the tag of the object about
                   --  to be allocated / deallocated. Generate:
@@ -1149,16 +1149,14 @@ package body Exp_Util is
                   --  in the code that follows.
 
                   else
-                     Pref := Temp;
-
-                     if Nkind (Parent (Pref)) = N_Unchecked_Type_Conversion
+                     if Nkind (Parent (Temp)) = N_Unchecked_Type_Conversion
                      then
-                        Pref := Parent (Pref);
+                        Temp := Parent (Temp);
                      end if;
 
                      Param :=
                        Make_Attribute_Reference (Loc,
-                         Prefix         => Relocate_Node (Pref),
+                         Prefix         => Duplicate_Subexpr_No_Checks (Temp),
                          Attribute_Name => Name_Tag);
                   end if;
 
@@ -4518,14 +4516,14 @@ package body Exp_Util is
    -----------------------------
 
    procedure Build_Task_Image_Prefix
-      (Loc    : Source_Ptr;
-       Len    : out Entity_Id;
-       Res    : out Entity_Id;
-       Pos    : out Entity_Id;
-       Prefix : Entity_Id;
-       Sum    : Node_Id;
-       Decls  : List_Id;
-       Stats  : List_Id)
+     (Loc    : Source_Ptr;
+      Len    : out Entity_Id;
+      Res    : out Entity_Id;
+      Pos    : out Entity_Id;
+      Prefix : Entity_Id;
+      Sum    : Node_Id;
+      Decls  : List_Id;
+      Stats  : List_Id)
    is
    begin
       Len := Make_Temporary (Loc, 'L', Sum);
@@ -5034,6 +5032,23 @@ package body Exp_Util is
 
       return Decls;
    end Current_Sem_Unit_Declarations;
+
+   -------------------------------------------
+   -- Delay_Conditional_Expressions_Between --
+   -------------------------------------------
+
+   procedure Delay_Conditional_Expressions_Between (From, To : Node_Id) is
+      N : Node_Id := From;
+
+   begin
+      while N /= To loop
+         if Nkind (N) in N_Case_Expression | N_If_Expression then
+            Set_Expansion_Delayed (N);
+         end if;
+
+         N := Parent (N);
+      end loop;
+   end Delay_Conditional_Expressions_Between;
 
    -----------------------
    -- Duplicate_Subexpr --
@@ -6718,8 +6733,14 @@ package body Exp_Util is
          Par := N;
          Top := N;
          while Present (Par) loop
-            if Nkind (Original_Node (Par)) in
-                 N_Case_Expression | N_If_Expression
+            if Nkind (Original_Node (Par)) in N_Case_Expression
+                                            | N_If_Expression
+            then
+               Top := Par;
+
+            elsif Nkind (Par) in N_Case_Statement
+                               | N_If_Statement
+              and then From_Conditional_Expression (Par)
             then
                Top := Par;
 
@@ -7507,9 +7528,9 @@ package body Exp_Util is
             --  type T identifies T.
 
             when N_Indexed_Component
-              |  N_Selected_Component
-              |  N_Aggregate
-              |  N_Extension_Aggregate
+               | N_Selected_Component
+               | N_Aggregate
+               | N_Extension_Aggregate
             =>
                return True;
 
@@ -8553,18 +8574,30 @@ package body Exp_Util is
       return Nkind (N) in N_Type_Conversion | N_Unchecked_Type_Conversion
         or else (Nkind (N) = N_Explicit_Dereference
                   and then Nkind (Prefix (N)) in N_Type_Conversion
-                                              |  N_Unchecked_Type_Conversion)
+                                               | N_Unchecked_Type_Conversion)
         or else (Is_Entity_Name (N)
                   and then Present (Entity (N))
                   and then Is_Formal (Entity (N)));
    end Is_Conversion_Or_Reference_To_Formal;
+
+   ---------------------------------------
+   -- Is_Delayed_Conditional_Expression --
+   ---------------------------------------
+
+   function Is_Delayed_Conditional_Expression (N : Node_Id) return Boolean is
+      Unqual_N : constant Node_Id := Unqualify (N);
+
+   begin
+      return Nkind (Unqual_N) in N_Case_Expression | N_If_Expression
+        and then Expansion_Delayed (Unqual_N);
+   end Is_Delayed_Conditional_Expression;
 
    --------------------------------------------------
    -- Is_Expanded_Class_Wide_Interface_Object_Decl --
    --------------------------------------------------
 
    function Is_Expanded_Class_Wide_Interface_Object_Decl
-      (N : Node_Id) return Boolean is
+     (N : Node_Id) return Boolean is
    begin
       return not Comes_From_Source (N)
         and then Nkind (Original_Node (N)) = N_Object_Declaration
@@ -14658,6 +14691,62 @@ package body Exp_Util is
       end if;
    end Type_May_Have_Bit_Aligned_Components;
 
+   ----------------------------------------------
+   -- Unanalyze_Delayed_Conditional_Expression --
+   ----------------------------------------------
+
+   procedure Unanalyze_Delayed_Conditional_Expression (N : Node_Id) is
+      Expr : Node_Id := N;
+
+   begin
+      --  Is_Delayed_Conditional_Expression looks through qualified expressions
+      --  surrounding conditional expressions, so we need to reset the Analyzed
+      --  flag on them as well.
+
+      loop
+         Set_Analyzed (Expr, False);
+
+         exit when Nkind (Expr) in N_Case_Expression | N_If_Expression;
+
+         pragma Assert (Nkind (Expr) = N_Qualified_Expression);
+         Expr := Expression (Expr);
+      end loop;
+   end Unanalyze_Delayed_Conditional_Expression;
+
+   --------------------------
+   -- Unconditional_Parent --
+   --------------------------
+
+   function Unconditional_Parent (N : Node_Id) return Node_Id is
+      Node        : Node_Id := N;
+      Parent_Node : Node_Id := Parent (Node);
+
+   begin
+      loop
+         case Nkind (Parent_Node) is
+            when N_Case_Expression_Alternative =>
+               null;
+
+            when N_Case_Expression =>
+               exit when Node = Expression (Parent_Node);
+
+            when N_If_Expression =>
+               exit when Node = First (Expressions (Parent_Node));
+
+            when N_Qualified_Expression =>
+               null;
+
+            when others =>
+               exit;
+         end case;
+
+         Node        := Parent_Node;
+         Parent_Node := Parent (Node);
+      end loop;
+
+      return Parent_Node;
+   end Unconditional_Parent;
+
    -------------------------------
    -- Update_Primitives_Mapping --
    -------------------------------
@@ -14684,8 +14773,9 @@ package body Exp_Util is
 
    begin
       --  Locate an enclosing case or if expression. Note that these constructs
-      --  can be expanded into Expression_With_Actions, hence the test of the
-      --  original node.
+      --  can be rewritten as Expression_With_Actions nodes, hence the test of
+      --  the original node. Moreover, we need to take into account conditional
+      --  statements synthesized out of these expressions.
 
       Nod := N;
       Par := Parent (Nod);
@@ -14698,6 +14788,18 @@ package body Exp_Util is
 
          elsif Nkind (Original_Node (Par)) = N_If_Expression
            and then Nod /= First (Expressions (Original_Node (Par)))
+         then
+            return True;
+
+         elsif Nkind (Par) = N_Case_Statement
+           and then From_Conditional_Expression (Par)
+           and then Nod /= Expression (Par)
+         then
+            return True;
+
+         elsif Nkind (Par) = N_If_Statement
+           and then From_Conditional_Expression (Par)
+           and then Nod /= Condition (Par)
          then
             return True;
 
