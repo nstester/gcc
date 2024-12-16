@@ -3393,7 +3393,8 @@ shuffle_compress_patterns (struct expand_vec_perm_d *d)
 
   insn_code icode = code_for_pred_compress (vmode);
   rtx ops[] = {d->target, merge, d->op0, mask};
-  emit_vlmax_insn (icode, COMPRESS_OP_MERGE, ops);
+  emit_nonvlmax_insn (icode, COMPRESS_OP_MERGE, ops,
+		      gen_int_mode (vlen, Pmode));
   return true;
 }
 
@@ -4009,15 +4010,6 @@ expand_vec_perm_const (machine_mode vmode, machine_mode op_mode, rtx target,
   /* RVV doesn't have Mask type pack/unpack instructions and we don't use
      mask to do the iteration loop control. Just disable it directly.  */
   if (GET_MODE_CLASS (vmode) == MODE_VECTOR_BOOL)
-    return false;
-  /* FIXME: Explicitly disable VLA interleave SLP vectorization when we
-     may encounter ICE for poly size (1, 1) vectors in loop vectorizer.
-     Ideally, middle-end loop vectorizer should be able to disable it
-     itself, We can remove the codes here when middle-end code is able
-     to disable VLA SLP vectorization for poly size (1, 1) VF.  */
-  if (!BYTES_PER_RISCV_VECTOR.is_constant ()
-      && maybe_lt (BYTES_PER_RISCV_VECTOR * TARGET_MAX_LMUL,
-		   poly_int64 (16, 16)))
     return false;
 
   struct expand_vec_perm_d d;
