@@ -2255,6 +2255,11 @@ finish_asm_stmt (location_t loc, int volatile_p, tree string,
 		    }
 		}
 	    }
+	  else if (operand != error_mark_node && strstr (constraint, "-"))
+	    {
+	      error_at (loc, "%<-%> modifier used inside of a function");
+	      operand = error_mark_node;
+	    }
 
 	  TREE_VALUE (t) = operand;
 	}
@@ -2326,6 +2331,20 @@ finish_asm_stmt (location_t loc, int volatile_p, tree string,
 				 "a function");
 		  operand = error_mark_node;
 		}
+	      if (constraint[0] == ':' && operand != error_mark_node)
+		{
+		  tree t = operand;
+		  STRIP_NOPS (t);
+		  if (TREE_CODE (t) != ADDR_EXPR
+		      || !(TREE_CODE (TREE_OPERAND (t, 0)) == FUNCTION_DECL
+			   || (VAR_P (TREE_OPERAND (t, 0))
+			       && is_global_var (TREE_OPERAND (t, 0)))))
+		    {
+		      error_at (loc, "%<:%> constraint operand is not address "
+				"of a function or non-automatic variable");
+		      operand = error_mark_node;
+		    }
+		}
 	    }
 	  else
 	    operand = error_mark_node;
@@ -2368,6 +2387,11 @@ finish_asm_stmt (location_t loc, int volatile_p, tree string,
 		      operand = error_mark_node;
 		    }
 		}
+	    }
+	  else if (operand != error_mark_node && strstr (constraint, "-"))
+	    {
+	      error_at (loc, "%<-%> modifier used inside of a function");
+	      operand = error_mark_node;
 	    }
 
 	  TREE_VALUE (t) = operand;
