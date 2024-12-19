@@ -475,7 +475,7 @@ update_profile_after_ifcombine (basic_block inner_cond_bb,
 static void
 ifcombine_mark_ssa_name (bitmap used, tree name, basic_block outer)
 {
-  if (SSA_NAME_IS_DEFAULT_DEF (name))
+  if (!name || TREE_CODE (name) != SSA_NAME || SSA_NAME_IS_DEFAULT_DEF (name))
     return;
 
   gimple *def = SSA_NAME_DEF_STMT (name);
@@ -502,8 +502,7 @@ ifcombine_mark_ssa_name_walk (tree *t, int *, void *data_)
 {
   ifcombine_mark_ssa_name_t *data = (ifcombine_mark_ssa_name_t *)data_;
 
-  if (*t && TREE_CODE (*t) == SSA_NAME)
-    ifcombine_mark_ssa_name (data->used, *t, data->outer);
+  ifcombine_mark_ssa_name (data->used, *t, data->outer);
 
   return NULL;
 }
@@ -900,7 +899,7 @@ ifcombine_ifandif (basic_block inner_cond_bb, bool inner_inv,
       else if (bits1 == name2)
 	std::swap (name1, bits1);
       else
-	return false;
+	goto bits_test_failed;
 
       /* As we strip non-widening conversions in finding a common
          name that is tested make sure to end up with an integral
@@ -945,7 +944,8 @@ ifcombine_ifandif (basic_block inner_cond_bb, bool inner_inv,
     }
 
   /* See if we have two comparisons that we can merge into one.  */
-  else if (TREE_CODE_CLASS (gimple_cond_code (inner_cond)) == tcc_comparison
+  else bits_test_failed:
+    if (TREE_CODE_CLASS (gimple_cond_code (inner_cond)) == tcc_comparison
 	   && TREE_CODE_CLASS (gimple_cond_code (outer_cond)) == tcc_comparison)
     {
       tree t, ts = NULL_TREE;
