@@ -1664,6 +1664,22 @@ ftms = {
 };
 
 ftms = {
+  name = flat_map;
+  values = {
+    v = 202207;
+    cxxmin = 23;
+  };
+};
+
+ftms = {
+  name = flat_set;
+  values = {
+    v = 202207;
+    cxxmin = 23;
+  };
+};
+
+ftms = {
   name = formatters;
   values = {
     v = 202302;
