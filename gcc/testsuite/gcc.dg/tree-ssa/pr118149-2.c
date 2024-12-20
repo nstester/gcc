@@ -2,15 +2,15 @@
 /* { dg-options "-O3 -fdump-tree-forwprop1-details -Wno-psabi" } */
 /* { dg-additional-options "-msse2" { target i?86-*-* x86_64-*-* } } */
 
-typedef int vec __attribute__((vector_size (4 * sizeof (int))));
+typedef int vec __attribute__((vector_size (4 * sizeof (float))));
 
 void f1 (vec *p_v_in, vec *p_v_out_1, vec *p_v_out_2)
 {
-  vec sel00 = { 2, 3, 2, 2 };
-  vec sel01 = { 1, 0, 1, 1 };
-  vec sel10 = { 3, 2, 3, 3 };
-  vec sel11 = { 0, 1, 0, 0 };
-  vec sel = { 0, 5, 2, 7 };
+  vec sel00 = { 1, 1, 3, 3 };
+  vec sel01 = { 0, 0, 2, 2 };
+  vec sel10 = { 3, 3, 2, 2 };
+  vec sel11 = { 1, 1, 0, 0 };
+  vec sel = { 0, 1, 6, 7 };
   vec v_1, v_2, v_x, v_y, v_out_1, v_out_2;
   vec v_in = *p_v_in;
 
@@ -33,4 +33,5 @@ void f1 (vec *p_v_in, vec *p_v_out_1, vec *p_v_out_2)
 }
 
 /* { dg-final { scan-tree-dump "Vec perm simplify sequences have been blended" "forwprop1" { target { aarch64*-*-* i?86-*-* x86_64-*-* } } } } */
-/* { dg-final { scan-tree-dump "VEC_PERM_EXPR.*{ 2, 7, 2, 6 }" "forwprop1" { target { aarch64*-*-* i?86-*-* x86_64-*-* } } } } */
+/* { dg-final { scan-tree-dump "VEC_PERM_EXPR.*{ 0, 0, 6, 6 }" "forwprop1" { target { aarch64*-*-* i?86-*-* x86_64-*-* } } } } */
+/* { dg-final { scan-tree-dump "VEC_PERM_EXPR.*{ 1, 1, 7, 7 }" "forwprop1" { target { aarch64*-*-* i?86-*-* x86_64-*-* } } } } */
