@@ -1214,11 +1214,12 @@ typedef struct gfc_component
   /* Needed for procedure pointer components.  */
   struct gfc_typebound_proc *tb;
   /* When allocatable/pointer and in a coarray the associated token.  */
-  tree caf_token;
+  struct gfc_component *caf_token;
 }
 gfc_component;
 
 #define gfc_get_component() XCNEW (gfc_component)
+#define gfc_comp_caf_token(cm) (cm)->caf_token->backend_decl
 
 /* Formal argument lists are lists of symbols.  */
 typedef struct gfc_formal_arglist
@@ -4171,5 +4172,6 @@ bool gfc_is_reallocatable_lhs (gfc_expr *);
 
 void finish_oacc_declare (gfc_namespace *, gfc_symbol *, bool);
 void gfc_adjust_builtins (void);
+void gfc_add_caf_accessor (gfc_expr *, gfc_expr *);
 
 #endif /* GCC_GFORTRAN_H  */
