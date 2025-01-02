@@ -37,16 +37,12 @@
   UNSPEC_LASX_XVFCVTH
   UNSPEC_LASX_XVFCVTL
   UNSPEC_LASX_XVFLOGB
-  UNSPEC_LASX_XVFRECIP
   UNSPEC_LASX_XVFRECIPE
-  UNSPEC_LASX_XVFRINT
   UNSPEC_LASX_XVFRSQRT
   UNSPEC_LASX_XVFRSQRTE
   UNSPEC_LASX_XVFTINT_U
-  UNSPEC_LASX_XVCLO
   UNSPEC_LASX_XVSAT_S
   UNSPEC_LASX_XVSAT_U
-  UNSPEC_LASX_XVREPLVE0
   UNSPEC_LASX_XVREPL128VEI
   UNSPEC_LASX_XVSRAR
   UNSPEC_LASX_XVSRARI
@@ -57,7 +53,6 @@
   UNSPEC_LASX_BRANCH
   UNSPEC_LASX_BRANCH_V
 
-  UNSPEC_LASX_MXVEXTW_U
   UNSPEC_LASX_XVSLLWIL_S
   UNSPEC_LASX_XVSLLWIL_U
   UNSPEC_LASX_XVSRAN
@@ -130,7 +125,6 @@
   UNSPEC_LASX_XVADD_Q
   UNSPEC_LASX_XVSUB_Q
   UNSPEC_LASX_XVREPLVE
-  UNSPEC_LASX_XVSHUF4
   UNSPEC_LASX_XVMSKGEZ
   UNSPEC_LASX_XVMSKNZ
   UNSPEC_LASX_XVEXTH_Q_D
@@ -212,11 +206,6 @@
    (V8SI "V4SI")
    (V4DI "V2DI")])
 
-;;attribute gives half float modes for vector modes.
-(define_mode_attr VFHMODE256
-   [(V8SF "V4SF")
-   (V4DF "V2DF")])
-
 ;; The attribute gives half int/float modes for vector modes.
 (define_mode_attr VHMODE256_ALL
   [(V32QI "V16QI")
@@ -252,20 +241,6 @@
    (V4DF "V8DF")
    (V4DI "V8DI")])
 
-;; This attribute gives the mode of the result for "copy_s_b, copy_u_b" etc.
-(define_mode_attr VRES256
-  [(V4DF "DF")
-   (V8SF "SF")
-   (V4DI "DI")
-   (V8SI "SI")
-   (V16HI "SI")
-   (V32QI "SI")])
-
-;; Only used with LASX_D iterator.
-(define_mode_attr lasx_d
-  [(V4DI "reg_or_0")
-   (V4DF "register")])
-
 ;; This attribute gives the 256 bit integer vector mode with same size.
 (define_mode_attr mode256_i
   [(V4DF "v4di")
@@ -274,14 +249,6 @@
    (V8SI "v8si")
    (V16HI "v16hi")
    (V32QI "v32qi")])
-
-
-;; This attribute gives the 256 bit float vector mode with same size.
-(define_mode_attr mode256_f
-  [(V4DF "v4df")
-   (V8SF "v8sf")
-   (V4DI "v4df")
-   (V8SI "v8sf")])
 
 ;; This attribute gives V32QI mode and V16HI mode with half size.
 (define_mode_attr mode256_i_half
@@ -339,14 +306,6 @@
 (define_mode_attr lasxfmt_f
   [(V4DF "d_f")
    (V8SF "w_f")
-   (V4DI "d")
-   (V8SI "w")
-   (V16HI "h")
-   (V32QI "b")])
-
-(define_mode_attr flasxfmt_f
-  [(V4DF "d_f")
-   (V8SF "s_f")
    (V4DI "d")
    (V8SI "w")
    (V16HI "h")
@@ -437,27 +396,6 @@
    (V8SI  "uimm5")
    (V4DI  "uimm6")])
 
-
-(define_mode_attr d2lasxfmt
-  [(V8SI "q")
-   (V16HI "d")
-   (V32QI "w")])
-
-(define_mode_attr d2lasxfmt_u
-  [(V8SI "qu")
-   (V16HI "du")
-   (V32QI "wu")])
-
-(define_mode_attr VD2MODE256
-  [(V8SI "V4DI")
-   (V16HI "V4DI")
-   (V32QI "V8SI")])
-
-(define_mode_attr lasxfmt_wd
-  [(V4DI "d")
-   (V8SI "w")
-   (V16HI "w")
-   (V32QI "w")])
 
 ;; Half modes of all LASX vector modes, in lower-case.
 (define_mode_attr lasxhalf [(V32QI "v16qi")  (V16HI "v8hi")
@@ -1402,10 +1340,6 @@
    (set_attr "cnv_mode" "<FINTCNV256>")
    (set_attr "mode" "<MODE>")])
 
-(define_mode_attr FFQ256
-  [(V4SF "V16HI")
-   (V2DF "V8SI")])
-
 (define_insn "lasx_xvreplgr2vr_<lasxfmt_f>"
   [(set (match_operand:ILASX 0 "register_operand" "=f,f")
 	(vec_duplicate:ILASX
@@ -2347,21 +2281,20 @@
 
 (define_insn "lasx_xvrepl128vei_b_internal"
   [(set (match_operand:V32QI 0 "register_operand" "=f")
-	(vec_duplicate:V32QI
-	  (vec_select:V32QI
-	    (match_operand:V32QI 1 "register_operand" "f")
-	    (parallel [(match_operand 2 "const_uimm4_operand" "")
-		       (match_dup 2) (match_dup 2) (match_dup 2)
-		       (match_dup 2) (match_dup 2) (match_dup 2)
-		       (match_dup 2) (match_dup 2) (match_dup 2)
-		       (match_dup 2) (match_dup 2) (match_dup 2)
-		       (match_dup 2) (match_dup 2) (match_dup 2)
-		       (match_operand 3 "const_16_to_31_operand" "")
-		       (match_dup 3) (match_dup 3) (match_dup 3)
-		       (match_dup 3) (match_dup 3) (match_dup 3)
-		       (match_dup 3) (match_dup 3) (match_dup 3)
-		       (match_dup 3) (match_dup 3) (match_dup 3)
-		       (match_dup 3) (match_dup 3) (match_dup 3)]))))]
+	(vec_select:V32QI
+	  (match_operand:V32QI 1 "register_operand" "f")
+	  (parallel [(match_operand 2 "const_uimm4_operand" "")
+		     (match_dup 2) (match_dup 2) (match_dup 2)
+		     (match_dup 2) (match_dup 2) (match_dup 2)
+		     (match_dup 2) (match_dup 2) (match_dup 2)
+		     (match_dup 2) (match_dup 2) (match_dup 2)
+		     (match_dup 2) (match_dup 2) (match_dup 2)
+		     (match_operand 3 "const_16_to_31_operand" "")
+		     (match_dup 3) (match_dup 3) (match_dup 3)
+		     (match_dup 3) (match_dup 3) (match_dup 3)
+		     (match_dup 3) (match_dup 3) (match_dup 3)
+		     (match_dup 3) (match_dup 3) (match_dup 3)
+		     (match_dup 3) (match_dup 3) (match_dup 3)])))]
   "ISA_HAS_LASX && ((INTVAL (operands[3]) - INTVAL (operands[2])) == 16)"
   "xvrepl128vei.b\t%u0,%u1,%2"
   [(set_attr "type" "simd_splat")
@@ -2369,17 +2302,16 @@
 
 (define_insn "lasx_xvrepl128vei_h_internal"
   [(set (match_operand:V16HI 0 "register_operand" "=f")
-	(vec_duplicate:V16HI
-	  (vec_select:V16HI
-	    (match_operand:V16HI 1 "register_operand" "f")
-	    (parallel [(match_operand 2 "const_uimm3_operand" "")
-		       (match_dup 2) (match_dup 2) (match_dup 2)
-		       (match_dup 2) (match_dup 2) (match_dup 2)
-		       (match_dup 2)
-		       (match_operand 3 "const_8_to_15_operand" "")
-		       (match_dup 3) (match_dup 3) (match_dup 3)
-		       (match_dup 3) (match_dup 3) (match_dup 3)
-		       (match_dup 3)]))))]
+	(vec_select:V16HI
+	  (match_operand:V16HI 1 "register_operand" "f")
+	  (parallel [(match_operand 2 "const_uimm3_operand" "")
+		     (match_dup 2) (match_dup 2) (match_dup 2)
+		     (match_dup 2) (match_dup 2) (match_dup 2)
+		     (match_dup 2)
+		     (match_operand 3 "const_8_to_15_operand" "")
+		     (match_dup 3) (match_dup 3) (match_dup 3)
+		     (match_dup 3) (match_dup 3) (match_dup 3)
+		     (match_dup 3)])))]
   "ISA_HAS_LASX && ((INTVAL (operands[3]) - INTVAL (operands[2])) == 8)"
   "xvrepl128vei.h\t%u0,%u1,%2"
   [(set_attr "type" "simd_splat")
@@ -2387,13 +2319,12 @@
 
 (define_insn "lasx_xvrepl128vei_w_internal"
   [(set (match_operand:V8SI 0 "register_operand" "=f")
-	(vec_duplicate:V8SI
-	  (vec_select:V8SI
-	    (match_operand:V8SI 1 "register_operand" "f")
-	    (parallel [(match_operand 2 "const_0_to_3_operand" "")
-		       (match_dup 2) (match_dup 2) (match_dup 2)
-		       (match_operand 3 "const_4_to_7_operand" "")
-		       (match_dup 3) (match_dup 3) (match_dup 3)]))))]
+	(vec_select:V8SI
+	  (match_operand:V8SI 1 "register_operand" "f")
+	  (parallel [(match_operand 2 "const_0_to_3_operand" "")
+		     (match_dup 2) (match_dup 2) (match_dup 2)
+		     (match_operand 3 "const_4_to_7_operand" "")
+		     (match_dup 3) (match_dup 3) (match_dup 3)])))]
   "ISA_HAS_LASX && ((INTVAL (operands[3]) - INTVAL (operands[2])) == 4)"
   "xvrepl128vei.w\t%u0,%u1,%2"
   [(set_attr "type" "simd_splat")
@@ -2401,13 +2332,12 @@
 
 (define_insn "lasx_xvrepl128vei_d_internal"
   [(set (match_operand:V4DI 0 "register_operand" "=f")
-	(vec_duplicate:V4DI
-	  (vec_select:V4DI
-	    (match_operand:V4DI 1 "register_operand" "f")
-	    (parallel [(match_operand 2 "const_0_or_1_operand" "")
-		       (match_dup 2)
-		       (match_operand 3 "const_2_or_3_operand" "")
-		       (match_dup 3)]))))]
+	(vec_select:V4DI
+	  (match_operand:V4DI 1 "register_operand" "f")
+	  (parallel [(match_operand 2 "const_0_or_1_operand" "")
+		     (match_dup 2)
+		     (match_operand 3 "const_2_or_3_operand" "")
+		     (match_dup 3)])))]
   "ISA_HAS_LASX && ((INTVAL (operands[3]) - INTVAL (operands[2])) == 2)"
   "xvrepl128vei.d\t%u0,%u1,%2"
   [(set_attr "type" "simd_splat")
@@ -4249,10 +4179,10 @@
 	(any_extend:V16HI
 	  (vec_select:V16QI
 	    (match_operand:V32QI 1 "register_operand" "f")
-	      (parallel [(const_int 16) (const_int 17)
-			 (const_int 18) (const_int 19)
-			 (const_int 20) (const_int 21)
-			 (const_int 22) (const_int 23)
+	      (parallel [(const_int 8) (const_int 9)
+			 (const_int 10) (const_int 11)
+			 (const_int 12) (const_int 13)
+			 (const_int 14) (const_int 15)
 			 (const_int 24) (const_int 25)
 			 (const_int 26) (const_int 27)
 			 (const_int 28) (const_int 29)
@@ -4267,8 +4197,8 @@
 	(any_extend:V8SI
 	  (vec_select:V8HI
 	    (match_operand:V16HI 1 "register_operand" "f")
-	    (parallel [(const_int 8) (const_int 9)
-		       (const_int 10) (const_int 11)
+	    (parallel [(const_int 4) (const_int 5)
+		       (const_int 6) (const_int 7)
 		       (const_int 12) (const_int 13)
 		       (const_int 14) (const_int 15)]))))]
   "ISA_HAS_LASX"
@@ -4281,7 +4211,7 @@
 	(any_extend:V4DI
 	  (vec_select:V4SI
 	    (match_operand:V8SI 1 "register_operand" "f")
-	    (parallel [(const_int 4) (const_int 5)
+	    (parallel [(const_int 2) (const_int 3)
 		       (const_int 6) (const_int 7)]))))]
   "ISA_HAS_LASX"
   "xvexth.d<u>.w<u>\t%u0,%u1"
