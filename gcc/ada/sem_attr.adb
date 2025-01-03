@@ -1994,9 +1994,7 @@ package body Sem_Attr is
             Resolve (E1, Any_Integer);
             Set_Etype (E1, Standard_Integer);
 
-            if not Is_OK_Static_Expression (E1)
-              or else Raises_Constraint_Error (E1)
-            then
+            if not Is_OK_Static_Expression (E1) then
                Flag_Non_Static_Expr
                  ("expression for dimension must be static!", E1);
                Error_Attr;
@@ -9448,7 +9446,7 @@ package body Sem_Attr is
       -----------
 
       --  Image is a scalar attribute, but is never static, because it is
-      --  not a static function (having a non-scalar argument (RM 4.9(22))
+      --  not a static function (having a non-scalar argument (RM 4.9(22)).
       --  However, we can constant-fold the image of an enumeration literal
       --  if names are available and default Image implementation has not
       --  been overridden.

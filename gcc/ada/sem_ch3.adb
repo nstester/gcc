@@ -4689,11 +4689,22 @@ package body Sem_Ch3 is
          if Back_End_Inlining
            and then Expander_Active
            and then Nkind (E) = N_Function_Call
-           and then Nkind (Name (E)) in N_Has_Entity
+           and then Is_Entity_Name (Name (E))
            and then Is_Inlined (Entity (Name (E)))
            and then not Is_Constrained (Etype (E))
-           and then Analyzed (N)
            and then No (Expression (N))
+           and then Analyzed (N)
+         then
+            goto Leave;
+         end if;
+
+         --  No further action needed if E is a conditional expression and N
+         --  has been replaced by a renaming declaration during its expansion
+         --  (see Expand_N_Case_Expression and Expand_N_If_Expression).
+
+         if Expander_Active
+           and then Nkind (E) in N_Case_Expression | N_If_Expression
+           and then Nkind (N) = N_Object_Renaming_Declaration
          then
             goto Leave;
          end if;
@@ -6600,12 +6611,6 @@ package body Sem_Ch3 is
                            (Related_Nod => P,
                             N           => Access_Definition (Component_Def));
          Set_Is_Local_Anonymous_Access (Element_Type);
-
-         --  Propagate the parent. This field is needed if we have to generate
-         --  the master_id associated with an anonymous access to task type
-         --  component (see Expand_N_Full_Type_Declaration.Build_Master)
-
-         Copy_Parent (To => Element_Type, From => T);
 
          --  Ada 2005 (AI-230): In case of components that are anonymous access
          --  types the level of accessibility depends on the enclosing type

@@ -36,6 +36,7 @@ with Exp_Aggr;       use Exp_Aggr;
 with Exp_Ch6;        use Exp_Ch6;
 with Exp_Ch7;        use Exp_Ch7;
 with Exp_Ch11;       use Exp_Ch11;
+with Exp_Dbug;       use Exp_Dbug;
 with Freeze;         use Freeze;
 with Ghost;          use Ghost;
 with Inline;         use Inline;
@@ -5847,10 +5848,6 @@ package body Exp_Util is
    is
       U_Typ : constant Entity_Id := Unique_Entity (Typ);
 
-      Calls_OK : Boolean := False;
-      --  This flag is set to True when expression Expr contains at least one
-      --  call to a nondispatching primitive function of Typ.
-
       function Search_Primitive_Calls (N : Node_Id) return Traverse_Result;
       --  Search for nondispatching calls to primitive functions of type Typ
 
@@ -5885,8 +5882,6 @@ package body Exp_Util is
                if Present (Disp_Typ)
                  and then Unique_Entity (Disp_Typ) = U_Typ
                then
-                  Calls_OK := True;
-
                   --  There is no need to continue the traversal, as one such
                   --  call suffices.
 
@@ -5898,13 +5893,12 @@ package body Exp_Util is
          return OK;
       end Search_Primitive_Calls;
 
-      procedure Search_Calls is new Traverse_Proc (Search_Primitive_Calls);
+      function Search_Calls is new Traverse_Func (Search_Primitive_Calls);
 
    --  Start of processing for Expression_Contains_Primitives_Calls_Of_Type
 
    begin
-      Search_Calls (Expr);
-      return Calls_OK;
+      return Search_Calls (Expr) = Abandon;
    end Expression_Contains_Primitives_Calls_Of;
 
    ----------------------
@@ -10310,7 +10304,6 @@ package body Exp_Util is
                Make_Defining_Identifier (Loc, Name_uParent),
              Component_Definition =>
                Make_Component_Definition (Loc,
-                 Aliased_Present    => False,
                  Subtype_Indication => New_Occurrence_Of (Constr_Root, Loc))));
 
          Set_Reverse_Storage_Order
@@ -10325,7 +10318,6 @@ package body Exp_Util is
                Make_Defining_Identifier (Loc, Name_uTag),
              Component_Definition =>
                Make_Component_Definition (Loc,
-                 Aliased_Present    => False,
                  Subtype_Indication =>
                    New_Occurrence_Of (RTE (RE_Tag), Loc))));
 
@@ -10337,7 +10329,6 @@ package body Exp_Util is
           Defining_Identifier  => Make_Temporary (Loc, 'C'),
           Component_Definition =>
             Make_Component_Definition (Loc,
-              Aliased_Present    => False,
               Subtype_Indication => New_Occurrence_Of (Str_Type, Loc))));
 
       Append_To (List_Def,
@@ -13555,6 +13546,46 @@ package body Exp_Util is
 
       return False;
    end Requires_Cleanup_Actions;
+
+   --------------------------------------------
+   -- Rewrite_Object_Declaration_As_Renaming --
+   --------------------------------------------
+
+   procedure Rewrite_Object_Declaration_As_Renaming (N, Nam : Node_Id) is
+      Def_Id : constant Entity_Id  := Defining_Identifier (N);
+      Loc    : constant Source_Ptr := Sloc (N);
+
+   begin
+      Rewrite (N,
+        Make_Object_Renaming_Declaration (Loc,
+          Defining_Identifier => Def_Id,
+          Subtype_Mark        => New_Occurrence_Of (Etype (Def_Id), Loc),
+          Name                => Nam));
+
+      --  Keep original aspects
+
+      Move_Aspects (Original_Node (N), N);
+
+      --  We do not analyze this renaming declaration, because all its
+      --  components have already been analyzed, and if we were to go
+      --  ahead and analyze it, we would in effect be trying to generate
+      --  another declaration of X, which won't do.
+
+      Set_Renamed_Object (Def_Id, Nam);
+      Set_Analyzed (N);
+
+      --  We do need to deal with debug issues for this renaming
+
+      --  First, if entity comes from source, then mark it as needing
+      --  debug information, even though it is defined by a generated
+      --  renaming that does not come from source.
+
+      Set_Debug_Info_Defining_Id (N);
+
+      --  Now call the routine to generate debug info for the renaming
+
+      Insert_Action (N, Debug_Renaming_Declaration (N));
+   end Rewrite_Object_Declaration_As_Renaming;
 
    ------------------------------------
    -- Safe_Unchecked_Type_Conversion --

@@ -38,7 +38,6 @@ with Exp_Ch4;        use Exp_Ch4;
 with Exp_Ch6;        use Exp_Ch6;
 with Exp_Ch7;        use Exp_Ch7;
 with Exp_Ch9;        use Exp_Ch9;
-with Exp_Dbug;       use Exp_Dbug;
 with Exp_Disp;       use Exp_Disp;
 with Exp_Dist;       use Exp_Dist;
 with Exp_Put_Image;
@@ -2961,10 +2960,8 @@ package body Exp_Ch3 is
                 Defining_Identifier => Acc_Type,
                 Type_Definition     =>
                   Make_Access_To_Object_Definition (Loc,
-                    All_Present            => True,
-                    Null_Exclusion_Present => False,
-                    Constant_Present       => False,
-                    Subtype_Indication     =>
+                    All_Present        => True,
+                    Subtype_Indication =>
                       New_Occurrence_Of (Rec_Type, Loc)))));
 
             Set_Handled_Statement_Sequence (Body_Node,
@@ -4301,10 +4298,9 @@ package body Exp_Ch3 is
            (SI         : Node_Id;
             Check_List : List_Id)
          is
-            C                     : constant Node_Id := Constraint (SI);
-            Number_Of_Constraints : Nat := 0;
-            Index                 : Node_Id;
-            S, T                  : Entity_Id;
+            C     : constant Node_Id := Constraint (SI);
+            Index : Node_Id;
+            S, T  : Entity_Id;
 
             procedure Constrain_Index
               (Index      : Node_Id;
@@ -4342,12 +4338,6 @@ package body Exp_Ch3 is
                T := Designated_Type (T);
             end if;
 
-            S := First (Constraints (C));
-            while Present (S) loop
-               Number_Of_Constraints := Number_Of_Constraints + 1;
-               Next (S);
-            end loop;
-
             --  In either case, the index constraint must provide a discrete
             --  range for each index of the array type and the type of each
             --  discrete range must be the same as that of the corresponding
@@ -4359,7 +4349,7 @@ package body Exp_Ch3 is
 
             --  Apply constraints to each index type
 
-            for J in 1 .. Number_Of_Constraints loop
+            while Present (S) loop
                Constrain_Index (Index, S, Check_List);
                Next (Index);
                Next (S);
@@ -5695,7 +5685,6 @@ package body Exp_Ch3 is
 
                  Component_Definition =>
                    Make_Component_Definition (Loc,
-                     Aliased_Present => False,
                      Subtype_Indication => New_Occurrence_Of (Typ, Loc))),
 
              Expression =>
@@ -9134,35 +9123,7 @@ package body Exp_Ch3 is
       --  illegal code if written by hand, but that's OK.
 
       if Rewrite_As_Renaming then
-         Rewrite (N,
-           Make_Object_Renaming_Declaration (Loc,
-             Defining_Identifier => Def_Id,
-             Subtype_Mark        => New_Occurrence_Of (Etype (Def_Id), Loc),
-             Name                => Expr_Q));
-
-         --  Keep original aspects
-
-         Move_Aspects (Original_Node (N), N);
-
-         --  We do not analyze this renaming declaration, because all its
-         --  components have already been analyzed, and if we were to go
-         --  ahead and analyze it, we would in effect be trying to generate
-         --  another declaration of X, which won't do.
-
-         Set_Renamed_Object (Def_Id, Expr_Q);
-         Set_Analyzed (N);
-
-         --  We do need to deal with debug issues for this renaming
-
-         --  First, if entity comes from source, then mark it as needing
-         --  debug information, even though it is defined by a generated
-         --  renaming that does not come from source.
-
-         Set_Debug_Info_Defining_Id (N);
-
-         --  Now call the routine to generate debug info for the renaming
-
-         Insert_Action (N, Debug_Renaming_Declaration (N));
+         Rewrite_Object_Declaration_As_Renaming (N, Expr_Q);
       end if;
 
    --  Exception on library entity not available
@@ -9354,7 +9315,6 @@ package body Exp_Ch3 is
           Defining_Identifier => Parent_N,
           Component_Definition =>
             Make_Component_Definition (Loc,
-              Aliased_Present => False,
               Subtype_Indication => New_Occurrence_Of (Par_Subtype, Loc)));
 
       if Null_Present (Rec_Ext_Part) then
@@ -9412,7 +9372,6 @@ package body Exp_Ch3 is
           Defining_Identifier => First_Tag_Component (T),
           Component_Definition =>
             Make_Component_Definition (Sloc_N,
-              Aliased_Present => False,
               Subtype_Indication => New_Occurrence_Of (RTE (RE_Tag), Sloc_N)));
 
       if Null_Present (Comp_List)
@@ -10435,63 +10394,57 @@ package body Exp_Ch3 is
         (Decl     : Node_Id;
          Rec_Type : Entity_Id) return Boolean
       is
-         References_Current_Instance : Boolean := False;
-         Has_Access_Discriminant     : Boolean := False;
-         Has_Internal_Call           : Boolean := False;
-
-         function Find_Access_Discriminant
+         function Is_Access_Discriminant
            (N : Node_Id) return Traverse_Result;
          --  Look for a name denoting an access discriminant
 
-         function Find_Current_Instance
+         function Is_Current_Instance
            (N : Node_Id) return Traverse_Result;
          --  Look for a reference to the current instance of the type
 
-         function Find_Internal_Call
+         function Is_Internal_Call
            (N : Node_Id) return Traverse_Result;
          --  Look for an internal protected function call
 
-         ------------------------------
-         -- Find_Access_Discriminant --
-         ------------------------------
+         ----------------------------
+         -- Is_Access_Discriminant --
+         ----------------------------
 
-         function Find_Access_Discriminant
+         function Is_Access_Discriminant
            (N : Node_Id) return Traverse_Result is
          begin
             if Is_Entity_Name (N)
               and then Denotes_Discriminant (N)
               and then Is_Access_Type (Etype (N))
             then
-               Has_Access_Discriminant := True;
                return Abandon;
             else
                return OK;
             end if;
-         end Find_Access_Discriminant;
+         end Is_Access_Discriminant;
 
-         ---------------------------
-         -- Find_Current_Instance --
-         ---------------------------
+         -------------------------
+         -- Is_Current_Instance --
+         -------------------------
 
-         function Find_Current_Instance
+         function Is_Current_Instance
            (N : Node_Id) return Traverse_Result is
          begin
             if Is_Entity_Name (N)
               and then Present (Entity (N))
               and then Is_Current_Instance (N)
             then
-               References_Current_Instance := True;
                return Abandon;
             else
                return OK;
             end if;
-         end Find_Current_Instance;
+         end Is_Current_Instance;
 
-         ------------------------
-         -- Find_Internal_Call --
-         ------------------------
+         ----------------------
+         -- Is_Internal_Call --
+         ----------------------
 
-         function Find_Internal_Call (N : Node_Id) return Traverse_Result is
+         function Is_Internal_Call (N : Node_Id) return Traverse_Result is
 
             function Call_Scope (N : Node_Id) return Entity_Id;
             --  Return the scope enclosing a given call node N
@@ -10515,21 +10468,20 @@ package body Exp_Ch3 is
               and then Call_Scope (N)
                          = Corresponding_Concurrent_Type (Rec_Type)
             then
-               Has_Internal_Call := True;
                return Abandon;
             else
                return OK;
             end if;
-         end Find_Internal_Call;
+         end Is_Internal_Call;
 
-         procedure Search_Access_Discriminant is new
-           Traverse_Proc (Find_Access_Discriminant);
+         function Search_Access_Discriminant is new
+           Traverse_Func (Is_Access_Discriminant);
 
-         procedure Search_Current_Instance is new
-           Traverse_Proc (Find_Current_Instance);
+         function Search_Current_Instance is new
+           Traverse_Func (Is_Current_Instance);
 
-         procedure Search_Internal_Call is new
-           Traverse_Proc (Find_Internal_Call);
+         function Search_Internal_Call is new
+           Traverse_Func (Is_Internal_Call);
 
          --  Start of processing for Requires_Late_Init
 
@@ -10550,9 +10502,7 @@ package body Exp_Ch3 is
             --  it has an initialization expression that includes a name
             --  denoting an access discriminant;
 
-            Search_Access_Discriminant (Expression (Decl));
-
-            if Has_Access_Discriminant then
+            if Search_Access_Discriminant (Expression (Decl)) = Abandon then
                return True;
             end if;
 
@@ -10560,18 +10510,14 @@ package body Exp_Ch3 is
             --  reference to the current instance of the type either by
             --  name...
 
-            Search_Current_Instance (Expression (Decl));
-
-            if References_Current_Instance then
+            if Search_Current_Instance (Expression (Decl)) = Abandon then
                return True;
             end if;
 
             --  ...or implicitly as the target object of a call.
 
             if Is_Protected_Record_Type (Rec_Type) then
-               Search_Internal_Call (Expression (Decl));
-
-               if Has_Internal_Call then
+               if Search_Internal_Call (Expression (Decl)) = Abandon then
                   return True;
                end if;
             end if;

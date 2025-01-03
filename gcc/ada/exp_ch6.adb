@@ -5359,7 +5359,8 @@ package body Exp_Ch6 is
 
    procedure Expand_Ctrl_Function_Call (N : Node_Id; Use_Sec_Stack : Boolean)
    is
-      Par : constant Node_Id := Parent (N);
+      Par        : constant Node_Id := Parent (N);
+      Uncond_Par : constant Node_Id := Unconditional_Parent (N);
 
    begin
       --  Optimization: if the returned value is returned again, then no need
@@ -5368,7 +5369,7 @@ package body Exp_Ch6 is
       --  Note that simple return statements are distributed into conditional
       --  expressions but we may be invoked before this distribution is done.
 
-      if Nkind (Unconditional_Parent (N)) = N_Simple_Return_Statement then
+      if Nkind (Uncond_Par) = N_Simple_Return_Statement then
          return;
       end if;
 
@@ -5381,8 +5382,15 @@ package body Exp_Ch6 is
 
       if Nkind (Par) in N_Object_Declaration | N_Delta_Aggregate
         and then Expression (Par) = N
-        and then not Use_Sec_Stack
       then
+         if not Use_Sec_Stack then
+            return;
+         end if;
+
+      --  Note that object declarations are also distributed into conditional
+      --  expressions but we may be invoked before this distribution is done.
+
+      elsif Nkind (Uncond_Par) = N_Object_Declaration then
          return;
       end if;
 
@@ -9107,24 +9115,14 @@ package body Exp_Ch6 is
 
       if Definite and then not Is_OK_Return_Object then
 
-         --  The related object declaration is encased in a transient block
-         --  because the build-in-place function call contains at least one
-         --  nested function call that produces a controlled transient
-         --  temporary:
-
-         --    Obj : ... := BIP_Func_Call (Ctrl_Func_Call);
-
-         --  Since the build-in-place expansion decouples the call from the
-         --  object declaration, the finalization machinery lacks the context
-         --  which prompted the generation of the transient block. To resolve
-         --  this scenario, store the build-in-place call.
-
-         if Scope_Is_Transient then
-            Set_BIP_Initialization_Call (Obj_Def_Id, Res_Decl);
-         end if;
-
          Set_Expression (Obj_Decl, Empty);
          Set_No_Initialization (Obj_Decl);
+
+         --  Since the build-in-place expansion decouples the call from the
+         --  object declaration, the finalization machinery needs to know
+         --  when the object is initialized. Store the build-in-place call.
+
+         Set_BIP_Initialization_Call (Obj_Def_Id, Res_Decl);
 
          --  Park the generated statements if the declaration requires it and
          --  is not the node that is wrapped in a transient scope.
