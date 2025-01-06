@@ -1339,6 +1339,10 @@ package Sinfo is
    --    cannot figure it out. If both flags Forwards_OK and Backwards_OK are
    --    set, it means that the front end can assure no overlap of operands.
 
+   --  For_Allocator
+   --    Present in N_Free_Statement nodes. True if the statement is generated
+   --    for the cleanup of an allocator.
+
    --  For_Special_Return_Object
    --    Present in N_Allocator nodes. True if the allocator is generated for
    --    the initialization of a special return object.
@@ -1687,6 +1691,7 @@ package Sinfo is
    --      Contract_Cases
    --      Depends
    --      Exceptional_Cases
+   --      Exit_Cases
    --      Extensions_Visible
    --      Global
    --      Initial_Condition
@@ -1770,7 +1775,7 @@ package Sinfo is
    --    in interpolated expressions.
 
    --  Is_Known_Guaranteed_ABE
-   --    NOTE: this flag is shared between the legacy ABE mechanism and the
+   --    Note: this flag is shared between the legacy ABE mechanism and the
    --    default ABE mechanism.
    --
    --    Present in the following nodes:
@@ -1808,16 +1813,15 @@ package Sinfo is
    --    A flag set on an aggregate that uses parentheses as delimiters
 
    --  Is_Power_Of_2_For_Shift
-   --    A flag present only in N_Op_Expon nodes. It is set when the
-   --    exponentiation is of the form 2 ** N, where the type of N is an
-   --    unsigned integral subtype whose size does not exceed the size of
-   --    Standard_Integer (i.e. a type that can be safely converted to
-   --    Natural), and the exponentiation appears as the right operand of an
-   --    integer multiplication or an integer division where the dividend is
-   --    unsigned. It is also required that overflow checking is off for both
-   --    the exponentiation and the multiply/divide node. If this set of
-   --    conditions holds, and the flag is set, then the division or
-   --    multiplication can be (and is) converted to a shift.
+   --    Present in N_Op_Expon nodes. It is set when the exponentiation is of
+   --    the form 2 ** N, where the type of N is an integer subtype whose size
+   --    does not exceed the size of Standard.Integer (i.e. a type that can be
+   --    safely converted to Natural), and the exponentiation appears as the
+   --    right operand of an integer multiplication or an integer division
+   --    where the dividend is unsigned. It is also required that overflow
+   --    checking is off for both the exponentiation and the multiply/divide
+   --    node. If this set of conditions holds, and the flag is set, then the
+   --    division or multiplication is converted to a shift.
 
    --  Is_Preelaborable_Call
    --    Present in call marker nodes. Set when the related call is non-static
@@ -2058,14 +2062,18 @@ package Sinfo is
    --    Present in N_Assignment_Statement to indicate that neither Finalize
    --    nor Adjust should take place on this assignment even though the LHS
    --    and RHS are controlled. Also to indicate that the primitive _assign
-   --    should not be used for a tagged assignment. This flag is used in init
-   --    proc and aggregate expansion where the generated assignments are
+   --    should not be used for a tagged assignment. This flag is only used
+   --    in initialization procedures, and the expansion of aggregates, object
+   --    declarations and allocators, where the generated assignments are
    --    initializations, not real assignments. Note that it also suppresses
    --    the creation of transient scopes around the N_Assignment_Statement,
    --    in other words it disables all controlled actions for the assignment.
+   --    Additional note: the code generator should avoid creating a temporary
+   --    for the RHS when this flag is set on the N_Assignment_Statement node,
+   --    including when this RHS is a function call.
 
    --  No_Elaboration_Check
-   --    NOTE: this flag is relevant only for the legacy ABE mechanism and
+   --    Note: this flag is relevant only for the legacy ABE mechanism and
    --    should not be used outside of that context.
    --
    --    Present in N_Function_Call and N_Procedure_Call_Statement. Indicates
@@ -2086,10 +2094,14 @@ package Sinfo is
    --    Present in N_Assignment_Statement to indicate that no Finalize should
    --    take place on this assignment even though the LHS is controlled. Also
    --    to indicate that the primitive _assign should not be used for a tagged
-   --    assignment. This flag is only used in aggregates expansion where the
-   --    generated assignments are initializations, not real assignments. Note
-   --    that, unlike the No_Ctrl_Actions flag, it does *not* suppress the
+   --    assignment. This flag is only used in initialization procedures, and
+   --    the expansion of aggregates, object declarations and allocators, where
+   --    the generated assignments are initializations, not real assignments.
+   --    Note that, unlike No_Ctrl_Actions, this flag does *not* suppress the
    --    creation of transient scopes around the N_Assignment_Statement.
+   --    Additional note: the code generator should avoid creating a temporary
+   --    for the RHS when this flag is set on the N_Assignment_Statement node,
+   --    including when this RHS is a function call.
 
    --  No_Initialization
    --    Present in N_Object_Declaration and N_Allocator to indicate that the
@@ -2279,7 +2291,8 @@ package Sinfo is
    --    known to be in range, i.e. is in the range from zero to word length
    --    minus one. If this flag is not set, then the shift count may be
    --    outside this range, i.e. larger than the word length, and the code
-   --    must ensure that such shift counts give the appropriate result.
+   --    generated by the back end must ensure that such shift counts give the
+   --    appropriate result.
 
    --  Source_Type
    --    Used in an N_Validate_Unchecked_Conversion node to point to the
@@ -7726,15 +7739,13 @@ package Sinfo is
       --  operator names. Note that for a given shift operation, one node
       --  covers all possible types, as for normal operators.
 
-      --  Note: it is perfectly permissible for the expander to generate
-      --  shift operation nodes directly, in which case they will be analyzed
-      --  and parsed in the usual manner.
-
       --  Sprint syntax: shift-function-name!(expr, count)
 
-      --  Note: the Left_Opnd field holds the first argument (the value to
-      --  be shifted). The Right_Opnd field holds the second argument (the
-      --  shift count). The Chars field is the name of the intrinsic function.
+      --  The Left_Opnd field holds the first argument (the value to be
+      --  shifted). The Right_Opnd field holds the second argument (the shift
+      --  count). The Chars field is the name of the intrinsic function.
+      --  The back end is responsible for generating correct code in the case
+      --  of large shift counts (in which case Shift_Count_OK will be False).
 
       --  N_Op_Rotate_Left
       --  Sloc points to the function name
@@ -8102,6 +8113,7 @@ package Sinfo is
       --  Storage_Pool
       --  Procedure_To_Call
       --  Actual_Designated_Subtype
+      --  For_Allocator
 
       --  Note: in the case where a debug source file is generated, the Sloc
       --  for this node points to the FREE keyword in the Sprint file output.

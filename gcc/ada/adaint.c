@@ -3079,7 +3079,8 @@ __gnat_locate_exec (char *exec_name, char *path_val)
 /* Locate an executable using the Systems default PATH.  */
 
 char *
-__gnat_locate_exec_on_path (char *exec_name, int current_dir_on_windows)
+__gnat_locate_exec_on_path (char *exec_name,
+				    int current_dir_on_windows ATTRIBUTE_UNUSED)
 {
   char *apath_val;
 

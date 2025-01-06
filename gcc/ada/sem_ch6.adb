@@ -427,6 +427,12 @@ package body Sem_Ch6 is
          --  As elsewhere, we do not emit freeze nodes within a generic unit.
 
          if not Inside_A_Generic then
+            --  Set the parent of the new node to be the parent of the original
+            --  to get the proper context, which is needed for complete error
+            --  reporting and for semantic analysis.
+
+            Set_Parent (New_Body, Parent (N));
+
             Freeze_Expr_Types
               (Def_Id => Def_Id,
                Typ    => Typ,
@@ -4536,8 +4542,10 @@ package body Sem_Ch6 is
       --  may now appear in parameter and result profiles. Since the analysis
       --  of a subprogram body may use the parameter and result profile of the
       --  spec, swap any limited views with their non-limited counterpart.
+      --
+      --  Note that the non-limited view should also be exchanged in Ada 2005.
 
-      if Ada_Version >= Ada_2012 and then Present (Spec_Id) then
+      if Ada_Version >= Ada_2005 and then Present (Spec_Id) then
          Exch_Views := Exchange_Limited_Views (Spec_Id);
       end if;
 
@@ -5148,14 +5156,6 @@ package body Sem_Ch6 is
 
       if Nkind (Parent (N)) = N_Compilation_Unit then
          Set_Body_Required (Parent (N), True);
-
-         if Ada_Version >= Ada_2005
-           and then Nkind (Specification (N)) = N_Procedure_Specification
-           and then Null_Present (Specification (N))
-         then
-            Error_Msg_N
-              ("null procedure cannot be declared at library level", N);
-         end if;
       end if;
 
       Generate_Reference_To_Formals (Designator);

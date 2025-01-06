@@ -3064,10 +3064,14 @@ package body Sem_Ch4 is
       if Is_Entity_Name (P) and then Present (Entity (P)) then
          U_N := Entity (P);
 
-         if Is_Type (U_N) then
+         --  If the prefix is a type name, then reformat the node as a type
+         --  conversion, but not if it is the current instance of type name,
+         --  e.g. the expression of a type aspect, when it is analyzed within
+         --  a generic unit.
 
-            --  Reformat node as a type conversion
-
+         if Is_Type (U_N)
+           and then not (Inside_A_Generic and then Is_Current_Instance (P))
+         then
             E := Remove_Head (Exprs);
 
             if Present (First (Exprs)) then
@@ -10498,6 +10502,11 @@ package body Sem_Ch4 is
       Set_Etype (Subprog, Any_Type);
       Set_Parent (New_Call_Node, Parent (Node_To_Replace));
 
+      --  Perform the analysis searching for a candidate with Report_Error
+      --  set to False (see above); if no candidate interpretation matches
+      --  the context, this analysis will be redone with Report_Error set
+      --  to True to provide additional information.
+
       if not Is_Overloaded (Obj) then
          Try_One_Prefix_Interpretation (Obj_Type);
 
@@ -10537,18 +10546,22 @@ package body Sem_Ch4 is
 
          if All_Errors_Mode then
             Report_Error := True;
-            if Try_Primitive_Operation
-                 (Call_Node       => New_Call_Node,
-                  Node_To_Replace => Node_To_Replace)
 
-              or else
-                Try_Class_Wide_Operation
-                  (Call_Node       => New_Call_Node,
-                   Node_To_Replace => Node_To_Replace)
-            then
-               null;
+            if not Is_Overloaded (Obj) then
+               Try_One_Prefix_Interpretation (Obj_Type);
+
+            else
+               declare
+                  I  : Interp_Index;
+                  It : Interp;
+               begin
+                  Get_First_Interp (Obj, I, It);
+                  while Present (It.Nam) loop
+                     Try_One_Prefix_Interpretation (It.Typ);
+                     Get_Next_Interp (I, It);
+                  end loop;
+               end;
             end if;
-
          else
             Analyze_One_Call
               (N          => New_Call_Node,

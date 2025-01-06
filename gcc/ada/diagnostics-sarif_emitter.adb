@@ -229,12 +229,10 @@ package body Diagnostics.SARIF_Emitter is
    procedure Print_Rule (Diag : Diagnostic_Type);
    --  Print a rule node that consists of the following attributes:
    --  * ruleId
-   --  * level
    --  * name
    --
    --  {
    --    "id": <Diag.Id>,
-   --    "level": <Diag.Kind>,
    --    "name": <Human_Id(Diag)>
    --  },
 
@@ -634,9 +632,7 @@ package body Diagnostics.SARIF_Emitter is
 
       --  Print executionSuccessful
 
-      Write_String_Attribute
-        ("executionSuccessful",
-         (if Compilation_Errors then "false" else "true"));
+      Write_Boolean_Attribute ("executionSuccessful", Compilation_Errors);
 
       End_Block;
       NL_And_Indent;
@@ -1003,10 +999,6 @@ package body Diagnostics.SARIF_Emitter is
       NL_And_Indent;
 
       Write_String_Attribute ("id", "[" & To_String (Diag.Id) & "]");
-      Write_Char (',');
-      NL_And_Indent;
-
-      Write_String_Attribute ("level", Kind_To_String (Diag));
       Write_Char (',');
       NL_And_Indent;
 

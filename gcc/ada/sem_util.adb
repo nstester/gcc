@@ -6228,8 +6228,17 @@ package body Sem_Util is
       --  Create a new entity for the defining unit name
 
       Def_Id := Defining_Unit_Name (Result);
-      Set_Defining_Unit_Name (Result,
-        Make_Defining_Identifier (Sloc (Def_Id), Chars (Def_Id)));
+
+      case Nkind (Def_Id) is
+         when N_Defining_Identifier =>
+            Def_Id := Make_Defining_Identifier (Sloc (Def_Id), Chars (Def_Id));
+         when N_Defining_Operator_Symbol =>
+            Def_Id :=
+              Make_Defining_Operator_Symbol (Sloc (Def_Id), Chars (Def_Id));
+         when others => raise Program_Error;
+      end case;
+
+      Set_Defining_Unit_Name (Result, Def_Id);
 
       --  Create new entities for the formal parameters
 
@@ -28309,11 +28318,29 @@ package body Sem_Util is
       R1 : constant Node_Id := Get_Referenced_Object (E1);
       R2 : constant Node_Id := Get_Referenced_Object (E2);
    begin
-      return     Is_Entity_Name (R1)
-        and then Is_Entity_Name (R2)
-        and then Entity (R1) /= Entity (R2)
-        and then not Is_Formal (Entity (R1))
-        and then not Is_Formal (Entity (R2));
+      --  Two identifiers are statically different if they denote different
+      --  entities that are not formal parameters.
+
+      if Is_Entity_Name (R1) and then Is_Entity_Name (R2) then
+         return Entity (R1) /= Entity (R2)
+           and then not Is_Formal (Entity (R1))
+           and then not Is_Formal (Entity (R2));
+
+      --  A function call that does not return its result by reference denotes
+      --  a constant object that is statically different from anything else.
+
+      elsif (Nkind (R1) = N_Function_Call
+              and then Is_Entity_Name (Name (R1))
+              and then not Returns_By_Ref (Entity (Name (R1))))
+        or else (Nkind (R2) = N_Function_Call
+                  and then Is_Entity_Name (Name (R2))
+                  and then not Returns_By_Ref (Entity (Name (R2))))
+      then
+         return R1 /= R2;
+
+      else
+         return False;
+      end if;
    end Statically_Different;
 
    -----------------------------
@@ -30911,6 +30938,7 @@ package body Sem_Util is
                           Pragma_Check
                         | Pragma_Contract_Cases
                         | Pragma_Exceptional_Cases
+                        | Pragma_Exit_Cases
                         | Pragma_Post
                         | Pragma_Postcondition
                         | Pragma_Post_Class
@@ -31170,8 +31198,17 @@ package body Sem_Util is
                            --  removal, e.g. by validity checks.
 
                            if not Comes_From_Source (Obj) then
-                              return
-                                Is_Known_On_Entry (Expression (Parent (Obj)));
+                              declare
+                                 D : constant Node_Id :=
+                                       Declaration_Node (Obj);
+                              begin
+                                 if Nkind (D) = N_Object_Renaming_Declaration
+                                 then
+                                    return Is_Known_On_Entry (Name (D));
+                                 else
+                                    return Is_Known_On_Entry (Expression (D));
+                                 end if;
+                              end;
                            end if;
 
                            --  return False if not "all views are constant".
