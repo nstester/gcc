@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2024, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2025, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -2211,6 +2211,77 @@ package body Sem_Prag is
       procedure Check_Duplication (Id : Node_Id; Contracts : List_Id);
       --  Iterate through the identifiers in each contract to find duplicates
 
+      function Check_Param (N : Node_Id) return Traverse_Result;
+      --  Parameters of modes OUT or IN OUT of the subprogram shall not occur
+      --  in the consequences of an exceptional contract unless they are either
+      --  passed by reference or occur in the prefix of a reference to the 'Old
+      --  attribute or as direct prefixes of attributes that do not actually
+      --  read data from the object (SPARK RM 6.1.9(1)). References to
+      --  attribute Result should not occur either.
+
+      -----------------
+      -- Check_Param --
+      -----------------
+
+      function Check_Param (N : Node_Id) return Traverse_Result is
+      begin
+         case Nkind (N) is
+            when N_Identifier | N_Expanded_Name =>
+               declare
+                  Id : constant Entity_Id := Entity (N);
+               begin
+                  if Present (Id)
+                    and then Ekind (Id) in E_Out_Parameter
+                                         | E_In_Out_Parameter
+                    and then Scope (Id) = Spec_Id
+                    and then not Is_By_Reference_Type (Etype (Id))
+                    and then not Is_Aliased (Id)
+                  then
+                     declare
+                        Mode : constant String :=
+                          (if Ekind (Id) = E_Out_Parameter then "out"
+                           else "in out");
+                     begin
+                        Error_Msg_N
+                          ("formal parameter of mode """ & Mode
+                           & """ in consequence of Exceptional_Cases", N);
+                        Error_Msg_N
+                          ("\only parameters passed by reference are allowed",
+                           N);
+                     end;
+                  end if;
+               end;
+
+            when N_Attribute_Reference =>
+               case Attribute_Name (N) is
+                  when Name_Old =>
+                     return Skip;
+                  when Name_Constrained
+                     | Name_First
+                     | Name_Last
+                     | Name_Length
+                     | Name_Range
+                  =>
+                     if Nkind (Prefix (N)) in N_Identifier
+                                            | N_Expanded_Name
+                     then
+                        return Skip;
+                     end if;
+                  when Name_Result =>
+                     Error_Msg_N
+                       ("attribute Result in consequence of Exceptional_Cases",
+                        N);
+                  when others => null;
+               end case;
+
+            when others => null;
+         end case;
+
+         return OK;
+      end Check_Param;
+
+      procedure Check_Params is new Traverse_More_Proc (Check_Param);
+
       ----------------------------------
       -- Analyze_Exceptional_Contract --
       ----------------------------------
@@ -2320,10 +2391,11 @@ package body Sem_Prag is
 
          Errors := Serious_Errors_Detected;
 
-         --  Preanalyze_Assert_Expression, but without enforcing any of the two
-         --  acceptable types.
+         --  Preanalyze_Assert_Expression enforcing the expression type
 
          Preanalyze_Assert_Expression (Consequence, Any_Boolean);
+
+         Check_Params (Consequence);
 
          --  Emit a clarification message when the consequence contains at
          --  least one undefined reference, possibly due to contract freezing.
@@ -14719,7 +14791,7 @@ package body Sem_Prag is
             GNAT_Pragma;
             Check_Valid_Configuration_Pragma;
             Check_Arg_Count (1);
-            Check_Optional_Identifier (Arg1, "max_size");
+            Check_Optional_Identifier (Arg1, Name_Max_Size);
 
             Arg := Get_Pragma_Arg (Arg1);
             Check_Arg_Is_OK_Static_Expression (Arg, Any_Integer);
@@ -31380,7 +31452,7 @@ package body Sem_Prag is
 
          Errors := Serious_Errors_Detected;
 
-         --  Preanalyze_Assert_Expression, but without enforcing any of the two
+         --  Preanalyze_Assert_Expression, but without enforcing any of the
          --  acceptable types.
 
          Preanalyze_Assert_Expression (Expr);

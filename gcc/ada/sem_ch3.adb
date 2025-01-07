@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2024, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2025, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -4575,7 +4575,8 @@ package body Sem_Ch3 is
            and then Is_Itype (T)
          then
             Set_Has_Delayed_Freeze (T);
-         elsif not In_Spec_Expression then
+
+         elsif not Preanalysis_Active then
             Freeze_Before (N, T);
          end if;
       end if;
@@ -18796,7 +18797,9 @@ package body Sem_Ch3 is
          end if;
 
          --  When generating code, insert subtype declaration ahead of
-         --  declaration that generated it.
+         --  declaration that generated it. Similar behavior required under
+         --  preanalysis (including strict preanalysis) to perform the
+         --  minimum decoration, and avoid reporting spurious errors.
 
          Insert_Action (Obj_Def,
            Make_Subtype_Declaration (Sloc (P),

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2024, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2025, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -12654,8 +12654,7 @@ package body Sem_Util is
               and then Class_Present (Prag)
             then
                Pragma_Arg :=
-                 Nlists.First
-                   (Pragma_Argument_Associations (Prag));
+                 First (Pragma_Argument_Associations (Prag));
 
                if not Is_Static_Expression (Expression (Pragma_Arg)) then
                   return True;
@@ -18985,22 +18984,19 @@ package body Sem_Util is
    function Is_Null_Record_Definition (Record_Def : Node_Id) return Boolean is
       Item : Node_Id;
    begin
-      --  Testing Null_Present is just an optimization, not required.
+      --  Testing Null_Present is just an optimization, not required
 
       if Null_Present (Record_Def) then
          return True;
       elsif Present (Variant_Part (Component_List (Record_Def))) then
          return False;
-      elsif No (Component_List (Record_Def)) then
-         return True;
       end if;
 
       Item := First_Non_Pragma (Component_Items (Component_List (Record_Def)));
 
       while Present (Item) loop
-         if Nkind (Item) = N_Component_Declaration
-           and then Is_Internal_Name (Chars (Defining_Identifier (Item)))
-         then
+         pragma Assert (Nkind (Item) = N_Component_Declaration);
+         if Is_Internal_Name (Chars (Defining_Identifier (Item))) then
             null;
          else
             return False;

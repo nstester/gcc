@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2024, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2025, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -788,11 +788,6 @@ package Sinfo is
    --    created for the expansion of an allocator with a subtype_indication
    --    and the designated subtype is an unconstrained composite type.
 
-   --  Address_Warning_Posted
-   --    Present in N_Attribute_Definition nodes. Set to indicate that we have
-   --    posted a warning for the address clause regarding size or alignment
-   --    issues. Used to inhibit multiple redundant messages.
-
    --  Aggregate_Bounds
    --    Present in array N_Aggregate nodes. If the bounds of the aggregate are
    --    known at compile time, this field points to an N_Range node with those
@@ -1300,6 +1295,10 @@ package Sinfo is
    --    Present in N_External_Initializer nodes. Contains a Source_File_Index
    --    that references the file the external initializer points to.
 
+   --  Finally_Statements
+   --    Present in N_Handled_Statement_Sequences nodes. Points to a list
+   --    containing statements.
+
    --  First_Inlined_Subprogram
    --    Present in the N_Compilation_Unit node for the main program. Points
    --    to a chain of entities for subprograms that are to be inlined. The
@@ -1758,10 +1757,6 @@ package Sinfo is
    --    significance is that optimizations based on assuming that the
    --    discriminant check has a correct value cannot be performed in this
    --    case (or the discriminant check may be optimized away).
-
-   --  Is_Inherited_Pragma
-   --    This flag is set in an N_Pragma node that appears in a N_Contract node
-   --    to indicate that the pragma has been inherited from a parent context.
 
    --  Is_Initialization_Block
    --    Defined in block nodes. Set when the block statement was created by
@@ -2690,7 +2685,6 @@ package Sinfo is
       --  Next_Rep_Item
       --  Is_Generic_Contract_Pragma
       --  Is_Checked_Ghost_Pragma
-      --  Is_Inherited_Pragma
       --  Is_Analyzed_Pragma
       --  Class_Present set if from Aspect with 'Class
       --  Uneval_Old_Accept
@@ -7550,7 +7544,6 @@ package Sinfo is
       --  Check_Address_Alignment
       --  From_Aspect_Specification
       --  Is_Delayed_Aspect
-      --  Address_Warning_Posted
 
       --  Note: if From_Aspect_Specification is set, then Sloc points to the
       --  aspect name, and Entity is resolved already to reference the entity

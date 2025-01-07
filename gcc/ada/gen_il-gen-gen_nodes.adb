@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---           Copyright (C) 2020-2024, Free Software Foundation, Inc.        --
+--           Copyright (C) 2020-2025, Free Software Foundation, Inc.        --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -98,7 +98,6 @@ begin -- Gen_IL.Gen.Gen_Nodes
        (Sy (Name, Node_Id, Default_Empty),
         Sy (Chars, Name_Id, Default_No_Name),
         Sy (Expression, Node_Id, Default_Empty),
-        Sm (Address_Warning_Posted, Flag),
         Sm (Check_Address_Alignment, Flag),
         Sm (Entity_Or_Associated_Node, Node_Id), -- just Entity
         Sm (From_Aspect_Specification, Flag),
@@ -1349,6 +1348,7 @@ begin -- Gen_IL.Gen.Gen_Nodes
        (Sy (Statements, List_Id, Default_Empty_List),
         Sy (End_Label, Node_Id, Default_Empty),
         Sy (Exception_Handlers, List_Id, Default_No_List),
+        Sy (Finally_Statements, List_Id, Default_No_List),
         Sy (At_End_Proc, Node_Id, Default_Empty)));
 
    Cc (N_Index_Or_Discriminant_Constraint, Node_Kind,
@@ -1438,7 +1438,6 @@ begin -- Gen_IL.Gen.Gen_Nodes
         Sm (Is_Generic_Contract_Pragma, Flag),
         Sm (Is_Ignored, Flag),
         Sm (Is_Ignored_Ghost_Pragma, Flag),
-        Sm (Is_Inherited_Pragma, Flag),
         Sm (Next_Pragma, Node_Id),
         Sm (Next_Rep_Item, Node_Id),
         Sm (Uneval_Old_Accept, Flag),

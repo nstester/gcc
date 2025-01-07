@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2024, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2025, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -2968,8 +2968,8 @@ package body Sem_Aggr is
                               Scope_Parent : Node_Id;
                            begin
                               if Nkind (Exp) /= N_Identifier
-                                or else not Present (Entity (Exp))
-                                or else not Present (Scope (Entity (Exp)))
+                                or else No (Entity (Exp))
+                                or else No (Scope (Entity (Exp)))
                                 or else Ekind (Scope (Entity (Exp))) /= E_Loop
                               then
                                  return OK;

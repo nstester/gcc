@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2024, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2025, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1795,7 +1795,7 @@ package body Sem_Ch4 is
 
       if Is_OK_Static_Subtype (Exp_Type)
         and then Has_Static_Predicate_Aspect (Exp_Type)
-        and then In_Spec_Expression
+        and then Preanalysis_Active
       then
          null;
 

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2015-2024, Free Software Foundation, Inc.         --
+--          Copyright (C) 2015-2025, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -3593,8 +3593,7 @@ package body Contracts is
       --------------------
 
       procedure Inherit_Pragma (Prag_Id : Pragma_Id) is
-         Prag     : constant Node_Id := Get_Pragma (From_Subp, Prag_Id);
-         New_Prag : Node_Id;
+         Prag : constant Node_Id := Get_Pragma (From_Subp, Prag_Id);
 
       begin
          --  A pragma cannot be part of more than one First_Pragma/Next_Pragma
@@ -3602,10 +3601,7 @@ package body Contracts is
          --  flagged as inherited for distinction purposes.
 
          if Present (Prag) then
-            New_Prag := New_Copy_Tree (Prag);
-            Set_Is_Inherited_Pragma (New_Prag);
-
-            Add_Contract_Item (New_Prag, Subp);
+            Add_Contract_Item (New_Copy_Tree (Prag), Subp);
          end if;
       end Inherit_Pragma;
 

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2024, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2025, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -6129,7 +6129,6 @@ package body Exp_Aggr is
         Nkind (Parent_Node) = N_Assignment_Statement
           and then (Is_Limited_Type (Typ)
                      or else (not Has_Default_Init_Comps (N)
-                               and then not Is_Bit_Packed_Array (Typ)
                                and then
                                  In_Place_Assign_OK
                                    (N, Get_Base_Object (Name (Parent_Node)))));
@@ -7346,12 +7345,13 @@ package body Exp_Aggr is
 
          --  If a transient scope has been created around the declaration, we
          --  need to attach the code to it so that the finalization actions of
-         --  the declaration will be inserted after it. Otherwise, we directly
-         --  insert it after the declaration and it will be analyzed only once
-         --  the declaration is processed.
+         --  the declaration will be inserted after it; otherwise, we directly
+         --  insert it after the declaration. In both cases, the code will be
+         --  analyzed after the declaration is processed, i.e. once the actual
+         --  subtype of the object is established.
 
          if Scope_Is_Transient and then Par = Node_To_Be_Wrapped then
-            Insert_Actions_After (Par, Aggr_Code);
+            Store_After_Actions_In_Scope_Without_Analysis (Aggr_Code);
          else
             Insert_List_After (Par, Aggr_Code);
          end if;
@@ -8962,9 +8962,6 @@ package body Exp_Aggr is
       Typ  : constant Entity_Id  := Etype (N);
       Ctyp : constant Entity_Id  := Component_Type (Typ);
 
-      Not_Handled : exception;
-      --  Exception raised if this aggregate cannot be handled
-
    begin
       --  Handle one- or two dimensional bit packed array
 
@@ -8997,7 +8994,7 @@ package body Exp_Aggr is
          --  Given a expression value N of the component type Ctyp, returns a
          --  value of Csiz (component size) bits representing this value. If
          --  the value is nonstatic or any other reason exists why the value
-         --  cannot be returned, then Not_Handled is raised.
+         --  cannot be returned, then No_Uint is returned.
 
          -----------------------
          -- Get_Component_Val --
@@ -9020,7 +9017,7 @@ package body Exp_Aggr is
             if not Compile_Time_Known_Value (N)
               or else Nkind (N) = N_String_Literal
             then
-               raise Not_Handled;
+               return No_Uint;
             end if;
 
             Val := Expr_Rep_Value (N);
@@ -9098,6 +9095,9 @@ package body Exp_Aggr is
                --  justified modular type processing), so we do not have to
                --  worry about that here.
 
+               Val : Uint;
+               --  Temporary value
+
                Lit : Node_Id;
                --  Integer literal for resulting constructed value
 
@@ -9146,16 +9146,23 @@ package body Exp_Aggr is
 
                if Len = 0 then
                   Aggregate_Val := Uint_0;
+
                else
                   Expr := First (Expressions (N));
-                  Aggregate_Val := Get_Component_Val (Expr) * Uint_2 ** Shift;
+                  Val := Get_Component_Val (Expr);
+                  if No (Val) then
+                     return False;
+                  end if;
+                  Aggregate_Val := Val * Uint_2 ** Shift;
 
                   for J in 2 .. Len loop
                      Shift := Shift + Incr;
                      Next (Expr);
-                     Aggregate_Val :=
-                       Aggregate_Val +
-                       Get_Component_Val (Expr) * Uint_2 ** Shift;
+                     Val := Get_Component_Val (Expr);
+                     if No (Val) then
+                        return False;
+                     end if;
+                     Aggregate_Val := Aggregate_Val + Val * Uint_2 ** Shift;
                   end loop;
                end if;
 
@@ -9182,10 +9189,6 @@ package body Exp_Aggr is
             end;
          end;
       end;
-
-   exception
-      when Not_Handled =>
-         return False;
    end Packed_Array_Aggregate_Handled;
 
    ----------------------------
