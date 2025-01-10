@@ -2929,6 +2929,10 @@ struct post_process_data {
   tree decl;
   location_t start_locus;
   location_t end_locus;
+  bool returns_value;
+  bool returns_null;
+  bool returns_abnormally;
+  bool infinite_loop;
 };
 
 /* Tree stream reader.  Note that reading a stream doesn't mark the
@@ -4072,7 +4076,8 @@ static unsigned lazy_hard_limit; /* Hard limit on open modules.  */
    pass, but ICBW.  */
 #define LAZY_HEADROOM 15 /* File descriptor headroom.  */
 
-/* Vector of module state.  Indexed by OWNER.  Has at least 2 slots.  */
+/* Vector of module state.  Indexed by OWNER.  Index 0 is reserved for the
+   current TU; imports start at 1.  */
 static GTY(()) vec<module_state *, va_gc> *modules;
 
 /* Hash of module state, findable by {name, parent}. */
@@ -12263,10 +12268,16 @@ trees_out::write_function_def (tree decl)
     {
       unsigned flags = 0;
 
+      flags |= 1 * DECL_NOT_REALLY_EXTERN (decl);
       if (f)
-	flags |= 2;
-      if (DECL_NOT_REALLY_EXTERN (decl))
-	flags |= 1;
+	{
+	  flags |= 2;
+	  /* These flags are needed in tsubst_lambda_expr.  */
+	  flags |= 4 * f->language->returns_value;
+	  flags |= 8 * f->language->returns_null;
+	  flags |= 16 * f->language->returns_abnormally;
+	  flags |= 32 * f->language->infinite_loop;
+	}
 
       u (flags);
     }
@@ -12314,6 +12325,10 @@ trees_in::read_function_def (tree decl, tree maybe_template)
     {
       pdata.start_locus = state->read_location (*this);
       pdata.end_locus = state->read_location (*this);
+      pdata.returns_value = flags & 4;
+      pdata.returns_null = flags & 8;
+      pdata.returns_abnormally = flags & 16;
+      pdata.infinite_loop = flags & 32;
     }
 
   if (get_overrun ())
@@ -16232,6 +16247,10 @@ module_state::read_cluster (unsigned snum)
       cfun->language->base.x_stmt_tree.stmts_are_full_exprs_p = 1;
       cfun->function_start_locus = pdata.start_locus;
       cfun->function_end_locus = pdata.end_locus;
+      cfun->language->returns_value = pdata.returns_value;
+      cfun->language->returns_null = pdata.returns_null;
+      cfun->language->returns_abnormally = pdata.returns_abnormally;
+      cfun->language->infinite_loop = pdata.infinite_loop;
 
       if (abstract)
 	;
@@ -19928,6 +19947,9 @@ get_originating_module (tree decl, bool for_mangle)
   gcc_checking_assert (!for_mangle || !(*modules)[mod]->is_header ());
   return mod;
 }
+
+/* DECL is imported, return which module imported it.
+   If FLEXIBLE, return -1 if not found, otherwise checking ICE.  */
 
 unsigned
 get_importing_module (tree decl, bool flexible)
