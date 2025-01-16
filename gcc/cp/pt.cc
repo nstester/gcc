@@ -1913,9 +1913,7 @@ iterative_hash_template_arg (tree arg, hashval_t val)
 	  // to hash differently from its TYPE_CANONICAL, to avoid hash
 	  // collisions that compare as different in template_args_equal.
 	  // These could be dependent specializations that strip_typedefs
-	  // left alone, or untouched specializations because
-	  // coerce_template_parms returns the unconverted template
-	  // arguments if it sees incomplete argument packs.
+	  // left alone for example.
 	  tree ti = TYPE_ALIAS_TEMPLATE_INFO (ats);
 	  return hash_tmpl_and_args (TI_TEMPLATE (ti), TI_ARGS (ti));
 	}
@@ -9301,7 +9299,9 @@ coerce_template_parms (tree parms,
 	      /* We don't know how many args we have yet, just use the
 		 unconverted (and still packed) ones for now.  */
 	      ggc_free (new_inner_args);
-	      new_inner_args = orig_inner_args;
+	      new_inner_args = strip_typedefs (orig_inner_args,
+					       /*remove_attrs=*/nullptr,
+					       STF_KEEP_INJ_CLASS_NAME);
 	      arg_idx = nargs;
 	      break;
 	    }
@@ -9357,7 +9357,9 @@ coerce_template_parms (tree parms,
               /* We don't know how many args we have yet, just
 		 use the unconverted (but unpacked) ones for now.  */
 	      ggc_free (new_inner_args);
-              new_inner_args = inner_args;
+	      new_inner_args = strip_typedefs (inner_args,
+					       /*remove_attrs=*/nullptr,
+					       STF_KEEP_INJ_CLASS_NAME);
 	      arg_idx = nargs;
               break;
             }
@@ -21669,7 +21671,7 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	tree op1 = RECUR (TREE_OPERAND (t, 1));
 	tree op2 = tsubst (TREE_OPERAND (t, 2), args, complain, in_decl);
 	RETURN (finish_pseudo_destructor_expr (op0, op1, op2,
-					       input_location));
+					       input_location, complain));
       }
 
     case TREE_LIST:
@@ -21733,7 +21735,7 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 		    dtor = TREE_OPERAND (dtor, 0);
 		    if (TYPE_P (dtor))
 		      RETURN (finish_pseudo_destructor_expr
-			      (object, s, dtor, input_location));
+			      (object, s, dtor, input_location, complain));
 		  }
 	      }
 	  }
