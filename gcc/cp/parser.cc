@@ -27462,6 +27462,8 @@ cp_parser_class_specifier (cp_parser* parser)
   if (!braces.require_open (parser))
     {
       pop_deferring_access_checks ();
+      if (type != error_mark_node)
+	finish_lambda_scope ();
       return error_mark_node;
     }
 
@@ -27526,7 +27528,10 @@ cp_parser_class_specifier (cp_parser* parser)
   if (cp_parser_allow_gnu_extensions_p (parser))
     attributes = cp_parser_gnu_attributes_opt (parser);
   if (type != error_mark_node)
-    type = finish_struct (type, attributes);
+    {
+      type = finish_struct (type, attributes);
+      finish_lambda_scope ();
+    }
   if (nested_name_specifier_p)
     pop_inner_scope (old_scope, scope);
 
@@ -28366,6 +28371,12 @@ cp_parser_class_head (cp_parser* parser,
   if (flag_concepts)
     type = associate_classtype_constraints (type);
 
+  /* Lambdas in bases and members must have the same mangling scope for ABI.
+     We open this scope now, and will close it in cp_parser_class_specifier
+     after parsing the member list.  */
+  if (type && type != error_mark_node)
+    start_lambda_scope (TYPE_NAME (type));
+
   /* We will have entered the scope containing the class; the names of
      base classes should be looked up in that context.  For example:
 
@@ -28380,16 +28391,10 @@ cp_parser_class_head (cp_parser* parser,
   if (cp_lexer_next_token_is (parser->lexer, CPP_COLON))
     {
       if (type)
-	{
-	  pushclass (type);
-	  start_lambda_scope (TYPE_NAME (type));
-	}
+	pushclass (type);
       bases = cp_parser_base_clause (parser);
       if (type)
-	{
-	  finish_lambda_scope ();
-	  popclass ();
-	}
+	popclass ();
     }
   else
     bases = NULL_TREE;
@@ -31825,8 +31830,20 @@ cp_parser_concept_definition (cp_parser *parser)
       return error_mark_node;
     }
 
+  tree decl = start_concept_definition (id);
+  if (decl == error_mark_node)
+    {
+      cp_parser_skip_to_end_of_statement (parser);
+      cp_parser_consume_semicolon_at_end_of_statement (parser);
+      return error_mark_node;
+    }
+
   processing_constraint_expression_sentinel parsing_constraint;
+
+  start_lambda_scope (decl);
   tree init = cp_parser_constraint_expression (parser);
+  finish_lambda_scope ();
+
   if (init == error_mark_node)
     cp_parser_skip_to_end_of_statement (parser);
 
@@ -31834,7 +31851,7 @@ cp_parser_concept_definition (cp_parser *parser)
      but continue as if it were.  */
   cp_parser_consume_semicolon_at_end_of_statement (parser);
 
-  return finish_concept_definition (id, init, attrs);
+  return finish_concept_definition (decl, init, attrs);
 }
 
 // -------------------------------------------------------------------------- //

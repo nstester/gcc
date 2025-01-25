@@ -12606,6 +12606,10 @@ instantiate_class_template (tree type)
   gcc_assert (!DECL_CLASS_SCOPE_P (TYPE_MAIN_DECL (pattern))
 	      || COMPLETE_OR_OPEN_TYPE_P (TYPE_CONTEXT (type)));
 
+  /* When instantiating nested lambdas, ensure that they get the mangling
+     scope of the new class type.  */
+  start_lambda_scope (TYPE_NAME (type));
+
   base_list = NULL_TREE;
   /* Defer access checking while we substitute into the types named in
      the base-clause.  */
@@ -12966,6 +12970,8 @@ instantiate_class_template (tree type)
   unreverse_member_declarations (type);
   finish_struct_1 (type);
   TYPE_BEING_DEFINED (type) = 0;
+
+  finish_lambda_scope ();
 
   /* Remember if instantiating this class ran into errors, so we can avoid
      instantiating member functions in limit_bad_template_recursion.  We set
@@ -20225,7 +20231,7 @@ tsubst_lambda_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
   if (LAMBDA_EXPR_EXTRA_SCOPE (t))
     record_lambda_scope (r);
-  else if (TYPE_NAMESPACE_SCOPE_P (TREE_TYPE (t)))
+  if (TYPE_NAMESPACE_SCOPE_P (TREE_TYPE (t)))
     /* If we're pushed into another scope (PR105652), fix it.  */
     TYPE_CONTEXT (type) = DECL_CONTEXT (TYPE_NAME (type))
       = TYPE_CONTEXT (TREE_TYPE (t));
@@ -30021,12 +30027,10 @@ placeholder_type_constraint_dependent_p (tree t)
   return false;
 }
 
-/* Build and return a concept definition. Like other templates, the
-   CONCEPT_DECL node is wrapped by a TEMPLATE_DECL.  This returns the
-   the TEMPLATE_DECL. */
+/* Prepare and return a concept definition.  */
 
 tree
-finish_concept_definition (cp_expr id, tree init, tree attrs)
+start_concept_definition (cp_expr id)
 {
   gcc_assert (identifier_p (id));
   gcc_assert (processing_template_decl);
@@ -30058,8 +30062,19 @@ finish_concept_definition (cp_expr id, tree init, tree attrs)
   /* Initially build the concept declaration; its type is bool.  */
   tree decl = build_lang_decl_loc (loc, CONCEPT_DECL, *id, boolean_type_node);
   DECL_CONTEXT (decl) = current_scope ();
-  DECL_INITIAL (decl) = init;
   TREE_PUBLIC (decl) = true;
+
+  return decl;
+}
+
+/* Finish building a concept definition. Like other templates, the
+   CONCEPT_DECL node is wrapped by a TEMPLATE_DECL.  This returns the
+   the TEMPLATE_DECL. */
+
+tree
+finish_concept_definition (tree decl, tree init, tree attrs)
+{
+  DECL_INITIAL (decl) = init;
 
   if (attrs)
     cplus_decl_attributes (&decl, attrs, 0);

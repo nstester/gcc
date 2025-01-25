@@ -11014,18 +11014,23 @@ trees_out::get_merge_kind (tree decl, depset *dep)
 	       g++.dg/modules/lambda-6_a.C.  */
 	    if (DECL_IMPLICIT_TYPEDEF_P (STRIP_TEMPLATE (decl))
 		&& LAMBDA_TYPE_P (TREE_TYPE (decl)))
-	      if (tree scope = LAMBDA_TYPE_EXTRA_SCOPE (TREE_TYPE (decl)))
-		{
-		  /* Lambdas attached to fields are keyed to its class.  */
-		  if (TREE_CODE (scope) == FIELD_DECL)
-		    scope = TYPE_NAME (DECL_CONTEXT (scope));
-		  if (DECL_LANG_SPECIFIC (scope)
-		      && DECL_MODULE_KEYED_DECLS_P (scope))
-		    {
-		      mk = MK_keyed;
-		      break;
-		    }
-		}
+	      {
+		if (tree scope = LAMBDA_TYPE_EXTRA_SCOPE (TREE_TYPE (decl)))
+		  {
+		    /* Lambdas attached to fields are keyed to its class.  */
+		    if (TREE_CODE (scope) == FIELD_DECL)
+		      scope = TYPE_NAME (DECL_CONTEXT (scope));
+		    if (DECL_LANG_SPECIFIC (scope)
+			&& DECL_MODULE_KEYED_DECLS_P (scope))
+		      {
+			mk = MK_keyed;
+			break;
+		      }
+		  }
+		/* Lambdas not attached to any mangling scope are TU-local.  */
+		mk = MK_unique;
+		break;
+	      }
 
 	    if (TREE_CODE (decl) == TEMPLATE_DECL
 		&& DECL_UNINSTANTIATED_TEMPLATE_FRIEND_P (decl))
@@ -11329,7 +11334,8 @@ trees_out::key_mergeable (int tag, merge_kind mk, tree decl, tree inner,
 	    gcc_checking_assert (TREE_CODE (scope) == VAR_DECL
 				 || TREE_CODE (scope) == FIELD_DECL
 				 || TREE_CODE (scope) == PARM_DECL
-				 || TREE_CODE (scope) == TYPE_DECL);
+				 || TREE_CODE (scope) == TYPE_DECL
+				 || TREE_CODE (scope) == CONCEPT_DECL);
 	    /* Lambdas attached to fields are keyed to the class.  */
 	    if (TREE_CODE (scope) == FIELD_DECL)
 	      scope = TYPE_NAME (DECL_CONTEXT (scope));
@@ -13435,9 +13441,10 @@ depset::hash::is_tu_local_entity (tree decl, bool explain/*=false*/)
       tree main_decl = TYPE_MAIN_DECL (type);
       if (!DECL_CLASS_SCOPE_P (main_decl)
 	  && !decl_function_context (main_decl)
-	  /* FIXME: Lambdas defined outside initializers.  We'll need to more
-	     thoroughly set LAMBDA_TYPE_EXTRA_SCOPE to check this.  */
-	  && !LAMBDA_TYPE_P (type))
+	  /* LAMBDA_EXPR_EXTRA_SCOPE will be set for lambdas defined in
+	     contexts where they would not be TU-local.  */
+	  && !(LAMBDA_TYPE_P (type)
+	       && LAMBDA_TYPE_EXTRA_SCOPE (type)))
 	{
 	  if (explain)
 	    inform (loc, "%qT has no name and is not defined within a class, "
@@ -20309,11 +20316,12 @@ maybe_key_decl (tree ctx, tree decl)
     return;
 
   /* We only need to deal with lambdas attached to var, field,
-     parm, or type decls.  */
+     parm, type, or concept decls.  */
   if (TREE_CODE (ctx) != VAR_DECL
       && TREE_CODE (ctx) != FIELD_DECL
       && TREE_CODE (ctx) != PARM_DECL
-      && TREE_CODE (ctx) != TYPE_DECL)
+      && TREE_CODE (ctx) != TYPE_DECL
+      && TREE_CODE (ctx) != CONCEPT_DECL)
     return;
 
   /* For fields, key it to the containing type to handle deduplication

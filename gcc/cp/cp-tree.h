@@ -1562,7 +1562,8 @@ enum cp_lambda_default_capture_mode_type {
   (((struct tree_lambda_expr *)LAMBDA_EXPR_CHECK (NODE))->locus)
 
 /* The mangling scope for the lambda: FUNCTION_DECL, PARM_DECL, VAR_DECL,
-   FIELD_DECL or NULL_TREE.  If this is NULL_TREE, we have no linkage.  */
+   FIELD_DECL, TYPE_DECL, or NULL_TREE.  If this is NULL_TREE, we have no
+   linkage.  */
 #define LAMBDA_EXPR_EXTRA_SCOPE(NODE) \
   (((struct tree_lambda_expr *)LAMBDA_EXPR_CHECK (NODE))->extra_scope)
 
@@ -8688,7 +8689,8 @@ struct diagnosing_failed_constraint
 extern cp_expr finish_constraint_or_expr	(location_t, cp_expr, cp_expr);
 extern cp_expr finish_constraint_and_expr	(location_t, cp_expr, cp_expr);
 extern cp_expr finish_constraint_primary_expr	(cp_expr);
-extern tree finish_concept_definition		(cp_expr, tree, tree);
+extern tree start_concept_definition		(cp_expr);
+extern tree finish_concept_definition		(tree, tree, tree);
 extern tree combine_constraint_expressions      (tree, tree);
 extern tree append_constraint			(tree, tree);
 extern tree get_constraints                     (const_tree);
