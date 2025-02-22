@@ -652,15 +652,10 @@ proc check_effective_target_trampolines { } {
 proc check_effective_target_stack_size { } {
     # For nvptx target, stack size limits are relevant for execution only.
     if { [istarget nvptx-*-*] } {
-	# Find 'dg-do-what' in an outer frame.
-	set level 1
-	while true {
-	    upvar $level dg-do-what dg-do-what
-	    if [info exists dg-do-what] then break
-	    incr level
+	set dg-do-what [find-dg-do-what]
+	if { ![llength ${dg-do-what}] } {
+	    error "unexpected call stack"
 	}
-	verbose "check_effective_target_stack_size: found dg-do-what at level $level" 2
-
 	if { ![string equal [lindex ${dg-do-what} 0] run] } {
 	    return 0
 	}
@@ -1002,7 +997,7 @@ proc check_effective_target_untyped_assembly {} {
     return 1
 }
 
-# Return 1 if alloca is supported, 0 otherwise.
+# Return 1 if dynamic stack allocation is supported, 0 otherwise.
 
 proc check_effective_target_alloca {} {
     if { [istarget bpf-*-*] } {
@@ -1021,15 +1016,13 @@ proc check_effective_target_alloca {} {
 		return 0
 	    }
 
-	    # Find 'dg-do-what' in an outer frame.
-	    set level 1
-	    while true {
-		upvar $level dg-do-what dg-do-what
-		if [info exists dg-do-what] then break
-		incr level
+	    set dg-do-what [find-dg-do-what]
+	    if { ![llength ${dg-do-what}] } {
+		# This happens if 'gcc-dg-prune' etc. get called outside of
+		# 'dg-test'.  For these purposes, assume that dynamic stack
+		# allocation is supported.
+		return 1
 	    }
-	    verbose "check_effective_target_alloca: found dg-do-what at level $level" 2
-
 	    if { [string equal [lindex ${dg-do-what} 0] run] } {
 		# For 'dg-do run', it additionally depends on runtime support.
 		# (If not supported, we don't try to demote 'run' to 'link',
